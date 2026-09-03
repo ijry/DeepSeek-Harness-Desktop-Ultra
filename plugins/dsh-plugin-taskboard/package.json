@@ -1,0 +1,65 @@
+{
+  "name": "dsh-plugin-taskboard",
+  "description": "Agent-first task kanban for DeepSeek Harness web GUI, modeled on codeg-plus's 任务看板: four codeg-plus columns (todo / inProgress / attention / done), human-only acceptance, workspace-bound claims, comments and a live SSE board view. 参考 codeg-plus 任务看板语义的 dsh 插件，发布到 dsh 插件市场。",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.1.0-rc.8": "unknown",
+        "0.1.1-rc.1": "unknown",
+        "0.1.1-rc.2": "compatible",
+        "0.1.2-alpha.2": "compatible"
+      }
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "author": "ijry (DSH Desktop Ultra contributors)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/issues"
+  },
+  "homepage": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/tree/main/plugins/dsh-plugin-taskboard#readme",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "taskboard",
+    "kanban",
+    "codeg-plus",
+    "agent",
+    "tasks"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "npm run build && node --test",
+    "prepack": "npm run build"
+  }
+}
