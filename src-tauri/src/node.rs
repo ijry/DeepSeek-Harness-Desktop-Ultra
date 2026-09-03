@@ -120,6 +120,14 @@ fn candidate_paths() -> Vec<PathBuf> {
 
     #[cfg(windows)]
     {
+        // nvm-windows 会设置这两个环境变量。NVM_SYMLINK 直接指向「当前版本」
+        // 的目录,优先级最高——nvm4w 默认装在 C:\nvm4w\nodejs 这种自定义
+        // 位置,不在下面任何一个固定路径里,只靠固定路径会找不到。
+        for var in ["NVM_SYMLINK", "NVM_HOME"] {
+            if let Ok(dir) = std::env::var(var) {
+                candidates.push(PathBuf::from(&dir).join("node.exe"));
+            }
+        }
         for base in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"] {
             if let Ok(dir) = std::env::var(base) {
                 candidates.push(PathBuf::from(&dir).join("nodejs").join("node.exe"));
@@ -127,6 +135,18 @@ fn candidate_paths() -> Vec<PathBuf> {
         }
         if let Ok(appdata) = std::env::var("APPDATA") {
             candidates.push(PathBuf::from(&appdata).join("nvm").join("node.exe"));
+        }
+        // fnm / volta 的 Windows 默认位置
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            let local = PathBuf::from(&local);
+            candidates.push(
+                local
+                    .join("fnm")
+                    .join("aliases")
+                    .join("default")
+                    .join("node.exe"),
+            );
+            candidates.push(local.join("Volta").join("bin").join("node.exe"));
         }
     }
 

@@ -11,7 +11,12 @@ type FailureKind =
 
 type BootState =
   | { stage: "locatingNode" }
-  | { stage: "installingDsh"; version: string }
+  | {
+      stage: "installingDsh";
+      version: string;
+      fetched: number;
+      elapsedSecs: number;
+    }
   | { stage: "startingServer" }
   | { stage: "ready"; url: string }
   | { stage: "failed"; kind: FailureKind; message: string; log: string };
@@ -145,8 +150,22 @@ export default function Bootstrap() {
       <div className="spinner" role="progressbar" aria-label={label} />
       <p className="hint">{label}</p>
       {state.stage === "installingDsh" && (
-        <p className="detail">只需一次，之后启动会直接进入。</p>
+        <p className="detail">
+          {/* harness 是「一切皆插件」架构,依赖树有 100+ 个包。npm 在解析
+              阶段会长时间不输出,所以这里同时显示包数和已耗时——只显示
+              包数的话,静默期看起来还是卡死的。 */}
+          已获取 {state.fetched} 个包 · 已用 {formatElapsed(state.elapsedSecs)}
+          <br />
+          依赖较多，首次可能需要数分钟；之后启动会直接进入。
+        </p>
       )}
     </main>
   );
+}
+
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${seconds} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest === 0 ? `${minutes} 分` : `${minutes} 分 ${rest} 秒`;
 }

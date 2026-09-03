@@ -19,8 +19,15 @@ use server::DshServer;
 pub enum BootState {
     /// 正在查找可用的 Node
     LocatingNode,
-    /// 正在安装锁定版本的 dsh（首次启动或版本变更时）
-    InstallingDsh { version: String },
+    /// 正在安装锁定版本的 dsh（首次启动或版本变更时）。
+    ///
+    /// 带上进度是必需的:dsh 的依赖树有 100+ 个包,npm 在解析阶段会静默
+    /// 好几分钟,没有进展信号的话首次启动看起来就是卡死。
+    InstallingDsh {
+        version: String,
+        fetched: usize,
+        elapsed_secs: u64,
+    },
     /// 正在启动 dsh web 服务
     StartingServer,
     /// 就绪，webview 即将跳转
@@ -175,25 +182,35 @@ fn boot(app: tauri::AppHandle) {
     let dsh_runtime = match dsh::runtime_dir() {
         Ok(dir) if !dsh::needs_install(&dir) => Ok(dir),
         _ => {
-            transition(
-                &app,
-                BootState::InstallingDsh {
-                    version: upstream::DSH_VERSION.to_string(),
-                },
-            );
-            dsh::ensure_installed(&runtime)
+            let app_clone = app.clone();
+            dsh::ensure_installed(&runtime, &|progress| {
+                transition(
+                    &app_clone,
+                    BootState::InstallingDsh {
+                        version: upstream::DSH_VERSION.to_string(),
+                        fetched: progress.fetched,
+                        elapsed_secs: progress.elapsed.as_secs(),
+                    },
+                );
+            })
         }
     };
 
     let dsh_runtime = match dsh_runtime {
         Ok(dir) => dir,
         Err(error) => {
+            // 超时/失败时 npm 的输出是唯一能定位原因的材料
+            let log = match &error {
+                dsh::DshError::InstallFailed { stderr, .. } => stderr.clone(),
+                dsh::DshError::InstallTimeout { log, .. } => log.clone(),
+                _ => String::new(),
+            };
             transition(
                 &app,
                 BootState::Failed {
                     kind: FailureKind::InstallFailed,
                     message: error.to_string(),
-                    log: String::new(),
+                    log,
                 },
             );
             return;

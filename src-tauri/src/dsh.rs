@@ -5,12 +5,17 @@
 //! - 私有 prefix 让「我们测过的版本」和「用户跑的版本」严格一致；
 //! - 升级上游只需要改 `upstream::DSH_VERSION`，下次启动自动重装。
 
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
 use crate::node::NodeRuntime;
+use crate::server::LogRing;
 use crate::upstream::{package_spec, DSH_PACKAGE, DSH_VERSION};
 
 #[derive(Debug, thiserror::Error)]
@@ -33,6 +38,13 @@ pub enum DshError {
         spec: String,
         code: String,
         stderr: String,
+    },
+
+    #[error("安装 {spec} 超过 {minutes} 分钟仍未完成:\n{log}")]
+    InstallTimeout {
+        spec: String,
+        minutes: u64,
+        log: String,
     },
 
     #[error("执行 npm 失败: {0}")]
@@ -166,8 +178,28 @@ fn hide_console(command: &mut Command) {
 #[cfg(not(windows))]
 fn hide_console(_command: &mut Command) {}
 
+/// 安装超时。
+///
+/// 定得很宽是有原因的:dsh 是「一切皆插件」架构,依赖树有 100+ 个
+/// `@deepseek-ai/dsh-*` 包。实测即使 npm 缓存是热的,解析阶段也会静默
+/// 好几分钟。宁可等久一点,也不要把一个正常但慢的安装误杀掉。
+const INSTALL_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+
+/// 安装进度。npm 在解析依赖树时会长时间不输出任何东西,
+/// 所以除了包数还必须带上已耗时——否则界面看起来就是卡死的。
+#[derive(Debug, Clone)]
+pub struct InstallProgress {
+    pub fetched: usize,
+    pub elapsed: Duration,
+}
+
 /// 把锁定版本装进私有 prefix。幂等：版本已匹配时直接返回。
-pub fn ensure_installed(node: &NodeRuntime) -> Result<PathBuf, DshError> {
+///
+/// `on_progress` 会被周期性调用,用来更新界面。
+pub fn ensure_installed(
+    node: &NodeRuntime,
+    on_progress: &dyn Fn(InstallProgress),
+) -> Result<PathBuf, DshError> {
     let runtime = runtime_dir()?;
     std::fs::create_dir_all(&runtime).map_err(|source| DshError::CreateDir {
         path: runtime.clone(),
@@ -191,7 +223,12 @@ pub fn ensure_installed(node: &NodeRuntime) -> Result<PathBuf, DshError> {
         .arg("--no-save")
         .arg("--no-audit")
         .arg("--no-fund")
-        .arg("--loglevel=error")
+        // 用 http 级别是为了能数出「已获取 N 个包」:error 级别下 npm 全程
+        // 静默,几分钟里界面没有任何可信的进展信号。
+        .arg("--loglevel=http")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         // 确保 npm 用的是我们挑中的那个 node，而不是 PATH 上的另一个
         .env("npm_config_prefix", &runtime);
     if let Some(dir) = node.path.parent() {
@@ -199,7 +236,7 @@ pub fn ensure_installed(node: &NodeRuntime) -> Result<PathBuf, DshError> {
     }
     hide_console(&mut command);
 
-    let output = command.output().map_err(|source| {
+    let mut child = command.spawn().map_err(|source| {
         if source.kind() == std::io::ErrorKind::NotFound {
             DshError::NpmNotFound
         } else {
@@ -207,16 +244,56 @@ pub fn ensure_installed(node: &NodeRuntime) -> Result<PathBuf, DshError> {
         }
     })?;
 
-    if !output.status.success() {
-        return Err(DshError::InstallFailed {
-            spec,
-            code: output
-                .status
-                .code()
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "signal".into()),
-            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+    // npm 把 http 日志写到 stderr,真正的错误也在 stderr。两路都收,
+    // 用同一个环形缓冲当失败时的诊断材料。
+    let logs = LogRing::default();
+    let fetched = Arc::new(AtomicUsize::new(0));
+
+    if let Some(stdout) = child.stdout.take() {
+        pump_counting(stdout, logs.clone(), Arc::clone(&fetched));
+    }
+    if let Some(stderr) = child.stderr.take() {
+        pump_counting(stderr, logs.clone(), Arc::clone(&fetched));
+    }
+
+    let started = Instant::now();
+    let deadline = started + INSTALL_TIMEOUT;
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return Err(DshError::InstallFailed {
+                        spec,
+                        code: status
+                            .code()
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| "signal".into()),
+                        stderr: logs.snapshot(),
+                    });
+                }
+                break;
+            }
+            Ok(None) => {}
+            Err(source) => return Err(DshError::NpmSpawn(source)),
+        }
+
+        if Instant::now() >= deadline {
+            let log = logs.snapshot();
+            // 卡住的 npm 会留下一堆子进程,必须整棵树一起收
+            let _ = crate::server::terminate(&mut child);
+            return Err(DshError::InstallTimeout {
+                spec,
+                minutes: INSTALL_TIMEOUT.as_secs() / 60,
+                log,
+            });
+        }
+
+        on_progress(InstallProgress {
+            fetched: fetched.load(Ordering::Relaxed),
+            elapsed: started.elapsed(),
         });
+        std::thread::sleep(Duration::from_millis(400));
     }
 
     // 安装声称成功，但要确认落到磁盘上的确实是锁定的版本
@@ -233,6 +310,22 @@ pub fn ensure_installed(node: &NodeRuntime) -> Result<PathBuf, DshError> {
     }
 
     Ok(runtime)
+}
+
+/// 把 npm 的一路输出泵进环形缓冲，同时数出已获取的包数。
+fn pump_counting<R>(reader: R, logs: LogRing, fetched: Arc<AtomicUsize>)
+where
+    R: std::io::Read + Send + 'static,
+{
+    std::thread::spawn(move || {
+        for line in BufReader::new(reader).lines() {
+            let Ok(text) = line else { break };
+            if text.contains("http fetch GET") {
+                fetched.fetch_add(1, Ordering::Relaxed);
+            }
+            logs.push(text);
+        }
+    });
 }
 
 /// 把 node 所在目录插到子进程 PATH 最前面。

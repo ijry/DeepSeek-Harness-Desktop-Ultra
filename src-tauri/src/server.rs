@@ -201,7 +201,7 @@ pub fn start(
 /// 单纯 `Child::kill()` 只杀直接子进程，dsh 派生的 worker 会变成孤儿进程
 /// 继续占着端口，下次启动就会撞车。
 #[cfg(windows)]
-fn terminate(child: &mut Child) -> std::io::Result<()> {
+pub(crate) fn terminate(child: &mut Child) -> std::io::Result<()> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -217,7 +217,7 @@ fn terminate(child: &mut Child) -> std::io::Result<()> {
 }
 
 #[cfg(not(windows))]
-fn terminate(child: &mut Child) -> std::io::Result<()> {
+pub(crate) fn terminate(child: &mut Child) -> std::io::Result<()> {
     // 先对整个进程组发 SIGTERM，给 dsh 一个保存会话的机会
     let pgid = child.id() as i32;
     unsafe {
