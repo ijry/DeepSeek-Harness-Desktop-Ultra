@@ -12,6 +12,10 @@ export type Lang = "zh" | "en";
 export type OsId = "windows" | "macos" | "linux";
 
 export interface Copy {
+  seo: {
+    title: string;
+    description: string;
+  };
   nav: {
     brand: string;
     download: string;
@@ -106,6 +110,10 @@ export const HERO_CONSOLE: string[] = [
 export const HERO_CHIPS: string[] = ["node v22 ✓", "dsh 0.1.x ✓", "127.0.0.1:port"];
 
 const zh: Copy = {
+  seo: {
+    title: "DSH Desktop Ultra — DeepSeek Harness 桌面客户端（Tauri 2 开源）",
+    description: "把 DeepSeek Harness 装进原生桌面：不 fork、不改上游、不加功能。原生窗口、托盘常驻、进程监护、自动更新，支持 Windows / macOS / Linux，代码开源，欢迎下载体验。",
+  },
   nav: {
     brand: "DSH Desktop Ultra",
     download: "下载",
@@ -278,6 +286,10 @@ const zh: Copy = {
 };
 
 const en: Copy = {
+  seo: {
+    title: "DSH Desktop Ultra — Native desktop client for DeepSeek Harness (Tauri 2, open source)",
+    description: "Run DeepSeek Harness as a native desktop app: no fork, no upstream edits, no extra features. Native window, tray resident, process supervision, auto-update. Windows, macOS & Linux. Open source.",
+  },
   nav: {
     brand: "DSH Desktop Ultra",
     download: "Download",
@@ -483,7 +495,18 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    const seo = COPY[lang].seo;
     document.documentElement.lang = lang;
+    document.title = seo.title;
+    const setContent = (selector: string, value: string) => {
+      const el = document.head.querySelector<HTMLMetaElement>(selector);
+      if (el) el.setAttribute("content", value);
+    };
+    setContent('meta[name="description"]', seo.description);
+    setContent('meta[property="og:title"]', seo.title);
+    setContent('meta[property="og:description"]', seo.description);
+    setContent('meta[name="twitter:title"]', seo.title);
+    setContent('meta[name="twitter:description"]', seo.description);
   }, [lang]);
 
   return <I18nContext.Provider value={{ lang, t: COPY[lang], setLang }}>{children}</I18nContext.Provider>;

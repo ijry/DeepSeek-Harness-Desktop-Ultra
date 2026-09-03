@@ -1,0 +1,10 @@
+# DSH Desktop Ultra 官网
+# 说明：这是 GitHub Pages 项目站点，规范位置的 robots.txt 由 GitHub
+# 在 https://ijry.github.io/robots.txt 托管（允许抓取），本文件服务于
+# https://ijry.github.io/DeepSeek-Harness-Desktop-Ultra/robots.txt。
+# 收录验证建议直接在 Google/Bing 站长后台提交 sitemap URL。
+
+User-agent: *
+Allow: /
+
+Sitemap: https://ijry.github.io/DeepSeek-Harness-Desktop-Ultra/sitemap.xml
