@@ -123,35 +123,6 @@ npm run rust:test      # Rust 单测
 npm run tauri:build
 ```
 
-## 发布
-
-1. 生成更新签名密钥（只需一次）：
-
-   ```bash
-   npm run generate-keys
-   ```
-
-   私钥写到 `D:\Repos\xyito\config\dsh-desktop\`（仓库外，`.gitignore` 已排除 `*.key`），公钥自动填进 `src-tauri/tauri.conf.json`。
-   **私钥丢了就再也无法给已发布的版本推更新** —— 覆盖已有密钥需要显式加 `--force`。
-
-2. 在 GitHub 仓库加 secret：
-
-   - `TAURI_SIGNING_PRIVATE_KEY` —— 私钥文件的完整内容
-   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` —— 未设密码则留空
-
-3. 三处版本号必须一致（CI 会校验）：`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`。
-
-4. 打 tag 推送，其余交给 CI：
-
-   ```bash
-   git tag v0.1.0
-   git push origin v0.1.0
-   ```
-
-   带 `-rc` / `-beta` / `-alpha` 的 tag 发布为预览版。tag commit 的 message 就是发布说明。
-
-CI 还会拒绝：tag 不在默认分支上、`updater.pubkey` 仍是占位值、产物里没有 `.sig` 签名、更新清单平台列表为空。
-
 ## 已知限制
 
 - **关窗后进程仍在后台。** 这是关窗缩托盘的直接代价：dsh 会一直占着内存（node_modules 有 204MB，常驻内存视会话而定）。真正退出必须走托盘右键 → 退出。忘记退出的话它会一直留在后台。

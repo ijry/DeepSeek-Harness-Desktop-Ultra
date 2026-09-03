@@ -2,8 +2,15 @@
 /**
  * 生成 Tauri 更新签名密钥对。
  *
- * 私钥写到仓库外的 D:\Repos\xyito\config\dsh-desktop\，绝不进 Git。
- * 公钥同时写到该目录，并自动填进 src-tauri/tauri.conf.json。
+ * 私钥必须写到仓库之外，绝不进 Git。目录由环境变量 DSH_KEY_DIR 指定，
+ * 不在这里硬编码——这是个公开仓库，把维护者机器上的私钥路径写进代码
+ * 等于白送一条信息给攻击者。
+ *
+ * 用法:
+ *   DSH_KEY_DIR=/path/to/secrets  node scripts/generate-keys.mjs
+ *   $env:DSH_KEY_DIR="C:\path\to\secrets"; node scripts/generate-keys.mjs
+ *
+ * 公钥会同时写到该目录，并自动填进 src-tauri/tauri.conf.json。
  */
 
 import { execFileSync } from "node:child_process";
@@ -14,18 +21,39 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(HERE, "..");
 
-const KEY_DIR = "D:\\Repos\\xyito\\config\\dsh-desktop";
-const PRIVATE_KEY = path.join(KEY_DIR, "dsh-desktop-ultra.key");
-const PUBLIC_KEY = path.join(KEY_DIR, "dsh-desktop-ultra.key.pub");
-const TAURI_CONF = path.join(REPO, "src-tauri", "tauri.conf.json");
-
 function fail(message) {
   console.error(`\n错误: ${message}`);
   process.exit(1);
 }
 
+const KEY_DIR = process.env.DSH_KEY_DIR?.trim();
+if (!KEY_DIR) {
+  fail(
+    "未设置 DSH_KEY_DIR。\n" +
+      "请指定一个仓库之外的目录来存放私钥，例如:\n" +
+      "  bash:       DSH_KEY_DIR=~/secrets/dsh-desktop node scripts/generate-keys.mjs\n" +
+      "  PowerShell: $env:DSH_KEY_DIR=\"C:\\secrets\\dsh-desktop\"; node scripts/generate-keys.mjs"
+  );
+}
+
+// 私钥落在仓库里迟早会被提交上去，直接拒绝
+const resolvedKeyDir = path.resolve(KEY_DIR);
+if (
+  resolvedKeyDir === path.resolve(REPO) ||
+  resolvedKeyDir.startsWith(path.resolve(REPO) + path.sep)
+) {
+  fail(
+    `DSH_KEY_DIR 指向仓库内部 (${resolvedKeyDir})。\n` +
+      "私钥必须放在仓库之外，否则迟早会被提交。"
+  );
+}
+
+const PRIVATE_KEY = path.join(resolvedKeyDir, "dsh-desktop-ultra.key");
+const PUBLIC_KEY = path.join(resolvedKeyDir, "dsh-desktop-ultra.key.pub");
+const TAURI_CONF = path.join(REPO, "src-tauri", "tauri.conf.json");
+
 // 覆盖已有密钥会让所有已安装的客户端再也收不到更新——必须显式确认
-if (fs.existsSync(PRIVATE_KEY) && process.argv[2] !== "--force") {
+if (fs.existsSync(PRIVATE_KEY) && !process.argv.includes("--force")) {
   fail(
     `私钥已存在: ${PRIVATE_KEY}\n` +
       "覆盖它会导致所有已发布版本的更新签名失效，已装的客户端将永久收不到更新。\n" +
@@ -33,8 +61,7 @@ if (fs.existsSync(PRIVATE_KEY) && process.argv[2] !== "--force") {
   );
 }
 
-fs.mkdirSync(KEY_DIR, { recursive: true });
-
+fs.mkdirSync(resolvedKeyDir, { recursive: true });
 
 console.log("正在生成密钥对…");
 
