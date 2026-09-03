@@ -138,7 +138,28 @@ fn diagnostics(state: tauri::State<'_, AppState>) -> String {
 }
 
 /// 更新状态并通知前端。
+///
+/// 同时打到 stderr。跳转到 dsh 的 UI 之后前端就换人了，届时外壳自己的
+/// 状态只能靠日志观察；启动失败的现场也需要能在终端里复现。
+/// 安装进度会每 400ms 触发一次，太吵，单独降噪。
 fn transition(app: &tauri::AppHandle, next: BootState) {
+    match &next {
+        // 只在整十秒的刻度上打一行，避免刷屏
+        BootState::InstallingDsh {
+            fetched,
+            elapsed_secs,
+            ..
+        } => {
+            if elapsed_secs % 10 == 0 {
+                eprintln!("[boot] 安装 dsh 中：已获取 {fetched} 个包，已用 {elapsed_secs}s");
+            }
+        }
+        BootState::Failed { kind, message, .. } => {
+            eprintln!("[boot] 失败（{kind:?}）：{message}");
+        }
+        other => eprintln!("[boot] {other:?}"),
+    }
+
     let state = app.state::<AppState>();
     *lock(&state.boot) = next.clone();
     // 事件发不出去不是致命错误：前端还能靠 boot_state 命令兜底
@@ -308,6 +329,67 @@ fn retry_boot(app: tauri::AppHandle) {
     std::thread::spawn(move || boot(app));
 }
 
+/// 把窗口显示出来并聚焦。托盘的「显示窗口」和单击托盘图标都走这里。
+fn reveal_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+/// 真正退出：先收掉 dsh 子进程，再让 Tauri 退出。
+///
+/// 关窗只是隐藏，所以退出只有托盘菜单这一条路——必须在这里停服务，
+/// 否则 200MB 的 node 进程会一直留在后台。
+fn quit(app: &tauri::AppHandle) {
+    stop_server(app);
+    app.exit(0);
+}
+
+/// 建立托盘图标与菜单。
+///
+/// 关窗缩托盘之后，托盘是唯一能把窗口找回来、也是唯一能真正退出的入口，
+/// 所以菜单里这两项都必须有——只放一个图标会让用户既找不回窗口也退不掉。
+fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let show = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(
+        app,
+        &[&show, &PredefinedMenuItem::separator(app)?, &quit_item],
+    )?;
+
+    let mut builder = TrayIconBuilder::with_id("main")
+        .tooltip("DSH Desktop Ultra（运行中）")
+        .menu(&menu)
+        // 左键留给「显示窗口」这个高频动作，菜单走右键
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => reveal_window(app),
+            "quit" => quit(app),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                reveal_window(tray.app_handle());
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -321,13 +403,29 @@ fn main() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
-            std::thread::spawn(move || boot(handle));
+            setup_tray(&handle)?;
+
+            // 关窗改成隐藏。dsh 服务继续在后台跑，下次打开窗口是秒开，
+            // 不用重新等它启动；真正退出走托盘菜单。
+            if let Some(window) = app.get_webview_window("main") {
+                let hidden = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = hidden.hide();
+                    }
+                });
+            }
+
+            let boot_handle = handle.clone();
+            std::thread::spawn(move || boot(boot_handle));
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("构建 Tauri 应用失败")
         .run(|app, event| {
-            // 应用退出时必须收掉 dsh 子进程，否则会留下占着端口的孤儿 node
+            // 兜底：任何路径导致的退出都要收掉 dsh 子进程，
+            // 否则会留下占着端口的孤儿 node，下次启动撞车
             if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
                 stop_server(app);
             }
