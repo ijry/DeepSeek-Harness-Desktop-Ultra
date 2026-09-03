@@ -1,0 +1,37 @@
+{
+  "name": "dsh-desktop-ultra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DeepSeek Harness 的 Tauri 桌面外壳",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test scripts/*.test.mjs",
+    "rust:check": "cd src-tauri && cargo check",
+    "rust:test": "cd src-tauri && cargo test",
+    "rust:fmt:check": "cd src-tauri && cargo fmt --check",
+    "generate-keys": "node scripts/generate-keys.mjs",
+    "upstream:version": "node -e \"const m=require('fs').readFileSync('src-tauri/src/upstream.rs','utf8').match(/DSH_VERSION: &str = \\\"([^\\\"]+)\\\"/); console.log(m?m[1]:'未找到')\""
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-shell": "^2.0.0",
+    "@tauri-apps/plugin-updater": "^2.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.1"
+  }
+}

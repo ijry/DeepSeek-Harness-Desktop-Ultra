@@ -1,0 +1,36 @@
+# 依赖与构建产物
+node_modules
+dist
+dist-ssr
+src-tauri/target
+release-assets
+
+# tauri-build 在每次构建时重新生成
+src-tauri/gen/schemas
+
+# 日志
+*.log
+logs
+
+# 编辑器
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.local
+
+# 更新签名私钥。私钥本身放在仓库外
+# (D:\Repos\xyito\config\dsh-desktop\),这里是兜底,防止误拷进来。
+# 泄露私钥意味着别人可以给已安装的客户端推送任意"更新"。
+*.key
+*.pem
+
+# 注意:src-tauri/Cargo.lock 要提交。
+# 这是一个分发二进制的应用,不是库——锁定依赖才能让不同时间、
+# 不同机器上构建出的安装包内容一致。这与 upstream.rs 里锁定
+# DSH_VERSION 是同一个道理。

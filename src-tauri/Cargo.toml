@@ -1,0 +1,25 @@
+[package]
+name = "dsh-desktop-ultra"
+version = "0.1.0"
+description = "DSH Desktop Ultra - DeepSeek Harness 桌面外壳"
+authors = ["xyito"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+dirs = "5"
+
+[target.'cfg(not(windows))'.dependencies]
+libc = "0.2"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
