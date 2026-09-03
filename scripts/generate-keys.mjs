@@ -35,14 +35,38 @@ if (fs.existsSync(PRIVATE_KEY) && process.argv[2] !== "--force") {
 
 fs.mkdirSync(KEY_DIR, { recursive: true });
 
-const npx = process.platform === "win32" ? "npx.cmd" : "npx";
 
 console.log("正在生成密钥对…");
+
+// 直接用 node 跑 tauri CLI 的 JS 入口,不走 npx。
+// Windows 上 npx 是 npx.cmd,而 Node 18.20.2+/20.12.2+ 修 CVE-2024-27980
+// 之后不加 shell:true 就 spawn 不了 .cmd(报 EINVAL)。加 shell:true 又要
+// 自己处理路径引号转义。绕开 .cmd 是最稳的做法。
+const tauriCli = path.join(
+  REPO,
+  "node_modules",
+  "@tauri-apps",
+  "cli",
+  "tauri.js"
+);
+if (!fs.existsSync(tauriCli)) {
+  fail(`未找到 Tauri CLI: ${tauriCli}\n先跑 npm install。`);
+}
+
 try {
   // -w 写文件，-f 允许覆盖（已由上面的 --force 检查把关）
   execFileSync(
-    npx,
-    ["tauri", "signer", "generate", "-w", PRIVATE_KEY, "-f", "--password", ""],
+    process.execPath,
+    [
+      tauriCli,
+      "signer",
+      "generate",
+      "-w",
+      PRIVATE_KEY,
+      "-f",
+      "--password",
+      "",
+    ],
     { cwd: REPO, stdio: "inherit" }
   );
 } catch (error) {
