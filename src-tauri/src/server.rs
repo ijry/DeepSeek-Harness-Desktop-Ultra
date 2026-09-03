@@ -79,6 +79,12 @@ impl DshServer {
 ///
 /// 拿到端口号后立即释放监听，所以理论上存在被别人抢占的竞态窗口；
 /// 真被抢了 dsh 会在启动时报错，比我们硬编码一个端口然后神秘失败要好。
+///
+/// 上游其实支持 `--port 0`（让 OS 挑端口），能彻底消掉这个竞态窗口，
+/// 但代价是必须从 dsh 的 stdout（`dsh web: http://127.0.0.1:<port>`）
+/// 解析出实际端口。这里选择不那样做：竞态窗口只有几毫秒且失败是响亮的
+/// （dsh 直接报错退出，走 ExitedEarly 分支显示日志），而依赖上游日志的
+/// 文本格式是一种静默耦合——上游改一次措辞，我们就静默卡在等待就绪。
 fn free_port() -> Result<u16, ServerError> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).map_err(ServerError::NoPort)?;
     let port = listener.local_addr().map_err(ServerError::NoPort)?.port();
@@ -136,6 +142,7 @@ pub fn start(
     let mut command = Command::new(node);
     command
         .arg(entry_script)
+        // `web` 是上游认可的 `--profile web` 别名（见 dsh --help）
         .arg("web")
         .arg("--port")
         .arg(port.to_string())
@@ -143,11 +150,13 @@ pub fn start(
         // dsh 默认已经是 127.0.0.1，这里显式写死以防上游默认值变化。
         .arg("--host")
         .arg("127.0.0.1")
+        // 我们自己开窗口显示它，不要它再去拉系统浏览器。
+        // 这是上游提供的正式开关——早先靠 BROWSER=none 那类约定是不可靠的，
+        // dsh 并不读它，结果会是应用窗口和系统浏览器同时弹出来。
+        .arg("--no-open")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        // 我们自己开窗口显示，不要它再去拉系统浏览器
-        .env("BROWSER", "none")
         .env("NO_COLOR", "1");
 
     if let Some(dir) = workspace {
