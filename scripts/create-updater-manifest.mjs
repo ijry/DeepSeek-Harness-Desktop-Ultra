@@ -4,53 +4,59 @@
  *
  * 更新的是「外壳」自身，与上游 dsh 版本无关：
  * dsh 由 src-tauri/src/upstream.rs 里的 DSH_VERSION 锁定，随外壳一起发布。
+ *
+ * 关键设计：**不靠后缀白名单猜哪个产物是更新包，而是反查 .sig。**
+ * Tauri 就是用 `<产物>.sig` 来标记更新包的。v0.1.0 那次发布踩过这个坑：
+ * 白名单里写的是 .nsis.zip / .AppImage.tar.gz，而 Tauri v2 实际直接签
+ * 安装包本体（.exe / .AppImage / .deb），结果 Windows 和 Linux 双双漏掉，
+ * 清单里只剩 macOS —— 而且脚本还「告警跳过」静默通过了。
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-/** 各平台的更新包后缀。Tauri 更新器只认这些格式。 */
-const UPDATE_ARTIFACT_SUFFIXES = [
-  ".nsis.zip", // Windows
-  ".app.tar.gz", // macOS
-  ".AppImage.tar.gz", // Linux
-];
+/** 产物目录名 → 更新器平台标识。CI 的 upload-artifact 用的就是这些名字。 */
+const KNOWN_PLATFORMS = new Set([
+  "windows-x86_64",
+  "windows-aarch64",
+  "darwin-x86_64",
+  "darwin-aarch64",
+  "linux-x86_64",
+  "linux-aarch64",
+]);
 
-/**
- * 从产物目录名推断更新器平台标识。
- * CI 的 upload-artifact 用的就是 `windows-x86_64` 这类名字。
- */
 export function normalizePlatform(dirName) {
-  const valid = new Set([
-    "windows-x86_64",
-    "windows-aarch64",
-    "darwin-x86_64",
-    "darwin-aarch64",
-    "linux-x86_64",
-    "linux-aarch64",
-  ]);
-  return valid.has(dirName) ? dirName : null;
-}
-
-/** 在文件列表里找出更新包（不是安装包）。 */
-export function findUpdateArtifact(files) {
-  return (
-    files.find((file) =>
-      UPDATE_ARTIFACT_SUFFIXES.some((suffix) => file.endsWith(suffix))
-    ) ?? null
-  );
+  return KNOWN_PLATFORMS.has(dirName) ? dirName : null;
 }
 
 /**
- * 找出某个更新包对应的 .sig 签名文件。
- * Tauri 生成的签名名为 `<artifact>.sig`。
+ * 一个平台可能有多个签名产物（Linux 同时签 .AppImage 和 .deb）。
+ * Tauri 的 Linux 更新走 AppImage，所以优先它；其余按字典序取第一个，
+ * 保证同样的输入总是产出同样的清单。
  */
-export function findSignature(files, artifact) {
-  const exact = `${artifact}.sig`;
-  if (files.includes(exact)) return exact;
-  // 少数打包器会把 .sig 直接替换掉原后缀
-  return files.find((file) => file.endsWith(".sig")) ?? null;
+const PREFERRED_ORDER = [".app.tar.gz", ".AppImage", ".exe", ".msi", ".deb"];
+
+export function pickArtifact(candidates) {
+  if (candidates.length === 0) return null;
+  const sorted = [...candidates].sort();
+  for (const suffix of PREFERRED_ORDER) {
+    const hit = sorted.find((name) => name.endsWith(suffix));
+    if (hit) return hit;
+  }
+  return sorted[0];
+}
+
+/**
+ * 从文件列表里找出所有「有 .sig 陪伴」的产物。
+ * 这就是 Tauri 认定的更新包集合。
+ */
+export function findSignedArtifacts(files) {
+  const present = new Set(files);
+  return files
+    .filter((name) => name.endsWith(".sig"))
+    .map((sig) => sig.slice(0, -".sig".length))
+    .filter((artifact) => present.has(artifact));
 }
 
 export function buildManifest({ tag, pubDate, notes, platforms }) {
@@ -77,9 +83,7 @@ function main() {
   });
 
   for (const required of ["assets-dir", "tag", "repo", "output"]) {
-    if (!values[required]) {
-      throw new Error(`缺少必需参数 --${required}`);
-    }
+    if (!values[required]) throw new Error(`缺少必需参数 --${required}`);
   }
 
   const assetsDir = values["assets-dir"];
@@ -89,6 +93,7 @@ function main() {
     : `${tag} 发布`;
 
   const platforms = {};
+  const missing = [];
 
   for (const entry of fs.readdirSync(assetsDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -101,24 +106,37 @@ function main() {
 
     const dir = path.join(assetsDir, entry.name);
     const files = fs.readdirSync(dir);
+    const artifact = pickArtifact(findSignedArtifacts(files));
 
-    const artifact = findUpdateArtifact(files);
     if (!artifact) {
-      console.warn(`${platform}: 未找到更新包，跳过`);
+      // 构建成功却没有签名产物，说明签名或归集环节坏了。
+      // 这里必须失败：静默跳过会让该平台的用户永远收不到更新，
+      // 而且没有任何迹象——v0.1.0 就是这么发出去的。
+      missing.push(`${platform}（目录内容: ${files.join(", ") || "空"}）`);
       continue;
     }
 
-    const signatureFile = findSignature(files, artifact);
-    if (!signatureFile) {
-      // 没签名的条目会让客户端直接拒绝更新，宁可让 CI 失败
-      throw new Error(`${platform}: 找到更新包 ${artifact} 但没有 .sig 签名`);
+    // URL 用的必须是 GitHub 上的资源名。CI 的归集步骤已经把空格去掉，
+    // 使本地文件名与资源名一致——否则 GitHub 会把空格换成点，URL 直接 404。
+    if (/\s/.test(artifact)) {
+      throw new Error(
+        `产物名含空格，上传后 GitHub 会改名导致 URL 404: ${artifact}`
+      );
     }
 
     platforms[platform] = {
-      signature: fs.readFileSync(path.join(dir, signatureFile), "utf8").trim(),
+      signature: fs
+        .readFileSync(path.join(dir, `${artifact}.sig`), "utf8")
+        .trim(),
       url: `https://github.com/${values.repo}/releases/download/${tag}/${artifact}`,
     };
     console.log(`✓ ${platform}: ${artifact}`);
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      `以下平台没有找到带 .sig 的更新包，拒绝发布残缺清单:\n  ${missing.join("\n  ")}`
+    );
   }
 
   const manifest = buildManifest({
@@ -134,7 +152,9 @@ function main() {
   );
 }
 
-// 作为脚本执行时才跑 main，被测试 import 时不跑
-if (process.argv[1] && import.meta.url.endsWith(path.basename(process.argv[1]))) {
+if (
+  process.argv[1] &&
+  import.meta.url.endsWith(path.basename(process.argv[1]))
+) {
   main();
 }

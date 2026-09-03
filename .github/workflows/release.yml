@@ -180,12 +180,21 @@ jobs:
           dest="release-assets/${{ matrix.platform }}"
           mkdir -p "$dest"
 
-          # 只收安装包和更新包，不要中间产物
+          # 只收安装包和更新包。排除 control.tar.gz / data.tar.gz——那是
+          # dpkg 打 .deb 时的内部文件,不是发布产物,v0.1.0 误发过。
           find src-tauri/target/release/bundle -type f \
             \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \
                -o -name '*.deb' -o -name '*.AppImage' \
                -o -name '*.zip' -o -name '*.tar.gz' -o -name '*.sig' \) \
-            -exec cp {} "$dest/" \;
+            ! -name 'control.tar.gz' ! -name 'data.tar.gz' \
+            -print0 |
+          while IFS= read -r -d '' src; do
+            # 文件名里的空格必须在上传前去掉:GitHub 会把资源名里的空格
+            # 换成点,而更新清单里的 URL 是按本地文件名拼的——不统一就 404。
+            # v0.1.0 的 macOS 条目就是这么坏掉的。
+            base="$(basename "$src")"
+            cp "$src" "$dest/${base// /.}"
+          done
 
           if [[ -z "$(ls -A "$dest")" ]]; then
             echo "没有找到任何构建产物。" >&2
@@ -193,6 +202,10 @@ jobs:
           fi
           if ! ls "$dest"/*.sig >/dev/null 2>&1; then
             echo "没有找到 .sig 签名文件；更新器会拒绝这些产物。" >&2
+            exit 1
+          fi
+          if ls "$dest" | grep -q ' '; then
+            echo "仍有文件名含空格，上传后会被 GitHub 改名。" >&2
             exit 1
           fi
           ls -la "$dest"

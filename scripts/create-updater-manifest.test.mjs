@@ -3,9 +3,9 @@ import { test } from "node:test";
 
 import {
   buildManifest,
-  findSignature,
-  findUpdateArtifact,
+  findSignedArtifacts,
   normalizePlatform,
+  pickArtifact,
 } from "./create-updater-manifest.mjs";
 
 test("识别受支持的平台目录名", () => {
@@ -20,31 +20,59 @@ test("拒绝无法识别的平台目录名", () => {
   assert.equal(normalizePlatform(""), null);
 });
 
-test("在安装包中挑出更新包", () => {
+// 以下三组用的是 v0.1.0 真实发布出来的文件名。那次发布因为按后缀白名单
+// (.nsis.zip / .AppImage.tar.gz) 匹配,Windows 和 Linux 全被漏掉。
+test("Windows: 更新包是带 .sig 的 setup.exe,不是 .nsis.zip", () => {
   const files = [
-    "DSH-Desktop-Ultra_0.1.0_x64-setup.exe",
-    "DSH-Desktop-Ultra_0.1.0_x64-setup.nsis.zip",
-    "DSH-Desktop-Ultra_0.1.0_x64-setup.nsis.zip.sig",
+    "DSH.Desktop.Ultra_0.1.0_x64-setup.exe",
+    "DSH.Desktop.Ultra_0.1.0_x64-setup.exe.sig",
+  ];
+  assert.deepEqual(findSignedArtifacts(files), [
+    "DSH.Desktop.Ultra_0.1.0_x64-setup.exe",
+  ]);
+});
+
+test("Linux: 同时签了 AppImage 和 deb 时优先 AppImage", () => {
+  const files = [
+    "DSH.Desktop.Ultra_0.1.0_amd64.AppImage",
+    "DSH.Desktop.Ultra_0.1.0_amd64.AppImage.sig",
+    "DSH.Desktop.Ultra_0.1.0_amd64.deb",
+    "DSH.Desktop.Ultra_0.1.0_amd64.deb.sig",
   ];
   assert.equal(
-    findUpdateArtifact(files),
-    "DSH-Desktop-Ultra_0.1.0_x64-setup.nsis.zip"
+    pickArtifact(findSignedArtifacts(files)),
+    "DSH.Desktop.Ultra_0.1.0_amd64.AppImage"
   );
 });
 
-test("只有安装包、没有更新包时返回 null", () => {
-  // .exe / .dmg / .deb 是安装包，更新器不接受
-  const files = ["app_0.1.0.exe", "app_0.1.0.dmg", "app_0.1.0.deb"];
-  assert.equal(findUpdateArtifact(files), null);
+test("macOS: 取 .app.tar.gz,忽略没签名的 dmg", () => {
+  const files = [
+    "DSH.Desktop.Ultra.app.tar.gz",
+    "DSH.Desktop.Ultra.app.tar.gz.sig",
+    "DSH.Desktop.Ultra_0.1.0_aarch64.dmg",
+  ];
+  assert.equal(
+    pickArtifact(findSignedArtifacts(files)),
+    "DSH.Desktop.Ultra.app.tar.gz"
+  );
 });
 
-test("按 <artifact>.sig 精确匹配签名", () => {
-  const files = ["a.nsis.zip", "a.nsis.zip.sig", "b.nsis.zip.sig"];
-  assert.equal(findSignature(files, "a.nsis.zip"), "a.nsis.zip.sig");
+test("没有签名的文件一律不算更新包", () => {
+  // dmg 和 deb 内部文件都没有 .sig
+  const files = ["app.dmg", "control.tar.gz", "data.tar.gz", "latest.json"];
+  assert.deepEqual(findSignedArtifacts(files), []);
+  assert.equal(pickArtifact([]), null);
 });
 
-test("没有任何签名时返回 null", () => {
-  assert.equal(findSignature(["a.nsis.zip"], "a.nsis.zip"), null);
+test("孤立的 .sig(缺对应产物)不算更新包", () => {
+  assert.deepEqual(findSignedArtifacts(["ghost.exe.sig"]), []);
+});
+
+test("多个候选时结果稳定,不受输入顺序影响", () => {
+  const a = pickArtifact(["b.deb", "a.AppImage"]);
+  const b = pickArtifact(["a.AppImage", "b.deb"]);
+  assert.equal(a, b);
+  assert.equal(a, "a.AppImage");
 });
 
 test("生成的清单去掉 tag 的 v 前缀", () => {
