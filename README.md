@@ -1,0 +1,2 @@
+# DeepSeek-Harness-Desktop-Ultra
+DeepSeek Harness桌面客户端封装版本基于tauri而不是electron体积更小
