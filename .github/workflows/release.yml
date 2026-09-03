@@ -159,6 +159,12 @@ jobs:
           npm run typecheck
           npm test
 
+      # 必须在 Rust 检查之前。tauri::generate_context! 是编译期宏,会校验
+      # tauri.conf.json 里 frontendDist 指向的 ../dist 真实存在——没有它
+      # cargo check 会直接 proc macro panic。顺序错了三个平台会一起挂。
+      - name: 构建前端产物
+        run: npm run build
+
       - name: Rust 检查
         run: |
           npm run rust:fmt:check
