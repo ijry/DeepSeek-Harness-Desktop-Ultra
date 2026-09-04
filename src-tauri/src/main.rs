@@ -5,6 +5,7 @@ mod dsh;
 mod node;
 mod plugins;
 mod server;
+mod update;
 mod upstream;
 
 use std::path::Path;
@@ -77,6 +78,13 @@ pub struct AppState {
     prompt: Arc<(Mutex<Prompt>, Condvar)>,
     /// 最后一次 dsh plugin 的输出。上游成功时不打印任何东西，失败原因只在这里。
     plugin_log: Arc<Mutex<Option<String>>>,
+    /// 上一次检查发现的、待安装的外壳更新。
+    pending: update::Pending,
+    /// 托盘里那一项「设置」。发现新版本时要改它的文字——没有窗口开着时，
+    /// 托盘是唯一能被看见的界面。
+    settings_item: Arc<Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>>,
+    /// 已经为哪个版本弹过窗。后台每 30 分钟查一次，同一个版本反复弹比不弹更糟。
+    popped_version: Arc<Mutex<Option<String>>>,
 }
 
 /// 启动页那张插件卡片的状态。
@@ -126,6 +134,9 @@ impl AppState {
             node: Arc::new(Mutex::new(None)),
             prompt: Arc::new((Mutex::new(Prompt::default()), Condvar::new())),
             plugin_log: Arc::new(Mutex::new(None)),
+            pending: Arc::new(Mutex::new(None)),
+            settings_item: Arc::new(Mutex::new(None)),
+            popped_version: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -171,6 +182,73 @@ fn confirm_plugins(state: tauri::State<'_, AppState>, install: bool) {
     notify.notify_all();
 }
 
+/// 设置页的插件区。以 profile 落盘状态为准。
+#[tauri::command]
+fn plugin_status(state: tauri::State<'_, AppState>) -> plugins::Status {
+    let node = lock(&state.node).clone();
+    plugins::status(node.as_ref())
+}
+
+/// 设置页里手动安装内置插件。
+#[tauri::command]
+async fn plugin_install(app: tauri::AppHandle) -> Result<plugins::Status, String> {
+    change_plugin(app, true).await
+}
+
+/// 设置页里手动移除内置插件。
+#[tauri::command]
+async fn plugin_remove(app: tauri::AppHandle) -> Result<plugins::Status, String> {
+    change_plugin(app, false).await
+}
+
+/// 装或卸。底下跑的是 pnpm，秒级但是阻塞的，所以丢到 blocking 线程池，
+/// 不占着 async runtime 的 worker。
+async fn change_plugin(app: tauri::AppHandle, install: bool) -> Result<plugins::Status, String> {
+    let node = {
+        let state = app.state::<AppState>();
+        let selected = lock(&state.node);
+        selected.clone()
+    }
+    .ok_or_else(|| "还没有选定 Node，等启动完成再试".to_string())?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let entry = dsh::runtime_dir()
+            .and_then(|dir| dsh::entry_script(&dir))
+            .map_err(|error| error.to_string())?;
+
+        let (result, log) = if install {
+            plugins::install(&app, &node, &entry)
+        } else {
+            plugins::uninstall(&node, &entry)
+        };
+        {
+            let state = app.state::<AppState>();
+            *lock(&state.plugin_log) = Some(log);
+        }
+
+        // 决定档跟着走：用户在设置里卸掉之后，下次启动不该又来问一遍
+        let mut choice = plugins::load_choice();
+        match (&result, install) {
+            (Ok(()), true) => {
+                choice.installed = vec![plugins::TASKBOARD.id.to_string()];
+                choice.declined = false;
+                choice.failures = 0;
+            }
+            (Ok(()), false) => {
+                choice.installed.clear();
+                choice.declined = true;
+            }
+            (Err(_), _) => {}
+        }
+        plugins::save_choice(&choice);
+
+        result.map_err(|error| error.to_string())?;
+        Ok(plugins::status(Some(&node)))
+    })
+    .await
+    .map_err(|error| format!("插件操作的线程异常结束: {error}"))?
+}
+
 /// 供错误页「复制诊断信息」使用。
 ///
 /// 刻意包含实际选中的 node 路径与版本、以及 dsh 最近的输出:
@@ -178,21 +256,8 @@ fn confirm_plugins(state: tauri::State<'_, AppState>, install: bool) {
 /// 让用户手填这两项既麻烦又不可靠。
 #[tauri::command]
 fn diagnostics(state: tauri::State<'_, AppState>) -> String {
+    let info = collect_info(&state);
     let boot = lock(&state.boot).clone();
-
-    let node_info = match lock(&state.node).as_ref() {
-        Some(runtime) => format!("{} ({})", runtime.version, runtime.path.display()),
-        None => "<尚未选定>".to_string(),
-    };
-
-    let runtime_dir = dsh::runtime_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|e| format!("<不可用: {e}>"));
-
-    let installed = dsh::runtime_dir()
-        .ok()
-        .and_then(|dir| dsh::installed_version(&dir))
-        .unwrap_or_else(|| "<未安装>".to_string());
 
     let dsh_output = match lock(&state.server).as_ref() {
         Some(server) => {
@@ -212,8 +277,8 @@ fn diagnostics(state: tauri::State<'_, AppState>) -> String {
 
     format!(
         "DSH Desktop Ultra {shell}\n\
-         平台: {os} {arch}\n\
-         Node: {node_info}\n\
+         平台: {platform}\n\
+         Node: {node}\n\
          dsh 锁定版本: {pinned}\n\
          dsh 已安装版本: {installed}\n\
          运行时目录: {runtime_dir}\n\
@@ -221,12 +286,52 @@ fn diagnostics(state: tauri::State<'_, AppState>) -> String {
          启动状态: {boot:?}\n\
          \n--- dsh 输出 ---\n{dsh_output}\n\
          \n--- dsh plugin 输出 ---\n{plugin_output}\n",
-        shell = env!("CARGO_PKG_VERSION"),
-        os = std::env::consts::OS,
-        arch = std::env::consts::ARCH,
-        pinned = upstream::DSH_VERSION,
+        shell = info.shell,
+        platform = info.platform,
+        node = info.node,
+        pinned = info.dsh_pinned,
+        installed = info.dsh_installed,
+        runtime_dir = info.runtime_dir,
         plugins = plugins::diagnostics_line(),
     )
+}
+
+/// 设置页展示的基本信息，同时是诊断文本的数据来源——一份数据两种用法。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    shell: String,
+    platform: String,
+    /// 实际选中的 Node。这个架构下「用户以为在用哪个」和「外壳真正拉起的是哪个」经常不一致。
+    node: String,
+    dsh_pinned: String,
+    dsh_installed: String,
+    runtime_dir: String,
+}
+
+fn collect_info(state: &AppState) -> AppInfo {
+    AppInfo {
+        shell: env!("CARGO_PKG_VERSION").to_string(),
+        platform: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
+        node: match lock(&state.node).as_ref() {
+            Some(runtime) => format!("{} ({})", runtime.version, runtime.path.display()),
+            None => "<尚未选定>".to_string(),
+        },
+        dsh_pinned: upstream::DSH_VERSION.to_string(),
+        dsh_installed: dsh::runtime_dir()
+            .ok()
+            .and_then(|dir| dsh::installed_version(&dir))
+            .unwrap_or_else(|| "<未安装>".to_string()),
+        runtime_dir: dsh::runtime_dir()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|error| format!("<不可用: {error}>")),
+    }
+}
+
+/// 设置页首帧调用。
+#[tauri::command]
+fn app_info(state: tauri::State<'_, AppState>) -> AppInfo {
+    collect_info(&state)
 }
 
 /// 更新状态并通知前端。
@@ -542,6 +647,41 @@ fn reveal_window(app: &tauri::AppHandle) {
     }
 }
 
+/// 打开设置窗口。托盘是它唯一的入口。
+///
+/// 关掉设置窗口是**销毁**（main 窗口才是隐藏），所以这里要么复用还活着的那个，
+/// 要么重新建一个。建窗刻意丢到另一个线程：上游明确写了
+/// `WebviewWindowBuilder` 在 Windows 的同步命令与事件回调里会死锁，
+/// 而托盘菜单回调正是事件回调。
+fn open_settings(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        return;
+    }
+
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let built = tauri::WebviewWindowBuilder::new(
+            &app,
+            "settings",
+            tauri::WebviewUrl::App("settings.html".into()),
+        )
+        .title("设置")
+        .inner_size(560.0, 640.0)
+        .center()
+        .resizable(false)
+        .maximizable(false)
+        // 托盘拉起来的对话框不该在任务栏里再占一格
+        .skip_taskbar(true)
+        .build();
+        if let Err(error) = built {
+            eprintln!("[settings] 打开设置窗口失败：{error}");
+        }
+    });
+}
+
 /// 真正退出：先收掉 dsh 子进程，再让 Tauri 退出。
 ///
 /// 关窗只是隐藏，所以退出只有托盘菜单这一条路——必须在这里停服务，
@@ -560,10 +700,16 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
     let show = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
-        &[&show, &PredefinedMenuItem::separator(app)?, &quit_item],
+        &[
+            &show,
+            &settings,
+            &PredefinedMenuItem::separator(app)?,
+            &quit_item,
+        ],
     )?;
 
     let mut builder = TrayIconBuilder::with_id("main")
@@ -573,6 +719,7 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => reveal_window(app),
+            "settings" => open_settings(app),
             "quit" => quit(app),
             _ => {}
         })
@@ -591,6 +738,9 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         builder = builder.icon(icon.clone());
     }
     builder.build(app)?;
+
+    // 存下菜单项：发现新版本时要改它的文字
+    *lock(&app.state::<AppState>().settings_item) = Some(settings);
     Ok(())
 }
 
@@ -602,11 +752,16 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             boot_state,
             diagnostics,
+            app_info,
             retry_boot,
-            check_for_updates,
             plugin_prompt,
             set_plugin_choice,
             confirm_plugins,
+            plugin_status,
+            plugin_install,
+            plugin_remove,
+            update::update_check,
+            update::update_install,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -626,6 +781,9 @@ fn main() {
 
             let boot_handle = handle.clone();
             std::thread::spawn(move || boot(boot_handle));
+
+            // 后台每 30 分钟查一次外壳自己的更新
+            update::spawn_watcher(handle.clone());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -637,31 +795,4 @@ fn main() {
                 stop_server(app);
             }
         });
-}
-
-/// 检查 shell 自身的更新（与上游 dsh 版本无关）。
-#[tauri::command]
-async fn check_for_updates(app: tauri::AppHandle) -> Result<String, String> {
-    #[cfg(not(debug_assertions))]
-    {
-        use tauri_plugin_updater::UpdaterExt;
-
-        let updater = app
-            .updater()
-            .map_err(|error| format!("初始化更新器失败: {error}"))?;
-
-        match updater
-            .check()
-            .await
-            .map_err(|error| format!("检查更新失败: {error}"))?
-        {
-            Some(update) => Ok(format!("发现新版本 {}", update.version)),
-            None => Ok("已是最新版本".to_string()),
-        }
-    }
-    #[cfg(debug_assertions)]
-    {
-        let _ = app;
-        Ok("开发模式不检查更新".to_string())
-    }
 }

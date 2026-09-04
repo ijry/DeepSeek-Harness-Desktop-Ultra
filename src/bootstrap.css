@@ -1,44 +1,6 @@
-/* 只服务于启动/错误页——就绪后 webview 会整体跳转到 dsh 自己的 UI，
-   这里的样式不会影响到它。因此不做主题切换，只跟随系统亮暗。 */
+/* 只服务于启动/错误页。颜色 token、重置、按钮在 theme.css 里，与设置窗口共用。 */
 
-:root {
-  --bg: #05070c;
-  --surface: #0f131c;
-  --border: #232c3d;
-  --text: #f8fafc;
-  --muted: #94a3b8;
-  --accent: #38bdf8;
-  --accent-2: #6366f1;
-  --danger: #fca5a5;
-
-  color-scheme: dark light;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #ffffff;
-    --surface: #f1f5f9;
-    --border: #dbe2ea;
-    --text: #0f172a;
-    --muted: #52637a;
-    --accent: #0284c7;
-    --accent-2: #4f46e5;
-    --danger: #b42318;
-  }
-}
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
-    sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  -webkit-font-smoothing: antialiased;
-}
+@import "./theme.css";
 
 .shell {
   display: grid;
@@ -67,12 +29,6 @@ body {
   color: #fff;
   font-weight: 700;
   letter-spacing: -0.5px;
-}
-
-h1 {
-  font-size: clamp(20px, 3vw, 26px);
-  font-weight: 600;
-  letter-spacing: -0.4px;
 }
 
 .hint {
@@ -198,43 +154,4 @@ pre {
   font-size: 12px;
   word-break: break-all;
   user-select: all;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-button,
-.button {
-  appearance: none;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  padding: 10px 20px;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  text-decoration: none;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #fff;
-  transition: opacity 0.15s ease;
-}
-
-button:hover,
-.button:hover {
-  opacity: 0.9;
-}
-
-.button--secondary {
-  background: var(--surface);
-  border-color: var(--border);
-  color: var(--text);
-}
-
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }

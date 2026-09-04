@@ -81,14 +81,17 @@ pub enum PluginError {
     #[error("执行 dsh plugin 失败: {0}")]
     Spawn(#[source] std::io::Error),
 
-    #[error("dsh plugin add 失败（退出码 {code}）:\n{log}")]
+    #[error("dsh plugin 失败（退出码 {code}）:\n{log}")]
     AddFailed { code: String, log: String },
 
-    #[error("dsh plugin add 超过 {}s 仍未完成:\n{log}", ADD_TIMEOUT.as_secs())]
+    #[error("dsh plugin 超过 {}s 仍未完成:\n{log}", ADD_TIMEOUT.as_secs())]
     AddTimeout { log: String },
 
     #[error("add 报告成功，但 {path} 的 bundles 里没有 {id}——插件并没有被激活")]
     NotActivated { path: PathBuf, id: &'static str },
+
+    #[error("remove 报告成功，但 {path} 的 bundles 里还有 {id}")]
+    StillActivated { path: PathBuf, id: &'static str },
 }
 
 /// 首启询问的结果。
@@ -263,16 +266,26 @@ fn add_args(entry: &Path, tarball: &Path) -> Vec<String> {
     ]
 }
 
-/// 跑一次 `dsh plugin add`。
-fn add(
-    node: &NodeRuntime,
-    entry: &Path,
-    tarball: &Path,
-    logs: &LogRing,
-) -> Result<(), PluginError> {
+/// `node <entry> plugin --profile web remove <id>` 的参数表。
+///
+/// `remove` 同样是转发给 pnpm 的动词。上游只在包**曾经是 dependency** 时才把它从
+/// bundles 里摘掉——我们装的就是 dependency，所以官方命令能卸干净。
+fn remove_args(entry: &Path) -> Vec<String> {
+    vec![
+        entry.to_string_lossy().into_owned(),
+        "plugin".into(),
+        "--profile".into(),
+        PROFILE.into(),
+        "remove".into(),
+        TASKBOARD.id.into(),
+    ]
+}
+
+/// 跑一次 `dsh plugin <args>`。
+fn run(node: &NodeRuntime, args: Vec<String>, logs: &LogRing) -> Result<(), PluginError> {
     let mut command = Command::new(&node.path);
     command
-        .args(add_args(entry, tarball))
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -374,6 +387,23 @@ fn confirm_activated() -> Result<(), PluginError> {
     }
 }
 
+/// 同理，确认真的卸掉了。
+fn confirm_removed() -> Result<(), PluginError> {
+    let path = profile_manifest()?;
+    let raw = std::fs::read_to_string(&path).map_err(|source| PluginError::Manifest {
+        path: path.clone(),
+        source,
+    })?;
+    if activated(&raw, TASKBOARD.id) {
+        Err(PluginError::StillActivated {
+            path,
+            id: TASKBOARD.id,
+        })
+    } else {
+        Ok(())
+    }
+}
+
 /// 完整的启用流程：落地 tarball → 走官方 CLI → 校验真的激活了。
 ///
 /// 日志无论成败都要带出去：上游成功时一个字都不打印，失败的原因只在这里。
@@ -384,10 +414,50 @@ pub fn install(
 ) -> (Result<(), PluginError>, String) {
     let logs = LogRing::default();
     let result = stage(app).and_then(|tarball| {
-        add(node, entry, &tarball, &logs)?;
+        run(node, add_args(entry, &tarball), &logs)?;
         confirm_activated()
     });
     (result, logs.snapshot())
+}
+
+/// 移除流程。tarball 留在 app data 里不动——下次装回来不用再复制一遍。
+pub fn uninstall(node: &NodeRuntime, entry: &Path) -> (Result<(), PluginError>, String) {
+    let logs = LogRing::default();
+    let result = run(node, remove_args(entry), &logs).and_then(|()| confirm_removed());
+    (result, logs.snapshot())
+}
+
+/// 设置页看到的插件状态。
+///
+/// 以**落盘状态**为准，不看决定档：用户完全可能自己在命令行上装过或卸过。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Status {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub summary: &'static str,
+    /// profile 的 bundles 里有它。
+    pub installed: bool,
+    /// 没有 pnpm 就既装不了也卸不了——`dsh plugin` 是转发给 pnpm 的。
+    pub pnpm: bool,
+    pub remove_command: String,
+}
+
+pub fn status(node: Option<&NodeRuntime>) -> Status {
+    let installed = profile_manifest()
+        .ok()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|raw| activated(&raw, TASKBOARD.id))
+        .unwrap_or(false);
+
+    Status {
+        id: TASKBOARD.id,
+        title: TASKBOARD.title,
+        summary: TASKBOARD.summary,
+        installed,
+        pnpm: node.map(pnpm_available).unwrap_or(false),
+        remove_command: remove_command(),
+    }
 }
 
 /// 诊断信息里的一行摘要。

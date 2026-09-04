@@ -1,0 +1,95 @@
+/* 设置窗口。它是外壳唯一「进了 dsh 界面之后还能回到外壳自己」的地方，
+   所以排版按「一屏读完」来做，不做滚动区里的滚动区。 */
+
+@import "./theme.css";
+
+body {
+  /* 窗口固定尺寸，内容自己滚 */
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.page {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.card {
+  display: grid;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.card__title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.card__note {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.card__note--bad {
+  color: var(--danger);
+}
+
+/* 版本信息用定义列表：左边窄、右边可换行 */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 12px;
+  font-size: 13px;
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+  user-select: all;
+}
+
+/* 更新说明可能很长（发布说明就是整篇 release notes），给个上限自己滚 */
+.notes {
+  max-height: 160px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.bar__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.2s ease;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  user-select: all;
+}

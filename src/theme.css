@@ -1,0 +1,96 @@
+/* 外壳自己那两个页面（启动/错误页、设置窗口）共用的底子：颜色 token、
+   最小重置、按钮。dsh 就绪后主窗口整体跳到 dsh 自己的 UI，这些样式不会影响到它。
+
+   不做主题切换，只跟随系统亮暗——外壳没有设置项去选主题，跟随系统才不会和
+   dsh 自己的界面打架。 */
+
+:root {
+  --bg: #05070c;
+  --surface: #0f131c;
+  --border: #232c3d;
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+  --accent-2: #6366f1;
+  --danger: #fca5a5;
+
+  color-scheme: dark light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --surface: #f1f5f9;
+    --border: #dbe2ea;
+    --text: #0f172a;
+    --muted: #52637a;
+    --accent: #0284c7;
+    --accent-2: #4f46e5;
+    --danger: #b42318;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1 {
+  font-size: clamp(20px, 3vw, 26px);
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* 按钮走元素选择器：引了这份样式的页面里，任何 <button> 都自动是主按钮，
+   次要按钮才需要显式加类名。 */
+button,
+.button {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 10px 20px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  transition: opacity 0.15s ease;
+}
+
+button:hover,
+.button:hover {
+  opacity: 0.9;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.button--secondary {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
