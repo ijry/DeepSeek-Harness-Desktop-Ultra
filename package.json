@@ -1,6 +1,6 @@
 {
   "name": "dsh-desktop-ultra",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "DeepSeek Harness 的 Tauri 桌面外壳",
   "type": "module",
