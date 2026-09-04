@@ -111,10 +111,15 @@ fn pick_bin_path(bin: &serde_json::Value) -> Option<String> {
     }
 }
 
+/// 应用自己的私有数据目录。运行时、内置插件、首启选择都放在它下面。
+pub fn app_dir() -> Result<PathBuf, DshError> {
+    let base = dirs::data_dir().ok_or(DshError::NoDataDir)?;
+    Ok(base.join("dsh-desktop-ultra"))
+}
+
 /// 应用私有的 dsh 运行时目录。
 pub fn runtime_dir() -> Result<PathBuf, DshError> {
-    let base = dirs::data_dir().ok_or(DshError::NoDataDir)?;
-    Ok(base.join("dsh-desktop-ultra").join("runtime"))
+    Ok(app_dir()?.join("runtime"))
 }
 
 fn package_dir(runtime: &Path) -> PathBuf {
@@ -169,14 +174,14 @@ fn npm_command(node: &NodeRuntime) -> Result<PathBuf, DshError> {
 }
 
 #[cfg(windows)]
-fn hide_console(command: &mut Command) {
+pub(crate) fn hide_console(command: &mut Command) {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     command.creation_flags(CREATE_NO_WINDOW);
 }
 
 #[cfg(not(windows))]
-fn hide_console(_command: &mut Command) {}
+pub(crate) fn hide_console(_command: &mut Command) {}
 
 /// 安装超时。
 ///
@@ -328,16 +333,32 @@ where
     });
 }
 
-/// 把 node 所在目录插到子进程 PATH 最前面。
-fn prepend_path(command: &mut Command, dir: &Path) {
+/// 把某个目录插到 PATH 最前面，返回给子进程用的新 PATH。
+///
+/// `dir` 为空时返回 `None`——**不能**照着拼。空目录拼出来的是以分隔符开头的
+/// PATH（`;C:\...`），那个空项会让 cmd.exe 整条 PATH 都查不动：实测
+/// `dsh plugin` 内部转发给 pnpm 时直接报「'pnpm' 不是内部或外部命令」。
+/// 而空目录是常态而非异常：`node::discover` 在 PATH 上找到 node 时记的是裸名
+/// `node.exe`，它的 parent 就是空。
+fn merged_path(dir: &Path, existing: &str) -> Option<String> {
+    if dir.as_os_str().is_empty() {
+        return None;
+    }
     let separator = if cfg!(windows) { ";" } else { ":" };
-    let existing = std::env::var("PATH").unwrap_or_default();
-    let merged = if existing.is_empty() {
-        dir.to_string_lossy().to_string()
+    let dir = dir.to_string_lossy();
+    Some(if existing.is_empty() {
+        dir.to_string()
     } else {
-        format!("{}{}{}", dir.to_string_lossy(), separator, existing)
-    };
-    command.env("PATH", merged);
+        format!("{dir}{separator}{existing}")
+    })
+}
+
+/// 把 node 所在目录插到子进程 PATH 最前面。
+pub(crate) fn prepend_path(command: &mut Command, dir: &Path) {
+    let existing = std::env::var("PATH").unwrap_or_default();
+    if let Some(merged) = merged_path(dir, &existing) {
+        command.env("PATH", merged);
+    }
 }
 
 /// dsh 的入口脚本绝对路径，供 `node <script> web` 调用。
@@ -398,5 +419,26 @@ mod tests {
     fn ignores_non_string_values_in_object_bin() {
         let bin = json!({ "bad": 42, "good": "./bin/good.js" });
         assert_eq!(pick_bin_path(&bin), Some("./bin/good.js".to_string()));
+    }
+
+    /// 这条是回归测试：空目录拼出来的 `;C:\...` 会让 cmd.exe 查不到任何命令，
+    /// 而 `dsh plugin` 正是靠 cmd.exe 转发给 pnpm 的。
+    #[test]
+    fn empty_dir_leaves_path_untouched() {
+        assert_eq!(merged_path(Path::new(""), "C:\\Windows"), None);
+    }
+
+    #[test]
+    fn real_dir_goes_to_the_front() {
+        let separator = if cfg!(windows) { ";" } else { ":" };
+        assert_eq!(
+            merged_path(Path::new("/opt/node/bin"), "/usr/bin"),
+            Some(format!("/opt/node/bin{separator}/usr/bin"))
+        );
+        assert_eq!(
+            merged_path(Path::new("/opt/node/bin"), ""),
+            Some("/opt/node/bin".to_string()),
+            "原 PATH 为空时不该留下一个空项"
+        );
     }
 }

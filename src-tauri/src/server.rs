@@ -114,7 +114,11 @@ fn configure_process_group(command: &mut Command) {
 }
 
 /// 把子进程的一路输出泵进环形缓冲。
-fn pump<R>(reader: R, logs: LogRing, tag: &'static str)
+///
+/// 返回读取线程的句柄：进程退出与「输出已经被读完」是两件事，需要拿失败原因的
+/// 调用方必须 join 一下再取快照，否则子进程临死前打的那几行——恰恰是错误信息——
+/// 大概率还堵在管道里。
+pub(crate) fn pump<R>(reader: R, logs: LogRing, tag: &'static str) -> std::thread::JoinHandle<()>
 where
     R: std::io::Read + Send + 'static,
 {
@@ -125,7 +129,7 @@ where
                 Err(_) => break,
             }
         }
-    });
+    })
 }
 
 /// 启动 dsh web 服务并等待它就绪。

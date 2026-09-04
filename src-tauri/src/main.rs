@@ -3,10 +3,13 @@
 
 mod dsh;
 mod node;
+mod plugins;
 mod server;
 mod upstream;
 
-use std::sync::{Arc, Mutex};
+use std::path::Path;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{Emitter, Manager};
@@ -15,7 +18,11 @@ use server::DshServer;
 
 /// 启动阶段。前端据此渲染进度或错误页。
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "stage", rename_all = "camelCase")]
+#[serde(
+    tag = "stage",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum BootState {
     /// 正在查找可用的 Node
     LocatingNode,
@@ -30,6 +37,12 @@ pub enum BootState {
     },
     /// 正在启动 dsh web 服务
     StartingServer,
+    /// 等用户在启动页确认那个可选插件。
+    ///
+    /// 只在 dsh 已经装好时出现：没有安装阶段可以等，卡片不等一次点击就只会闪一下。
+    AwaitingChoice,
+    /// 正在按用户的选择启用内置插件
+    ConfiguringPlugin { name: String },
     /// 就绪，webview 即将跳转
     Ready { url: String },
     /// 失败。`kind` 决定前端展示哪种指引。
@@ -60,6 +73,49 @@ pub struct AppState {
     /// 实际选中的 Node。诊断信息里最有价值的一条:这个架构下
     /// 「用户以为在用哪个 node」和「外壳真正拉起的是哪个」经常不是一回事。
     node: Arc<Mutex<Option<node::NodeRuntime>>>,
+    /// 首启插件提示。前端切复选框时更新，启动线程装完 dsh 后读它。
+    prompt: Arc<(Mutex<Prompt>, Condvar)>,
+    /// 最后一次 dsh plugin 的输出。上游成功时不打印任何东西，失败原因只在这里。
+    plugin_log: Arc<Mutex<Option<String>>>,
+}
+
+/// 启动页那张插件卡片的状态。
+#[derive(Debug, Clone, Default)]
+struct Prompt {
+    /// 卡片是否正在展示。
+    asking: bool,
+    /// 复选框当前状态。
+    install: bool,
+    /// 用户已经点过「继续」。
+    confirmed: bool,
+    /// 需要点一次才继续。
+    requires_click: bool,
+}
+
+impl Prompt {
+    fn payload(&self) -> PluginPrompt {
+        PluginPrompt {
+            id: plugins::TASKBOARD.id,
+            title: plugins::TASKBOARD.title,
+            summary: plugins::TASKBOARD.summary,
+            remove_command: plugins::remove_command(),
+            requires_click: self.requires_click,
+            install: self.install,
+        }
+    }
+}
+
+/// 发给前端的卡片内容。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginPrompt {
+    id: &'static str,
+    title: &'static str,
+    summary: &'static str,
+    /// 这个 dsh 版本没有插件卸载界面，所以把移除命令直接写在卡片上。
+    remove_command: String,
+    requires_click: bool,
+    install: bool,
 }
 
 impl AppState {
@@ -68,6 +124,8 @@ impl AppState {
             boot: Arc::new(Mutex::new(BootState::LocatingNode)),
             server: Arc::new(Mutex::new(None)),
             node: Arc::new(Mutex::new(None)),
+            prompt: Arc::new((Mutex::new(Prompt::default()), Condvar::new())),
+            plugin_log: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -84,6 +142,33 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 #[tauri::command]
 fn boot_state(state: tauri::State<'_, AppState>) -> BootState {
     lock(&state.boot).clone()
+}
+
+/// 当前是否有插件提示要展示。前端首帧调用，避免错过已经发出的事件。
+#[tauri::command]
+fn plugin_prompt(state: tauri::State<'_, AppState>) -> Option<PluginPrompt> {
+    let (mutex, _) = &*state.prompt;
+    let prompt = lock(mutex).clone();
+    prompt.asking.then(|| prompt.payload())
+}
+
+/// 复选框被切换。存到 Rust 侧——dsh 装完时以它为准，用户不需要点任何按钮。
+#[tauri::command]
+fn set_plugin_choice(state: tauri::State<'_, AppState>, install: bool) {
+    let (mutex, _) = &*state.prompt;
+    lock(mutex).install = install;
+}
+
+/// 用户点了「继续」。
+#[tauri::command]
+fn confirm_plugins(state: tauri::State<'_, AppState>, install: bool) {
+    let (mutex, notify) = &*state.prompt;
+    {
+        let mut prompt = lock(mutex);
+        prompt.install = install;
+        prompt.confirmed = true;
+    }
+    notify.notify_all();
 }
 
 /// 供错误页「复制诊断信息」使用。
@@ -121,6 +206,10 @@ fn diagnostics(state: tauri::State<'_, AppState>) -> String {
         None => "<服务未运行>".to_string(),
     };
 
+    let plugin_output = lock(&state.plugin_log)
+        .clone()
+        .unwrap_or_else(|| "<本次启动未执行>".to_string());
+
     format!(
         "DSH Desktop Ultra {shell}\n\
          平台: {os} {arch}\n\
@@ -128,12 +217,15 @@ fn diagnostics(state: tauri::State<'_, AppState>) -> String {
          dsh 锁定版本: {pinned}\n\
          dsh 已安装版本: {installed}\n\
          运行时目录: {runtime_dir}\n\
+         {plugins}\n\
          启动状态: {boot:?}\n\
-         \n--- dsh 输出 ---\n{dsh_output}\n",
+         \n--- dsh 输出 ---\n{dsh_output}\n\
+         \n--- dsh plugin 输出 ---\n{plugin_output}\n",
         shell = env!("CARGO_PKG_VERSION"),
         os = std::env::consts::OS,
         arch = std::env::consts::ARCH,
         pinned = upstream::DSH_VERSION,
+        plugins = plugins::diagnostics_line(),
     )
 }
 
@@ -198,11 +290,23 @@ fn boot(app: tauri::AppHandle) {
         *lock(&state.node) = Some(runtime.clone());
     }
 
+    let installed = dsh::runtime_dir()
+        .ok()
+        .filter(|dir| !dsh::needs_install(dir));
+
+    // 插件提示要在装 dsh 之前就摆出来:首次安装是几十分钟,那段等待正好用来做
+    // 这个选择,装完直接按当前勾选继续。已经装好时没有这段等待可用,
+    // 才需要等用户点一次——否则卡片只会闪一下就过去了。
+    let asking = plugins::should_ask(&runtime);
+    if asking {
+        start_prompt(&app, installed.is_some());
+    }
+
     // 版本已匹配时 ensure_installed 是个空操作，但状态先切过去：
     // 首次安装要拉网络，几十秒的静默会让人以为卡死了。
-    let dsh_runtime = match dsh::runtime_dir() {
-        Ok(dir) if !dsh::needs_install(&dir) => Ok(dir),
-        _ => {
+    let dsh_runtime = match installed {
+        Some(dir) => Ok(dir),
+        None => {
             let app_clone = app.clone();
             dsh::ensure_installed(&runtime, &|progress| {
                 transition(
@@ -252,6 +356,10 @@ fn boot(app: tauri::AppHandle) {
             return;
         }
     };
+
+    if asking {
+        settle_prompt(&app, &runtime, &entry);
+    }
 
     transition(&app, BootState::StartingServer);
 
@@ -306,6 +414,102 @@ fn boot(app: tauri::AppHandle) {
             );
         }
     }
+}
+
+/// 摆出插件卡片，默认勾选。
+fn start_prompt(app: &tauri::AppHandle, requires_click: bool) {
+    let state = app.state::<AppState>();
+    let (mutex, _) = &*state.prompt;
+    let payload = {
+        let mut prompt = lock(mutex);
+        prompt.asking = true;
+        prompt.install = true;
+        prompt.confirmed = false;
+        prompt.requires_click = requires_click;
+        prompt.payload()
+    };
+    // 事件发不出去不是致命错误：前端还能靠 plugin_prompt 命令兜底
+    let _ = app.emit("plugin-prompt", payload);
+}
+
+/// 拿到用户的选择。
+///
+/// 等待有上限:窗口可以被关进托盘,那样没人会来点按钮,不能让启动永远挂着。
+/// 超时就按默认(勾选)继续,与「装 dsh 期间没动过复选框」是同一个结果。
+fn wait_for_choice(app: &tauri::AppHandle) -> bool {
+    const PATIENCE: Duration = Duration::from_secs(10 * 60);
+
+    let state = app.state::<AppState>();
+    let (mutex, notify) = &*state.prompt;
+
+    {
+        let prompt = lock(mutex);
+        if !prompt.requires_click {
+            return prompt.install;
+        }
+    }
+
+    transition(app, BootState::AwaitingChoice);
+
+    let deadline = Instant::now() + PATIENCE;
+    let mut prompt = lock(mutex);
+    while !prompt.confirmed {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            eprintln!("[plugins] 等待确认超时，按默认选择继续");
+            break;
+        }
+        prompt = match notify.wait_timeout(prompt, remaining) {
+            Ok((guard, _)) => guard,
+            Err(poisoned) => poisoned.into_inner().0,
+        };
+    }
+    prompt.install
+}
+
+/// 结算插件提示：必要时等一次点击，然后按勾选状态执行。
+///
+/// 必须在 `server::start` 之前:`dsh.profile.bundles` 每次 boot 只读一次
+/// (只有 cordis.patch.yml 会热重载),装晚了要重启服务才生效。
+fn settle_prompt(app: &tauri::AppHandle, node: &node::NodeRuntime, entry: &Path) {
+    let install = wait_for_choice(app);
+
+    {
+        let state = app.state::<AppState>();
+        let (mutex, _) = &*state.prompt;
+        lock(mutex).asking = false;
+    }
+
+    let mut choice = plugins::load_choice();
+    if !install {
+        eprintln!("[plugins] 用户没有勾选，不安装内置插件");
+        choice.declined = true;
+        plugins::save_choice(&choice);
+        return;
+    }
+
+    transition(
+        app,
+        BootState::ConfiguringPlugin {
+            name: plugins::TASKBOARD.title.to_string(),
+        },
+    );
+
+    let (result, log) = plugins::install(app, node, entry);
+    {
+        let state = app.state::<AppState>();
+        *lock(&state.plugin_log) = Some(log);
+    }
+
+    match result {
+        Ok(()) => choice.installed.push(plugins::TASKBOARD.id.to_string()),
+        // 可选功能失败不该把应用弄挂:记下来,继续拉起服务。
+        Err(error) => {
+            eprintln!("[plugins] 启用 {} 失败：{error}", plugins::TASKBOARD.id);
+            choice.failures += 1;
+        }
+    }
+    plugins::save_choice(&choice);
 }
 
 /// 停掉当前运行的 dsh 实例（若有）。
@@ -400,6 +604,9 @@ fn main() {
             diagnostics,
             retry_boot,
             check_for_updates,
+            plugin_prompt,
+            set_plugin_choice,
+            confirm_plugins,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

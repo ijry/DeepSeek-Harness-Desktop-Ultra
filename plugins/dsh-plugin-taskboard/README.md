@@ -92,6 +92,9 @@ window.__ModuleLoader__.load({
 
 ## 安装到 dsh
 
+本仓库的桌面外壳（DSH Desktop Ultra）会把这个插件打成 tarball 带进安装包，首次启动时
+在启动页问一次要不要装（默认勾选，取消就不装且不再问）。手工安装：
+
 ```bash
 # 本仓库开发时（宿主进程跑 exports "."，web GUI 跑 exports "./client"）
 dsh plugin --profile <profile> add link:plugins/dsh-plugin-taskboard
@@ -117,3 +120,7 @@ npm publish
 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 仓库提交一条 registry 条目——市场和网站都会自动收编（通常一天内）。此后用户在
 Settings → Plugin Market 里检索、一键安装即可。
+
+注意版本差异：桌面外壳当前锁定的 dsh 0.1.1-rc.2 里，Settings 下的插件页面还都是只读的
+（`dsh-host-plugin-inventory` 与 `ui-settings-plugin-inventory` 都明确写了不做增删启停），
+没有市场也没有卸载按钮。在那个版本上，安装与移除都只能走 `dsh plugin`。

@@ -18,11 +18,27 @@ type BootState =
       elapsedSecs: number;
     }
   | { stage: "startingServer" }
+  | { stage: "awaitingChoice" }
+  | { stage: "configuringPlugin"; name: string }
   | { stage: "ready"; url: string }
   | { stage: "failed"; kind: FailureKind; message: string; log: string };
 
+/** 首启时问一次的可选插件。没有要问的东西时后端返回 null。 */
+type PluginPrompt = {
+  id: string;
+  title: string;
+  summary: string;
+  removeCommand: string;
+  requiresClick: boolean;
+  install: boolean;
+};
+
+/** 还能改主意的阶段。之后卡片就该收起来了。 */
+const CHOICE_STAGES = ["locatingNode", "installingDsh", "awaitingChoice"];
+
 const PROGRESS_LABELS: Record<string, string> = {
   locatingNode: "正在查找 Node 运行时…",
+  awaitingChoice: "先确认一个可选插件",
   startingServer: "正在启动 DeepSeek Harness…",
   ready: "即将进入…",
 };
@@ -55,6 +71,9 @@ const FAILURE_GUIDANCE: Record<
 export default function Bootstrap() {
   const [state, setState] = useState<BootState>({ stage: "locatingNode" });
   const [copied, setCopied] = useState(false);
+  const [prompt, setPrompt] = useState<PluginPrompt | null>(null);
+  const [install, setInstall] = useState(true);
+  const [confirmed, setConfirmed] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -68,15 +87,63 @@ export default function Bootstrap() {
         /* 拿不到就等事件 */
       });
 
+    invoke<PluginPrompt | null>("plugin_prompt")
+      .then((initial) => {
+        if (active && initial) {
+          setPrompt(initial);
+          setInstall(initial.install);
+        }
+      })
+      .catch(() => {
+        /* 同上 */
+      });
+
     const unlisten = listen<BootState>("boot-state", (event) => {
       if (active) setState(event.payload);
+    });
+
+    const unlistenPrompt = listen<PluginPrompt>("plugin-prompt", (event) => {
+      if (!active) return;
+      setPrompt(event.payload);
+      setInstall(event.payload.install);
     });
 
     return () => {
       active = false;
       unlisten.then((off) => off()).catch(() => {});
+      unlistenPrompt.then((off) => off()).catch(() => {});
     };
   }, []);
+
+  // 事件有可能在监听器注册之前就发出了（启动线程和 webview 是并行的）。
+  // 阶段每变一次就再兜一次底，直到确认有没有要问的东西——漏掉这一次的代价是
+  // 卡片永远不出现，而 Rust 那边正等着一次点击。
+  useEffect(() => {
+    if (prompt !== null || !CHOICE_STAGES.includes(state.stage)) return;
+    let active = true;
+    invoke<PluginPrompt | null>("plugin_prompt")
+      .then((current) => {
+        if (active && current) {
+          setPrompt(current);
+          setInstall(current.install);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [state.stage, prompt]);
+
+  /** 每次切换都推给 Rust：dsh 装完时以它为准，用户不必点任何按钮。 */
+  const toggleInstall = (next: boolean) => {
+    setInstall(next);
+    invoke("set_plugin_choice", { install: next }).catch(() => {});
+  };
+
+  const confirmPlugins = () => {
+    setConfirmed(true);
+    invoke("confirm_plugins", { install }).catch(() => {});
+  };
 
   const copyDiagnostics = async () => {
     try {
@@ -139,15 +206,22 @@ export default function Bootstrap() {
   const label =
     state.stage === "installingDsh"
       ? `首次启动，正在安装 DeepSeek Harness ${state.version}…`
-      : PROGRESS_LABELS[state.stage] ?? "正在启动…";
+      : state.stage === "configuringPlugin"
+        ? `正在启用${state.name}插件…`
+        : (PROGRESS_LABELS[state.stage] ?? "正在启动…");
+
+  // 等用户勾选时不该转圈，也不该报告「忙」——忙的是人，不是程序
+  const waiting = state.stage === "awaitingChoice";
 
   return (
-    <main className="shell" aria-live="polite" aria-busy="true">
+    <main className="shell" aria-live="polite" aria-busy={!waiting}>
       <div className="mark" aria-hidden="true">
         DSH
       </div>
       <h1>DSH Desktop Ultra</h1>
-      <div className="spinner" role="progressbar" aria-label={label} />
+      {!waiting && (
+        <div className="spinner" role="progressbar" aria-label={label} />
+      )}
       <p className="hint">{label}</p>
       {state.stage === "installingDsh" && (
         <p className="detail">
@@ -158,6 +232,33 @@ export default function Bootstrap() {
           <br />
           依赖较多，首次可能需要数分钟；之后启动会直接进入。
         </p>
+      )}
+      {prompt && CHOICE_STAGES.includes(state.stage) && (
+        <section className="offer" aria-label="可选插件">
+          <label className="offer__pick">
+            <input
+              type="checkbox"
+              checked={install}
+              onChange={(event) => toggleInstall(event.target.checked)}
+            />
+            <span>安装{prompt.title}插件（推荐）</span>
+          </label>
+          <p className="offer__note">{prompt.summary}</p>
+          <p className="offer__note">
+            {prompt.requiresClick
+              ? "点「继续」后按当前选择处理。"
+              : "安装完成后会按当前选择继续，不需要再点任何按钮。"}
+            以后要移除，运行 <code>{prompt.removeCommand}</code>
+            （需要命令行与 pnpm——这个 dsh 版本还没有插件卸载界面）。
+          </p>
+          {prompt.requiresClick && (
+            <div className="actions">
+              <button type="button" onClick={confirmPlugins} disabled={confirmed}>
+                {confirmed ? "正在继续…" : "继续"}
+              </button>
+            </div>
+          )}
+        </section>
       )}
     </main>
   );

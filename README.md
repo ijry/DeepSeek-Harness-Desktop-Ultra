@@ -27,6 +27,18 @@
 
 功能上的问题请分清归属：**进入 dsh 界面之前**的问题（窗口起不来、找不到 Node、装不上、更新异常）属于本仓库；**进入之后**的一切（模型、工具、会话、插件、界面）属于上游。
 
+### 唯一的例外：首启问一次要不要装内置插件
+
+安装包里带了一个本仓库自己写的 dsh 插件（[`plugins/dsh-plugin-taskboard`](./plugins/dsh-plugin-taskboard)），首次启动时在启动页问一次要不要装，复选框**默认勾选**。它确实会改变 dsh 的行为（给 agent 增加六个 `taskboard_*` 工具、往系统提示里加一段工作协议、在侧栏加入口），所以这里把它当例外单独写明，而不是含糊过去。
+
+它为什么还在边界之内：
+
+- **不 fork、不打补丁。** 装的还是 npm 上未经修改的 `@deepseek-ai/dsh`；插件是上游设计好的扩展点，走的是官方入口 `dsh plugin --profile web add`（上游把参数转发给 profile 目录里的 pnpm，再由它自己登记进 `dsh.profile.bundles`）。外壳不碰上游的 profile 清单结构。
+- **只问一次，随时可拒。** 取消勾选就什么都不装，并且不再问。没有 pnpm 时连问都不问 —— `dsh plugin` 依赖它。
+- **可以移除。** `dsh plugin --profile web remove dsh-plugin-taskboard`。装的是打好的 tarball 而不是指向安装目录的符号链接，所以卸载外壳不会弄坏你的 dsh profile。
+
+代价也写明：升级 `DSH_VERSION` 时要顺手回归这个插件。`cargo test` 里有一条守卫盯着这件事 —— 插件 `package.json` 的 `dsh.compatibility.dshReleases` 里没把锁定版本标成 `compatible`，测试就红。
+
 ## 职责划分
 
 | 外壳负责 | 交给 dsh（外壳完全不介入） |
@@ -88,6 +100,9 @@ npm run upstream:version
 检查 dsh 版本 ──不匹配──→ npm install 到私有 prefix ──失败/超时──→ 指引页（网络 / registry）
     │                        ↑ 首次约 200MB、450+ 个包，实测可达数十分钟
     │
+首启且有 pnpm → 启动页问一次内置插件（默认勾选）→ dsh plugin --profile web add file:<tarball>
+    │              ↑ 与安装进度同屏，装完按当前勾选继续；失败只记进诊断，不阻断启动
+    │
 分配空闲端口 → node <dsh>/lib/bin.js web --port <port> --host 127.0.0.1 --no-open
     │
 轮询端口就绪（实测约 2s；超时上限 90s，进程提前退出则立即报错）
@@ -95,7 +110,9 @@ npm run upstream:version
 webview 跳转到 http://127.0.0.1:<port>
 ```
 
-`--no-open` 是必须的：否则 dsh 会在应用窗口之外再拉起系统浏览器。`web` 是上游认可的 `--profile web` 别名。
+`--no-open` 是必须的：否则 dsh 会在应用窗口之外再拉起系统浏览器。`web` 是上游认可的 `--profile web` 别名 —— 但那个别名只存在于启动路径上，`plugin` 子命令必须写全 `--profile web`。
+
+插件那一步必须在服务起来之前完成：`dsh.profile.bundles` 每次 boot 只读一次（只有 `cordis.patch.yml` 会热重载），装晚了要重启才生效。上游 `add` 成功时不打印任何东西，所以外壳事后读 `~/.dsh/profiles/web/package.json`，确认包名真的进了 `bundles` 才算成功。
 
 服务只绑定 `127.0.0.1`，不对外暴露。退出时杀掉整棵进程树（Windows 用 `taskkill /T`，Unix 先 `SIGTERM` 进程组再 `SIGKILL`）—— 只 kill 直接子进程会留下占着端口的孤儿 node，下次启动就撞车。
 
@@ -117,6 +134,8 @@ npm run rust:check     # Rust 编译检查
 npm run rust:test      # Rust 单测
 ```
 
+内置插件会在 `npm run dev` / `npm run build` 前被打成 tarball（`scripts/pack-plugins.mjs` → `plugins/.pack/`），Tauri 以资源形式带进安装包。因此**直接**跑 `cargo check` 需要那个 tarball 已经存在，否则 tauri 的构建脚本会报 `resource path ... doesn't exist`；上面的 `npm run rust:*` 已经替你先打好包。
+
 构建：
 
 ```bash
@@ -131,6 +150,8 @@ npm run tauri:build
 - **跳转后外壳失去 UI 控制权。** dsh 就绪后窗口交给它的页面，此时若 dsh 进程崩溃，外壳无法再显示错误页 —— 需要从托盘退出再重开。要修的话得改成 dsh 跑在独立 webview 里、外壳保留一层容器。
 - **会话格式与 dsh 版本绑定。** 用更新版本的 dsh 写出的会话，当前锁定版本会拒绝加载（报 `SessionFormatUnsupportedError`）。这是上游的保护机制，不是外壳的问题 —— 拒绝加载比错误解析安全。跟进上游版本即可。
 - **Node 版本要求会拦住一部分用户。** dsh 的 `engines` 字段是空的，npm 不会代为拦截，外壳的检查是唯一一道闸。
+- **内置插件只能用命令行移除。** 锁定的这个 dsh 版本里，Settings 下的插件页面都是只读的（没有插件市场、也没有卸载按钮），所以外壳把移除命令直接写在首启那张卡片上：`dsh plugin --profile web remove dsh-plugin-taskboard`（需要 pnpm）。
+- **内置插件依赖 pnpm。** `dsh plugin` 是把参数转发给 pnpm 的，而 Node 只自带 npm。探测不到 pnpm 时外壳干脆不问 —— 不承诺做不到的事。
 - **端口分配存在几毫秒的竞态窗口**：拿到空闲端口后立即释放再交给 dsh，极端情况下可能被别的进程抢占，此时 dsh 启动失败并在错误页显示日志。上游支持 `--port 0` 可消除该窗口，但需要解析其 stdout 文本，属于对上游日志格式的静默耦合，故未采用。
 
 ## 贡献

@@ -52,6 +52,19 @@ jobs:
           npm run typecheck
           npm test
 
+      # 安装包会分发内置插件的 lib/，所以它必须能构建、测试通过、且与 src/ 同步。
+      # check.mjs 会重建 lib/，紧接着的 diff 就是「产物忘记提交」的守卫；
+      # 行尾在 Windows 上会被 autocrlf 干扰，只在 Linux 上判。
+      - name: 内置插件检查
+        working-directory: plugins/dsh-plugin-taskboard
+        run: |
+          node scripts/check.mjs
+          node --test
+
+      - name: 插件构建产物必须已提交
+        if: runner.os == 'Linux'
+        run: git diff --exit-code -- plugins/dsh-plugin-taskboard/lib
+
       - name: 前端构建
         run: npm run build
 

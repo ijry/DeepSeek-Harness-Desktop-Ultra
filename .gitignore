@@ -5,6 +5,9 @@ dist-ssr
 src-tauri/target
 release-assets
 
+# 内置插件的 tarball，由 scripts/pack-plugins.mjs 在每次 dev/build 前重新生成
+plugins/.pack
+
 # tauri-build 在每次构建时重新生成
 src-tauri/gen/schemas
 
