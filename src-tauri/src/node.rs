@@ -192,13 +192,11 @@ pub fn discover() -> Result<NodeRuntime, NodeError> {
     // 2. PATH 上的 node
     let bare = if cfg!(windows) { "node.exe" } else { "node" };
     if let Ok(version) = probe(Path::new(bare)) {
+        let path = absolute_exe(Path::new(bare));
         if is_supported(&version) {
-            return Ok(NodeRuntime {
-                path: PathBuf::from(bare),
-                version,
-            });
+            return Ok(NodeRuntime { path, version });
         }
-        too_old = Some((PathBuf::from(bare), version));
+        too_old = Some((path, version));
     }
 
     // 3. 常见安装位置
@@ -221,6 +219,30 @@ pub fn discover() -> Result<NodeRuntime, NodeError> {
         Some((path, found)) => Err(NodeError::TooOld { found, path }),
         None => Err(NodeError::NotFound),
     }
+}
+
+/// 从 PATH 上找到的 node 只有裸名，问它自己要一个绝对路径。
+///
+/// 为什么值得多起一次进程：
+/// - 诊断信息里「Node: v22.22.2 (node.exe)」这种是没用的——这个架构下最常见的
+///   故障就是「用户以为在用哪个 node」和「外壳真正拉起的是哪个」不一致，
+///   而裸名恰好把唯一能分辨这件事的信息丢掉了。
+/// - 裸名的 `parent()` 是空目录。据此去拼子进程的 PATH 会拼出以分隔符开头的
+///   `;C:\...`，那个空项会让 Windows 的 cmd.exe 查不到任何命令（`dsh plugin`
+///   正是经 cmd.exe 转发给 pnpm 的）。`dsh::merged_path` 已经挡住了这种情况，
+///   这里是把根源也补掉。
+///
+/// 问不出来就退回裸名——那是今天的行为，不该因为一次探测失败连 node 都不认。
+fn absolute_exe(path: &Path) -> PathBuf {
+    let mut command = Command::new(path);
+    command.args(["-p", "process.execPath"]);
+    hide_console(&mut command);
+
+    let resolved = command.output().ok().and_then(|output| {
+        let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        (!raw.is_empty()).then(|| PathBuf::from(raw))
+    });
+    resolved.unwrap_or_else(|| path.to_path_buf())
 }
 
 fn finish(path: PathBuf, version: NodeVersion) -> Result<NodeRuntime, NodeError> {
