@@ -1,0 +1,62 @@
+{
+  "name": "dsh-plugin-automation",
+  "description": "Scheduled agent work for the DeepSeek Harness web GUI, modeled on codeg-plus's 自动化: save a prompt plus a schedule (cron, fixed interval or manual), and every firing either runs one fresh headless agent session in the project directory or files a card on the sibling task board, with a run history, timeouts, overlap policy and auto-pause on repeated failure. 参考 codeg-plus 自动化的 dsh 插件，可发布到 dsh 插件市场。",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.1.1-rc.2": "compatible"
+      }
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "author": "ijry (DSH Desktop Ultra contributors)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/issues"
+  },
+  "homepage": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/tree/main/plugins/dsh-plugin-automation#readme",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "automation",
+    "scheduler",
+    "cron",
+    "codeg-plus",
+    "unattended"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "npm run build && node --test",
+    "prepack": "npm run build"
+  }
+}
