@@ -10,12 +10,49 @@
 // 输出文件名固定（不带版本号），这样 tauri.conf.json 里的资源路径是稳定的。
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** 要内置的插件目录名。与 src-tauri/src/plugins.rs 里的 BUNDLED 一一对应。 */
-const BUNDLED = ["dsh-plugin-taskboard", "dsh-plugin-canvas", "dsh-plugin-mobile-bridge"];
+/**
+ * 要内置的插件目录名。与 src-tauri/src/plugins.rs 里的 BUNDLED 一一对应
+ * （scripts/bundled-plugins.test.mjs 盯着这件事），顺序也照卡片顺序：
+ * 两个带一堆运行时依赖的排最后，首启逐个装时先把便宜的装完。
+ */
+export const BUNDLED = [
+  "dsh-plugin-taskboard",
+  "dsh-plugin-canvas",
+  "dsh-plugin-mobile-bridge",
+  "dsh-plugin-repopanel",
+  "dsh-plugin-otools-git",
+  "dsh-plugin-automation",
+  "dsh-plugin-longread",
+  "dsh-plugin-otools-term",
+  "dsh-plugin-otools-dbm",
+];
+
+/**
+ * 打包时额外给的环境变量。
+ *
+ * 鲨鱼数据库的 prepack 会跑一次 vite 把 Vue 面板打进 lib/webview，而调用这个脚本的
+ * 地方（`npm run build`，包括 CI 的 release 工作流）只装了外壳自己的依赖——插件目录里
+ * 没有 vite，那一步会直接挂掉，且是在三个平台上一起挂。面板产物随提交入库，所以让它
+ * 复用已提交的那份：DBM_SKIP_WEBVIEW 是插件 build 脚本自己提供的开关，跳过 vite、
+ * 保留现有 lib/webview。
+ */
+const PACK_ENV = {
+  "dsh-plugin-otools-dbm": { DBM_SKIP_WEBVIEW: "1" },
+};
+
+/**
+ * 跳过面板构建时必须已经有一份面板产物。
+ *
+ * 没有的话插件的 build 只会打印一行 “SKIPPED and no previous build to reuse” 就正常退出，
+ * tarball 照样打出来——装上以后面板是空白页，而这一路上没有任何报错。
+ */
+const REQUIRES_PREBUILT_WEBVIEW = {
+  "dsh-plugin-otools-dbm": "lib/webview/index.html",
+};
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const outDir = join(root, "plugins", ".pack");
@@ -30,6 +67,14 @@ function pack(id) {
   const dir = join(root, "plugins", id);
   const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
 
+  const prebuilt = REQUIRES_PREBUILT_WEBVIEW[id];
+  if (prebuilt && !existsSync(join(dir, prebuilt))) {
+    throw new Error(
+      `${id} 跳过面板构建，但 ${prebuilt} 不存在——这样打出来的包装上是空白页。` +
+        `先在插件目录里 npm install && npm run build。`
+    );
+  }
+
   // npm pack 会先跑该包的 prepack（= npm run build），所以 tarball 里的 lib/
   // 一定与 src/ 同步，不依赖提交上来的产物是否最新。
   //
@@ -43,6 +88,7 @@ function pack(id) {
     cwd: dir,
     stdio: "inherit",
     shell: process.platform === "win32",
+    env: { ...process.env, ...PACK_ENV[id] },
   });
 
   const packed = join(outDir, packedName(manifest));
@@ -52,7 +98,11 @@ function pack(id) {
   console.log(`[pack-plugins] ${id} → plugins/.pack/${id}.tgz`);
 }
 
-mkdirSync(outDir, { recursive: true });
-for (const id of BUNDLED) {
-  pack(id);
+// 被 scripts/bundled-plugins.test.mjs 直接 import：那条守卫要读 BUNDLED，
+// 但绝不该顺手打一遍包。
+if (process.argv[1] && import.meta.url.endsWith(basename(process.argv[1]))) {
+  mkdirSync(outDir, { recursive: true });
+  for (const id of BUNDLED) {
+    pack(id);
+  }
 }

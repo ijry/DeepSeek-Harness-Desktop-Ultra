@@ -32,7 +32,7 @@ const zh = {
   // ---------------------------------------------------------------- 启动页
   bootStarting: "正在启动…",
   bootLocatingNode: "正在查找 Node 运行时…",
-  bootAwaitingChoice: "先确认一个可选插件",
+  bootAwaitingChoice: "先确认可选插件",
   bootStartingServer: "正在启动 DeepSeek Harness…",
   bootReady: "即将进入…",
   bootInstallingDsh: (version: string) =>
@@ -71,11 +71,10 @@ const zh = {
   // ------------------------------------------------------------ 插件卡片
   optionalPlugins: "可选插件",
   installPlugin: (title: string) => `安装${title}插件（推荐）`,
-  removeLater: "以后要移除，运行",
   promptRequiresClick: "点「继续」后按当前选择处理。",
   promptAutoContinue: "安装完成后会按当前选择继续，不需要再点任何按钮。",
   promptRemovalNote:
-    "移除需要命令行与 pnpm——这个 dsh 版本还没有插件卸载界面，也可以走托盘 → 设置 → 插件。",
+    "装上以后可以在托盘 → 设置 → 插件里随时移除，那里也列着每个插件对应的命令行写法。",
   continueButton: "继续",
   continuing: "正在继续…",
 
@@ -174,12 +173,11 @@ const en: Dict = {
 
   optionalPlugins: "Optional plugins",
   installPlugin: (title) => `Install the ${title} plugin (recommended)`,
-  removeLater: "To remove it later, run",
   promptRequiresClick: "Click Continue to proceed with the current selection.",
   promptAutoContinue:
     "Once the install finishes it continues with the current selection — no button needed.",
   promptRemovalNote:
-    "Removing needs the command line and pnpm — this dsh version has no plugin uninstall UI. You can also use tray → Settings → Plugins.",
+    "You can remove any of them later from tray → Settings → Plugins, which also shows the command-line form for each.",
   continueButton: "Continue",
   continuing: "Continuing…",
 

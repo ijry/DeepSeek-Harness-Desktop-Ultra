@@ -34,7 +34,6 @@ type PromptPlugin = {
   id: string;
   title: string;
   summary: string;
-  removeCommand: string;
   install: boolean;
 };
 
@@ -271,22 +270,22 @@ export default function Bootstrap() {
       )}
       {prompt && CHOICE_STAGES.includes(state.stage) && (
         <section className="offer" aria-label={s.optionalPlugins}>
-          {prompt.plugins.map((plugin) => (
-            <div key={plugin.id}>
-              <label className="offer__pick">
-                <input
-                  type="checkbox"
-                  checked={selected.includes(plugin.id)}
-                  onChange={(event) => toggleInstall(plugin.id, event.target.checked)}
-                />
-                <span>{s.installPlugin(plugin.title)}</span>
-              </label>
-              <p className="offer__note">{plugin.summary}</p>
-              <p className="offer__note">
-                {s.removeLater} <code>{plugin.removeCommand}</code>
-              </p>
-            </div>
-          ))}
+          {/* 九个插件装不进一屏，列表自己滚——下面的说明和「继续」按钮要一直露在外面 */}
+          <div className="offer__list">
+            {prompt.plugins.map((plugin) => (
+              <div key={plugin.id} className="offer__item">
+                <label className="offer__pick">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(plugin.id)}
+                    onChange={(event) => toggleInstall(plugin.id, event.target.checked)}
+                  />
+                  <span>{s.installPlugin(plugin.title)}</span>
+                </label>
+                <p className="offer__note">{plugin.summary}</p>
+              </div>
+            ))}
+          </div>
           <p className="offer__note">
             {prompt.requiresClick ? s.promptRequiresClick : s.promptAutoContinue}{" "}
             {s.promptRemovalNote}

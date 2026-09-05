@@ -52,10 +52,9 @@ jobs:
           npm run typecheck
           npm test
 
-      # 墨鱼终端是唯一有运行时依赖的插件（ssh2 + xterm + 可选的 node-pty），而
-      # 上面的 `npm ci` 只装了外壳自己的依赖。它的测试要起一个真的 ssh2.Server，
-      # 所以依赖必须在下面那个 for 循环之前就位，否则循环里的 `node --test` 会
-      # 直接 import 失败。
+      # 墨鱼终端与鲨鱼数据库是唯二有运行时依赖的插件，而上面的 `npm ci` 只装了外壳自己的
+      # 依赖。墨鱼终端的测试要起一个真的 ssh2.Server，所以依赖必须在下面那个 for 循环之前
+      # 就位，否则循环里的 `node --test` 会直接 import 失败。
       - name: 墨鱼终端插件依赖
         working-directory: plugins/dsh-plugin-otools-term
         run: npm ci --no-audit --no-fund
@@ -63,13 +62,13 @@ jobs:
       # 鲨鱼数据库同理：驱动（mysql2/pg/ioredis/…）与写文件用的 exceljs、docx 都是运行时
       # 依赖，测试真的会调用它们。`--omit=optional` 跳过 oracledb 与 snowflake-sdk —— 它们
       # 按设计就是可选的，装不上时插件会报「驱动未安装」，CI 没必要为它们等编译。代价是
-      # 连 rollup 的平台原生包一起跳过，所以这一步之后不能跑 vite build；check.mjs 本来就
-      # 跳过面板构建，lib/webview 随提交入库。
+      # 连 rollup 的平台原生包一起跳过，所以这一步之后不能跑 vite build——check.mjs 与
+      # pack-plugins.mjs 都跳过面板构建（DBM_SKIP_WEBVIEW），lib/webview 随提交入库。
       - name: 鲨鱼数据库插件依赖
         working-directory: plugins/dsh-plugin-otools-dbm
         run: npm ci --omit=optional --no-audit --no-fund
 
-      # 安装包会分发内置插件的 lib/，所以它必须能构建、测试通过、且与 src/ 同步。
+      # 九个插件全部进安装包，所以每一个都必须能构建、测试通过、且 lib/ 与 src/ 同步。
       # check.mjs 会重建 lib/，紧接着的 diff 就是「产物忘记提交」的守卫；
       # 行尾在 Windows 上会被 autocrlf 干扰，只在 Linux 上判。
       - name: 内置插件检查
@@ -84,59 +83,6 @@ jobs:
       - name: 插件构建产物必须已提交
         if: runner.os == 'Linux'
         run: git diff --exit-code -- 'plugins/dsh-plugin-*/lib'
-
-      # 画布插件同样进安装包，所以同一对守卫照用一遍。
-      - name: 画布插件检查
-        working-directory: plugins/dsh-plugin-canvas
-        run: |
-          node scripts/check.mjs
-          node --test
-
-      - name: 画布插件产物必须已提交
-        if: runner.os == 'Linux'
-        run: git diff --exit-code -- plugins/dsh-plugin-canvas/lib
-
-      # 仓库面板、章鱼Git、长文阅读、鲨鱼数据库都不进安装包（只走 `dsh plugin add` 安装），
-      # 但它们的 lib/ 同样是发布产物 —— package.json 的 files 带着它，所以同一条守卫照用。
-      - name: 仓库面板插件检查
-        working-directory: plugins/dsh-plugin-repopanel
-        run: |
-          node scripts/check.mjs
-          node --test
-
-      - name: 仓库面板插件产物必须已提交
-        if: runner.os == 'Linux'
-        run: git diff --exit-code -- plugins/dsh-plugin-repopanel/lib
-
-      - name: 章鱼Git 插件检查
-        working-directory: plugins/dsh-plugin-otools-git
-        run: |
-          node scripts/check.mjs
-          node --test
-
-      - name: 章鱼Git 插件产物必须已提交
-        if: runner.os == 'Linux'
-        run: git diff --exit-code -- plugins/dsh-plugin-otools-git/lib
-
-      - name: 长文阅读插件检查
-        working-directory: plugins/dsh-plugin-longread
-        run: |
-          node scripts/check.mjs
-          node --test
-
-      - name: 长文阅读插件产物必须已提交
-        if: runner.os == 'Linux'
-        run: git diff --exit-code -- plugins/dsh-plugin-longread/lib
-
-      - name: 鲨鱼数据库插件检查
-        working-directory: plugins/dsh-plugin-otools-dbm
-        run: |
-          node scripts/check.mjs
-          node --test
-
-      - name: 鲨鱼数据库插件产物必须已提交
-        if: runner.os == 'Linux'
-        run: git diff --exit-code -- plugins/dsh-plugin-otools-dbm/lib
 
       - name: 前端构建
         run: npm run build

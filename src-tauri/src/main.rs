@@ -121,7 +121,6 @@ impl Prompt {
                     id: plugin.id,
                     title: plugin.title(),
                     summary: plugin.summary(),
-                    remove_command: plugins::remove_command(plugin.id),
                     install: self.selected.iter().any(|id| id == plugin.id),
                 })
                 .collect(),
@@ -144,8 +143,8 @@ pub struct PromptPlugin {
     id: &'static str,
     title: &'static str,
     summary: &'static str,
-    /// 这个 dsh 版本没有插件卸载界面，所以把移除命令直接写在卡片上。
-    remove_command: String,
+    // 卡片上不写移除命令：九个插件写九遍就是九行噪音，而设置页的插件那一节
+    // 已经逐个列着自己的命令，还带一个「移除」按钮。
     install: bool,
 }
 

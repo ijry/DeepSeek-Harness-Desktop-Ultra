@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DSH Desktop Ultra",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "identifier": "io.xyito.dsh-desktop-ultra",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -36,7 +36,13 @@
     "resources": {
       "../plugins/.pack/dsh-plugin-taskboard.tgz": "plugins/dsh-plugin-taskboard.tgz",
       "../plugins/.pack/dsh-plugin-canvas.tgz": "plugins/dsh-plugin-canvas.tgz",
-      "../plugins/.pack/dsh-plugin-mobile-bridge.tgz": "plugins/dsh-plugin-mobile-bridge.tgz"
+      "../plugins/.pack/dsh-plugin-mobile-bridge.tgz": "plugins/dsh-plugin-mobile-bridge.tgz",
+      "../plugins/.pack/dsh-plugin-repopanel.tgz": "plugins/dsh-plugin-repopanel.tgz",
+      "../plugins/.pack/dsh-plugin-otools-git.tgz": "plugins/dsh-plugin-otools-git.tgz",
+      "../plugins/.pack/dsh-plugin-automation.tgz": "plugins/dsh-plugin-automation.tgz",
+      "../plugins/.pack/dsh-plugin-longread.tgz": "plugins/dsh-plugin-longread.tgz",
+      "../plugins/.pack/dsh-plugin-otools-term.tgz": "plugins/dsh-plugin-otools-term.tgz",
+      "../plugins/.pack/dsh-plugin-otools-dbm.tgz": "plugins/dsh-plugin-otools-dbm.tgz"
     },
     "icon": [
       "icons/32x32.png",

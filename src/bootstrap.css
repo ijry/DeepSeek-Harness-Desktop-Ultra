@@ -125,6 +125,17 @@ pre {
   text-align: left;
 }
 
+/* 九个插件的说明加起来远超一屏。让列表自己滚,下面那句说明和「继续」按钮
+   就永远在视野里——它们滚出去的话,用户会以为这一页没有出口。 */
+.offer__list {
+  display: grid;
+  gap: 8px;
+  max-height: min(44vh, 420px);
+  overflow-y: auto;
+  /* 滚动条不压在文字上 */
+  padding-right: 6px;
+}
+
 .offer__pick {
   display: flex;
   align-items: center;

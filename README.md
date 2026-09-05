@@ -29,13 +29,21 @@
 
 ### 唯一的例外：首启问一次要不要装内置插件
 
-安装包里带了三个本仓库自己写的 dsh 插件，首次启动时在启动页各问一次要不要装，复选框**默认勾选**：
+安装包里带了九个本仓库自己写的 dsh 插件，首次启动时在启动页各问一次要不要装，复选框**默认全部勾选**。一栏一栏写清它们对 agent 做了什么 —— 这才是需要单独说明的地方：
 
-- [`plugins/dsh-plugin-taskboard`](./plugins/dsh-plugin-taskboard)（任务看板）**确实会改变 dsh 的行为**：给 agent 增加六个 `taskboard_*` 工具、往系统提示里加一段工作协议、在侧栏加入口。这才是需要单独写明的那个例外。支持暗黑模式，自动跟随系统主题。
-- [`plugins/dsh-plugin-canvas`](./plugins/dsh-plugin-canvas)（无限会话画布）只在侧栏加一块画布：区域按工作区/智能体聚会话、卡片钉住单个会话、便签记想法。它不注册工具、不写系统提示、不改会话内容，所以装了它 **agent 的行为一个字都不变**——只是多了一块看板子的地方。支持暗黑模式。
-- [`plugins/dsh-plugin-mobile-bridge`](./plugins/dsh-plugin-mobile-bridge)（手机遥控）扫码把 [MCode](https://getmcode.lingyun.net) 手机 App 配对到这台机器，在手机上看会话、发消息、批准工具调用。它同样不注册工具、不碰系统提示，**agent 的行为一个字不变**；但它确实在 dsh 里多开了一个只认令牌的监听，所以另有一条自己的边界，见下。支持暗黑模式。
+| 插件 | 它对 agent 做了什么 |
+| --- | --- |
+| [任务看板](./plugins/dsh-plugin-taskboard) | **确实会改变 dsh 的行为**：给 agent 增加六个 `taskboard_*` 工具，往系统提示里加一段工作协议，在侧栏加入口。 |
+| [无限会话画布](./plugins/dsh-plugin-canvas) | 只在侧栏加一块画布：区域按工作区/智能体聚会话、卡片钉住单个会话、便签记想法。不注册工具、不写系统提示，**agent 的行为一个字都不变**。 |
+| [手机遥控](./plugins/dsh-plugin-mobile-bridge) | 扫码把 [MCode](https://getmcode.lingyun.net) 手机 App 配对到这台机器，在手机上看会话、发消息、批准工具调用。不注册工具、不碰系统提示，但确实在 dsh 里多开了一个只认令牌的监听，另有一条自己的边界，见下。 |
+| [仓库面板](./plugins/dsh-plugin-repopanel) | 看工作区 origin 远端那个仓库的 issue / PR，把其中一条交给 agent 变成任务。不注册工具，但**会往系统提示里加一段纪律**：从远端取回的内容是不可信数据。 |
+| [章鱼Git](./plugins/dsh-plugin-otools-git) | 完整的本地 Git 客户端：暂存、提交、历史与分支图、diff、分支标签贮藏远端子模块工作树、推送拉取。不注册工具、不碰系统提示，但**会在你的仓库上执行写操作**。 |
+| [自动化](./plugins/dsh-plugin-automation) | 存一段提示词加一张时间表，到点**在没人看着的时候起一次 agent**（或往任务看板上开一张卡）。不注册工具、不碰系统提示，护栏与边界见它自己的 README。 |
+| [长文阅读](./plugins/dsh-plugin-longread) | 把一本小说读成一场会话的样子。纯 GUI，不注册工具、不碰系统提示，**agent 的行为一个字都不变**。 |
+| [墨鱼终端](./plugins/dsh-plugin-otools-term) | SSH 终端、SFTP 文件管理、端口转发与 SOCKS5、远程桌面启动，AI 命令栏用你在 DSH 里选好的模型。不注册工具、不碰系统提示，但**会拿着你所有服务器的口令**。 |
+| [鲨鱼数据库](./plugins/dsh-plugin-otools-dbm) | 十四种数据库的客户端：连接树、数据网格直接改行、表设计器、SQL 工作台、导入导出、备份与同步、AI 大屏。不注册工具、不碰系统提示，但**会存数据库账号密码，并且能对生产库执行写操作与 DDL**。 |
 
-三者都不是必需品，取消勾选就什么都不装。
+九个都不是必需品：取消勾选就什么都不装，也可以只留想要的那几个。全部支持暗黑模式，自动跟随系统主题。
 
 它为什么还在边界之内：
 
@@ -44,47 +52,35 @@
 - **可以移除。** 托盘 → 设置 → 插件里逐个装卸，或者 `dsh plugin --profile web remove <包名>`。装的是打好的 tarball 而不是指向安装目录的符号链接，所以卸载外壳不会弄坏你的 dsh profile。
 - **手机遥控不改 dsh 的绑定方式。** dsh 自己照旧只听 `127.0.0.1`；插件另起一个监听，每个有状态请求都要 Bearer token，管理接口只挂在 loopback 载体上。细节与外网接入教程见它的 [README](./plugins/dsh-plugin-mobile-bridge/README.md) 与 [docs/public-access.md](./plugins/dsh-plugin-mobile-bridge/docs/public-access.md)。
 
-代价也写明：升级 `DSH_VERSION` 时要顺手回归这三个插件。`cargo test` 里有一条守卫盯着这件事 —— 任一插件 `package.json` 的 `dsh.compatibility.dshReleases` 里没把锁定版本标成 `compatible`，测试就红。
+代价也写明：升级 `DSH_VERSION` 时要顺手回归这九个插件。`cargo test` 里有一条守卫盯着这件事 —— 任一插件 `package.json` 的 `dsh.compatibility.dshReleases` 里没把锁定版本标成 `compatible`，测试就红。
 
-### 仓库里还有六个插件，但它们不进安装包
+### 默认全勾上意味着什么
 
-[`plugins/dsh-plugin-repopanel`](./plugins/dsh-plugin-repopanel)（仓库面板：看 issue / PR，
-把其中一条交给 agent 变成任务）、
-[`plugins/dsh-plugin-otools-git`](./plugins/dsh-plugin-otools-git)（章鱼Git：完整的本地
-Git 客户端，暂存、提交、历史与分支图、diff、分支标签贮藏远端子模块工作树、推送拉取）、
-[`plugins/dsh-plugin-otools-term`](./plugins/dsh-plugin-otools-term)（墨鱼终端：SSH 终端、
-SFTP 文件管理、端口转发与 SOCKS5、远程桌面启动，AI 命令栏直接用你在 DSH 里选好的模型）、
-[`plugins/dsh-plugin-otools-dbm`](./plugins/dsh-plugin-otools-dbm)（鲨鱼数据库：十四种数据库的
-客户端，连接树、数据网格直接改行、表设计器、SQL 工作台、导入导出、备份与同步、AI 大屏）、
-[`plugins/dsh-plugin-automation`](./plugins/dsh-plugin-automation)（自动化：存一段提示词加一张
-时间表，到点自己跑一次 agent）和
-[`plugins/dsh-plugin-longread`](./plugins/dsh-plugin-longread)（长文阅读：把一本小说读成
-一场会话的样子）也放在这个仓库里维护，但它们**不是**上面那个例外的延伸：
+v0.1.5 之前只有前三个进安装包，其余六个只能自己 `dsh plugin add`。现在九个都在安装包里、
+默认都勾上，所以把代价一次写清：
 
-- **不打进安装包、不在首启询问、默认不装。** `tauri.conf.json` 的 `resources` 里没有它们，
-  外壳的 Rust 代码也不认识它们 —— 装它们只有一条路：`dsh plugin --profile web add ...`。
-  也就是说，不动手的用户拿到的 dsh 行为与不装外壳时完全一致。
-- 它们在这里只是**源码与发布出口**：走 npm 发布到插件市场，和任何第三方 dsh 插件一样。
-- CI 会检查它们能构建、测试通过、`lib/` 与 `src/` 同步，这样它们不会烂在仓库里。
-- 同样支持暗黑模式，自动跟随系统主题。仓库面板与墨鱼终端是中英双语的；鲨鱼数据库自带八种
-  语言（复用了参考实现的词表）；章鱼Git、自动化与长文阅读目前只有中文，见「界面语言」。
-- **墨鱼终端与鲨鱼数据库是唯二有运行时依赖的插件。** 墨鱼终端要 `ssh2`、`ws`、`@xterm/*`
-  以及可选的 `node-pty` —— SSH 协议与终端模拟器都不该手搓；PTY 是可选依赖，装不上时本地
-  终端退化成管道模式并明说。鲨鱼数据库要一整套数据库驱动（`mysql2`、`pg`、`ioredis`、
-  `mongodb`、`tedious`…，全是纯 JS，SQLite 用 Node 内置的 `node:sqlite`），Oracle 与
-  Snowflake 是可选依赖，缺了在界面上说明。
-- 它们也是唯二会拿着你口令的面板：墨鱼终端存服务器口令，鲨鱼数据库存数据库账号密码 ——
-  都在 DSH 家目录下单独的 0600 文件里，浏览器只知道「有没有」，细节见各自的 README
+- **首启会变慢，慢在最后两个。** 前七个没有运行时依赖，pnpm 解一个本地 tarball 就完事，是
+  秒级的。墨鱼终端要 `ssh2`、`ws`、`@xterm/*` 以及可选的 `node-pty` —— SSH 协议与终端模拟器
+  都不该手搓；PTY 是可选依赖，装不上时本地终端退化成管道模式并明说。鲨鱼数据库要一整套数据库
+  驱动（`mysql2`、`pg`、`ioredis`、`mongodb`、`tedious`…，全是纯 JS，SQLite 用 Node 内置的
+  `node:sqlite`），Oracle 与 Snowflake 是可选依赖，缺了在界面上说明。这两个要从 npm 拉包，
+  所以外壳给它们的耐心是 10 分钟，其余七个是 3 分钟。不想等就在首启取消勾选，之后在设置页
+  里随时能装。
+- **一个装失败不拖累别的。** 每个插件都是独立的一次 `dsh plugin add`，失败只记一笔日志，
+  服务照常拉起；失败的那个之后可以在托盘 → 设置 → 插件里重试。
+- **它们仍然是 npm 上的独立插件。** 这个仓库是源码与发布出口，走 npm 发布到插件市场，和任何
+  第三方 dsh 插件一样；在别的 DSH 版本上手动安装见 [PLUGINS.md](./PLUGINS.md)。CI 会检查九个
+  都能构建、测试通过、`lib/` 与 `src/` 同步，这样它们不会烂在仓库里。
+- **拿着你口令的是那两个。** 墨鱼终端存服务器口令，鲨鱼数据库存数据库账号密码 —— 都在 DSH
+  家目录下单独的 0600 文件里，浏览器只知道「有没有」，细节见各自的 README
   （[墨鱼终端](./plugins/dsh-plugin-otools-term/README.md)、
-  [鲨鱼数据库](./plugins/dsh-plugin-otools-dbm/README.md#安全边界)）。
-
-要不要把它们也变成内置插件（进安装包 + 首启询问 + 设置页装卸），是一个需要单独决定的
-边界问题 —— 但**不再是工程量问题**：外壳的插件管道已经从「只有一个内置插件」改成了一份
-列表（`plugins.rs` 的 `BUNDLED`、按 id 收发的 IPC 命令、设置页按插件逐个装卸），加一行
-就能把它带进安装包。留在外面是有意的选择：仓库面板要连 GitHub、要存令牌；章鱼Git 会在
-用户的仓库上执行写操作（提交、重置、推送）；墨鱼终端会拿着你所有服务器的口令；鲨鱼数据库
-会存数据库账号密码，并且能对生产库执行写操作与 DDL；自动化会在**没人看着的时候启动 agent**
-（它自己的 README 写清了护栏与边界）；长文阅读是个摸鱼工具。这六件事默认装进每台机器都不合适。
+  [鲨鱼数据库](./plugins/dsh-plugin-otools-dbm/README.md#安全边界)）。勾上它们等于同意这件事。
+- **有几件事默认装进每台机器都值得你先看一眼**：仓库面板要连 GitHub、要存令牌；章鱼Git 会在
+  你的仓库上执行写操作（提交、重置、推送）；鲨鱼数据库能对生产库执行写操作与 DDL；自动化会在
+  **没人看着的时候启动 agent**（它自己的 README 写清了护栏与边界）；长文阅读是个摸鱼工具。
+  这些都写在启动页每张卡片的说明里，不勾就不装。
+- **界面语言参差。** 任务看板、无限画布、手机遥控、仓库面板、墨鱼终端是中英双语；鲨鱼数据库
+  自带八种语言（复用了参考实现的词表）；章鱼Git、自动化与长文阅读目前只有中文，见「界面语言」。
 
 ## 职责划分
 
@@ -138,7 +134,7 @@ SFTP 文件管理、端口转发与 SOCKS5、远程桌面启动，AI 命令栏�
 单独安装（不经外壳）的插件也能用：环境变量不存在时它们退化到 `navigator.language`，认不出再退到中文。
 
 **章鱼Git、自动化与长文阅读还只有中文。** 它们是双语化那一轮之后并行加进来的，没跟上；
-三个都不打进安装包，所以不影响外壳的双语体验。补齐是一件独立的事。
+v0.1.5 起三个都进安装包，所以英文界面下会看到三块中文面板。补齐是一件独立的事。
 
 ## 打包层面的两个取舍
 
@@ -231,7 +227,7 @@ npm run tauri:build
 - **跳转后外壳失去 UI 控制权。** dsh 就绪后窗口交给它的页面，此时若 dsh 进程崩溃，外壳无法再显示错误页 —— 需要从托盘退出再重开。要修的话得改成 dsh 跑在独立 webview 里、外壳保留一层容器。
 - **会话格式与 dsh 版本绑定。** 用更新版本的 dsh 写出的会话，当前锁定版本会拒绝加载（报 `SessionFormatUnsupportedError`）。这是上游的保护机制，不是外壳的问题 —— 拒绝加载比错误解析安全。跟进上游版本即可。
 - **Node 版本要求会拦住一部分用户。** dsh 的 `engines` 字段是空的，npm 不会代为拦截，外壳的检查是唯一一道闸。
-- **内置插件只能用命令行移除。** 锁定的这个 dsh 版本里，Settings 下的插件页面都是只读的（没有插件市场、也没有卸载按钮），所以外壳把移除命令直接写在首启的卡片上：`dsh plugin --profile web remove <插件名>`（需要 pnpm）。也可以走托盘 → 设置 → 插件，那里每个插件都有装/卸按钮。
+- **内置插件的卸载界面在外壳这边。** 锁定的这个 dsh 版本里，Settings 下的插件页面都是只读的（没有插件市场、也没有卸载按钮），所以移除走托盘 → 设置 → 插件：九个插件在那里逐个有装/卸按钮，每个也列着自己的命令行写法 `dsh plugin --profile web remove <插件名>`（需要 pnpm）。
 - **手机遥控插件会开一个局域网监听。** 默认 `0.0.0.0:8790`，只服务带 Bearer token 的窄接口，管理接口不挂在上面。不想要就在首启取消勾选、在设置页移除，或给它配 `lan: false`。往公网暴露前请读它的 [README 安全边界](./plugins/dsh-plugin-mobile-bridge/README.md#安全边界)——**永远不要把 dsh 自己的端口暴露出去**。
 - **内置插件依赖 pnpm。** `dsh plugin` 是把参数转发给 pnpm 的，而 Node 只自带 npm。探测不到 pnpm 时外壳干脆不问 —— 不承诺做不到的事。
 - **端口分配存在几毫秒的竞态窗口**：拿到空闲端口后立即释放再交给 dsh，极端情况下可能被别的进程抢占，此时 dsh 启动失败并在错误页显示日志。上游支持 `--port 0` 可消除该窗口，但需要解析其 stdout 文本，属于对上游日志格式的静默耦合，故未采用。
@@ -256,7 +252,7 @@ npm run tauri:build
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) —— 上游，MIT
 - [Cordis](https://cordisjs.org/) —— harness 的插件内核
 - [awesome-deepseek-harness](https://github.com/0xsline/awesome-deepseek-harness) —— 插件生态
-- [内置插件安装指南](./PLUGINS.md) —— 在其他 DSH 版本上安装本仓库的七个插件
+- [内置插件安装指南](./PLUGINS.md) —— 在其他 DSH 版本上安装本仓库的九个插件
 - [Tauri](https://tauri.app/)
 
 ## 许可证

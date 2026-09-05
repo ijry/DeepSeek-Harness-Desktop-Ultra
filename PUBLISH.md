@@ -150,6 +150,7 @@ npm info dsh-plugin-otools-git
 npm info dsh-plugin-otools-term
 npm info dsh-plugin-automation
 npm info dsh-plugin-longread
+npm info dsh-plugin-otools-dbm
 ```
 
 ## 提交到插件市场
@@ -235,6 +236,9 @@ dsh plugin --profile web add dsh-plugin-taskboard@beta
 ```
 
 ### Q: 如何同步发布所有插件？
+
+墨鱼终端与鲨鱼数据库有依赖，不能进这个循环（`prepack` 需要它们自己的 `node_modules`），
+按上面第 6、9 节单独发。
 
 ```bash
 # 脚本示例（需要在项目根目录）
