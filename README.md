@@ -31,9 +31,9 @@
 
 安装包里带了三个本仓库自己写的 dsh 插件，首次启动时在启动页各问一次要不要装，复选框**默认勾选**：
 
-- [`plugins/dsh-plugin-taskboard`](./plugins/dsh-plugin-taskboard)（任务看板）**确实会改变 dsh 的行为**：给 agent 增加六个 `taskboard_*` 工具、往系统提示里加一段工作协议、在侧栏加入口。这才是需要单独写明的那个例外。
-- [`plugins/dsh-plugin-canvas`](./plugins/dsh-plugin-canvas)（无限会话画布）只在侧栏加一块画布：区域按工作区/智能体聚会话、卡片钉住单个会话、便签记想法。它不注册工具、不写系统提示、不改会话内容，所以装了它 **agent 的行为一个字都不变**——只是多了一块看板子的地方。
-- [`plugins/dsh-plugin-mobile-bridge`](./plugins/dsh-plugin-mobile-bridge)（手机遥控）扫码把 [MCode](https://getmcode.lingyun.net) 手机 App 配对到这台机器，在手机上看会话、发消息、批准工具调用。它同样不注册工具、不碰系统提示，**agent 的行为一个字不变**；但它确实在 dsh 里多开了一个只认令牌的监听，所以另有一条自己的边界，见下。
+- [`plugins/dsh-plugin-taskboard`](./plugins/dsh-plugin-taskboard)（任务看板）**确实会改变 dsh 的行为**：给 agent 增加六个 `taskboard_*` 工具、往系统提示里加一段工作协议、在侧栏加入口。这才是需要单独写明的那个例外。支持暗黑模式，自动跟随系统主题。
+- [`plugins/dsh-plugin-canvas`](./plugins/dsh-plugin-canvas)（无限会话画布）只在侧栏加一块画布：区域按工作区/智能体聚会话、卡片钉住单个会话、便签记想法。它不注册工具、不写系统提示、不改会话内容，所以装了它 **agent 的行为一个字都不变**——只是多了一块看板子的地方。支持暗黑模式。
+- [`plugins/dsh-plugin-mobile-bridge`](./plugins/dsh-plugin-mobile-bridge)（手机遥控）扫码把 [MCode](https://getmcode.lingyun.net) 手机 App 配对到这台机器，在手机上看会话、发消息、批准工具调用。它同样不注册工具、不碰系统提示，**agent 的行为一个字不变**；但它确实在 dsh 里多开了一个只认令牌的监听，所以另有一条自己的边界，见下。支持暗黑模式。
 
 三者都不是必需品，取消勾选就什么都不装。
 
@@ -56,6 +56,7 @@
   也就是说，不动手的用户拿到的 dsh 行为与不装外壳时完全一致。
 - 它在这里只是**源码与发布出口**：走 npm 发布到插件市场，和任何第三方 dsh 插件一样。
 - CI 会检查它能构建、测试通过、`lib/` 与 `src/` 同步，这样它不会烂在仓库里。
+- 同样支持暗黑模式，自动跟随系统主题。
 
 要不要把它也变成内置插件（进安装包 + 首启询问 + 设置页装卸），是一个需要单独决定的
 边界问题 —— 但**不再是工程量问题**：外壳的插件管道已经从「只有一个内置插件」改成了一份
@@ -213,6 +214,7 @@ npm run tauri:build
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) —— 上游，MIT
 - [Cordis](https://cordisjs.org/) —— harness 的插件内核
 - [awesome-deepseek-harness](https://github.com/0xsline/awesome-deepseek-harness) —— 插件生态
+- [内置插件安装指南](./PLUGINS.md) —— 在其他 DSH 版本上安装本仓库的四个插件
 - [Tauri](https://tauri.app/)
 
 ## 许可证
