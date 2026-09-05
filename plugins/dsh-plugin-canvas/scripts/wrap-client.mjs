@@ -58,7 +58,8 @@ export const GENERATED_HEADER = [
  */
 export function inlineModule(source) {
   return String(source)
-    .replace(/^import[\s\S]*?from '\.\/[^']+\.js'\n/gm, '')
+    .replace(/^import\s*\{[^}]*\}\s*from\s*'\.\/[^']+\.js'\r?\n/gm, '')
+    .replace(/^import[\s\S]*?from '\.\/[^']+\.js'\r?\n/gm, '')
     .replace(/^export (?=(async function|const|function|class|let|var) )/gm, '')
     .replace(/\s+$/, '')
 }
