@@ -20,6 +20,7 @@ import {
   updateNode,
 } from '../src/host/board.js'
 import { readTranscript } from '../src/host/transcript.js'
+import { hostLang, normalizeLang } from '../src/shared/lang.js'
 import { CARD_HEIGHT, CARD_WIDTH, regionHeightForRows, regionWidthForColumns } from '../src/shared/units.js'
 
 const NOW = '2026-09-05T00:00:00.000Z'
@@ -256,6 +257,59 @@ test('清理消失的会话：删掉钉住的卡片，并把自定义区域的�
   assert.equal(pruneForSessions(d, [], ctx), undefined)
 })
 
+// ── 语言 ──
+
+/** 环境变量是进程级的：每个用到它的测试自己钉住、自己还原。 */
+const LANG_KEYS = ['DSH_DESKTOP_LANG', 'LC_ALL', 'LC_MESSAGES', 'LANG']
+
+function setLangEnv(values) {
+  LANG_KEYS.forEach((key, index) => {
+    if (values[index] === undefined) delete process.env[key]
+    else process.env[key] = values[index]
+  })
+}
+
+/** 按指定语言读一次正文——标签跟着宿主语言走。 */
+async function transcriptIn(code, query) {
+  const before = process.env.DSH_DESKTOP_LANG
+  process.env.DSH_DESKTOP_LANG = code
+  try {
+    return await readTranscript(query, 'session-a')
+  } finally {
+    if (before === undefined) delete process.env.DSH_DESKTOP_LANG
+    else process.env.DSH_DESKTOP_LANG = before
+  }
+}
+
+test('语言解析：zh-CN / zh_CN.UTF-8 / EN_us 都认，认不出就是 null', () => {
+  assert.equal(normalizeLang('zh'), 'zh')
+  assert.equal(normalizeLang('zh-CN'), 'zh')
+  assert.equal(normalizeLang('zh_CN.UTF-8'), 'zh')
+  assert.equal(normalizeLang(' EN_us '), 'en')
+  assert.equal(normalizeLang('fr'), null)
+  assert.equal(normalizeLang('C.UTF-8'), null)
+  assert.equal(normalizeLang(''), null)
+  assert.equal(normalizeLang(undefined), null)
+  assert.equal(normalizeLang(null), null)
+})
+
+test('宿主语言：外壳的变量最优先，认不出的值不挡住后面的，都认不出就中文', () => {
+  const before = LANG_KEYS.map((key) => process.env[key])
+  try {
+    setLangEnv(['en-US', 'zh_CN.UTF-8', undefined, undefined])
+    assert.equal(hostLang(), 'en')
+    // C.UTF-8 不是一种语言，所以它后面的 LANG 仍然算话。
+    setLangEnv([undefined, 'C.UTF-8', undefined, 'en_US.UTF-8'])
+    assert.equal(hostLang(), 'en')
+    setLangEnv([undefined, undefined, undefined, 'fr_FR'])
+    assert.equal(hostLang(), 'zh')
+    setLangEnv([undefined, undefined, undefined, undefined])
+    assert.equal(hostLang(), 'zh')
+  } finally {
+    setLangEnv(before)
+  }
+})
+
 // ── 会话正文 ──
 
 test('会话正文把 surface 事件折成可读的轮次，未知块与推理块不显示', async () => {
@@ -291,7 +345,7 @@ test('会话正文把 surface 事件折成可读的轮次，未知块与推理�
       }
     },
   }
-  const { turns, truncated } = await readTranscript(query, 'session-a')
+  const { turns, truncated } = await transcriptIn('zh', query)
   assert.equal(truncated, false)
   assert.deepEqual(
     turns.map((t) => [t.role, t.label]),
@@ -304,6 +358,36 @@ test('会话正文把 surface 事件折成可读的轮次，未知块与推理�
   )
   assert.equal(turns[2].text, '好的\n[工具调用 bash]')
   assert.ok(!turns[2].text.includes('不该出现'))
+})
+
+test('正文的标签与占位块跟着宿主语言走', async () => {
+  const query = {
+    async readSurface() {
+      return {
+        events: [
+          {
+            type: 'user/message',
+            data: { content: [{ type: 'image' }, { type: 'text', text: 'look' }] },
+          },
+          {
+            type: 'assistant/message',
+            data: { interrupted: true, message: { content: [{ type: 'tool-call', name: 'bash' }] } },
+          },
+          { type: 'tool/result', data: { content: [{ type: 'text', text: 'ok' }] } },
+        ],
+      }
+    },
+  }
+  const { turns } = await transcriptIn('en', query)
+  assert.deepEqual(
+    turns.map((t) => [t.label, t.text]),
+    [
+      ['You', '[image]\nlook'],
+      ['Assistant (interrupted)', '[tool call bash]'],
+      // 没名字的工具不该读成 "Tool "。
+      ['Tool', 'ok'],
+    ]
+  )
 })
 
 test('没有 sessionQuery、或读取失败时，正文是空的而不是报错', async () => {

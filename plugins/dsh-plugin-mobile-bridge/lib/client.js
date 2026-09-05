@@ -21,6 +21,11 @@ window.__ModuleLoader__.load({
  * wrapped file with no module resolution, so a browser copy would be a second
  * implementation of the only real maths in the package.
  *
+ * The panel speaks Chinese or English. It cannot read the desktop shell's
+ * `DSH_DESKTOP_LANG` — a page has no environment — so the host half resolves the
+ * language and reports it as `language` in `/admin/state`, and until that answers
+ * (or forever, on an install without the shell) `navigator.language` decides.
+ *
  * Export shape is `name` / `inject` / `apply` (no default export). The build
  * (scripts/wrap-client.mjs) wraps this file in the DSH module loader, which
  * provides a CommonJS `module`, so this file assigns `module.exports` when
@@ -72,6 +77,169 @@ window.__ModuleLoader__.load({
   var panel = null
   var observer = null
   var timer = null
+
+  /* ------------------------------------------------------------------ lang */
+
+  /**
+   * Every string the panel paints, in both languages.
+   *
+   * It lives inside this file rather than in src/shared/lang.js for the reason
+   * the module comment gives: the bundle is one wrapped file with no module
+   * resolution, so an import is not available at any price. `{}` is the single
+   * placeholder {@link t} fills.
+   */
+  var STRINGS = {
+    zh: {
+      title: '手机遥控',
+      entryHint: '用手机 App 遥控这台机器上的 dsh',
+      close: '关闭',
+      loading: '正在读取状态…',
+
+      never: '从未',
+      secondsAgo: '{} 秒前',
+      minutesAgo: '{} 分钟前',
+      hoursAgo: '{} 小时前',
+      daysAgo: '{} 天前',
+
+      step1Title: '1 · 装 MCode App',
+      step1Note: '手机扫这个码打开下载页，或直接访问下面的地址。',
+      downloadQrLabel: 'MCode 下载页二维码',
+
+      step2Title: '2 · 配对手机',
+      step2Note: '在 App 里「新增连接 → 扫码连接」，扫下面这个码。',
+      lanDown: '局域网监听没有起来，手机暂时连不上。',
+      lanDownWhy: '局域网监听没有起来：{}，手机暂时连不上。',
+      lanOff: '配置里关掉了局域网监听（lan: false），手机连不上。',
+      pairingQrLabel: '配对二维码',
+      codeHint: '扫码失败时，可以在 App 里手动输入这个配对码',
+      codeNote: '配对码一次只能用一次，配对成功后会自动换新；{} 分钟后过期。',
+      noLanAddress: '没有找到可用的局域网地址',
+      urlsLabel: '手机可以访问的地址',
+      rotate: '换一个配对码',
+
+      step3Title: '3 · 从外网连（可选）',
+      step3Note:
+        '默认只在局域网可用。要在外面连，用隧道把下面这个端口暴露出去，然后在 App 里把地址改成隧道给的 https 地址。',
+      portPending: '<端口未就绪>',
+      tunnelOutput: '# 输出里会有一个 https://xxx.trycloudflare.com',
+      tunnelAddress: '# App 里的服务地址填 https://xxx.trycloudflare.com',
+      portWarning:
+        '只暴露这个端口（{}）。不要把 dsh 自己的端口放到外网——那个端口上的界面没有任何认证，' +
+        '拿到它就等于拿到这台机器的 shell。',
+      publicDocs: '完整教程（含固定域名、Tailscale、反向代理）见插件目录里的 docs/public-access.md。',
+
+      devicesTitle: '已配对的手机（{}）',
+      devicesEmpty: '还没有手机配对过。',
+      lastSeen: '最近活动 {}',
+      revoke: '解除',
+      revokeAll: '全部解除并换码',
+      revokeAllHint: '屏幕被别人看到过、或手机丢了，就点这个',
+
+      nameTitle: '这台机器的名字',
+      nameNote: '手机上的连接名。改了之后请重新出码。',
+      save: '保存',
+      versionUnknown: '版本未知',
+      protocol: '协议 v',
+    },
+    en: {
+      title: 'Mobile Remote',
+      entryHint: 'Drive the dsh on this machine from your phone',
+      close: 'Close',
+      loading: 'Loading status…',
+
+      never: 'never',
+      secondsAgo: '{}s ago',
+      minutesAgo: '{}m ago',
+      hoursAgo: '{}h ago',
+      daysAgo: '{}d ago',
+
+      step1Title: '1 · Install MCode App',
+      step1Note: 'Scan this code with your phone to open the download page, or visit the address below.',
+      downloadQrLabel: 'MCode download page QR code',
+
+      step2Title: '2 · Pair your phone',
+      step2Note: 'In the app, tap Add connection → Scan to connect (新增连接 → 扫码连接), then scan the code below.',
+      lanDown: 'The LAN listener did not come up, so your phone cannot connect yet.',
+      lanDownWhy: 'The LAN listener did not come up: {}, so your phone cannot connect yet.',
+      lanOff: 'LAN listening is turned off in the config (lan: false), so your phone cannot connect.',
+      pairingQrLabel: 'Pairing QR code',
+      codeHint: 'If scanning fails, type this pairing code into the app by hand',
+      codeNote: 'A pairing code is good for one phone and is replaced after a successful pair; it expires in {} min.',
+      noLanAddress: 'No usable LAN address found',
+      urlsLabel: 'Addresses your phone can reach',
+      rotate: 'New pairing code',
+
+      step3Title: '3 · Connect from outside (optional)',
+      step3Note:
+        'LAN only by default. To connect from elsewhere, expose the port below through a tunnel, then point the ' +
+        'app at the https address the tunnel hands you.',
+      portPending: '<port not ready>',
+      tunnelOutput: '# the output contains a https://xxx.trycloudflare.com URL',
+      tunnelAddress: '# set the server address in the app to https://xxx.trycloudflare.com',
+      portWarning:
+        'Expose only this port ({}). Never expose the port dsh itself serves on — that UI has no authentication ' +
+        'at all, and reaching it is the same as having a shell on this machine.',
+      publicDocs:
+        'See docs/public-access.md in the plugin directory for the full guide (fixed domain, Tailscale, ' +
+        'reverse proxy).',
+
+      devicesTitle: 'Paired phones ({})',
+      devicesEmpty: 'No phone has paired yet.',
+      lastSeen: 'Last seen {}',
+      revoke: 'Remove',
+      revokeAll: 'Remove all and rotate the code',
+      revokeAllHint: 'Use this if someone saw your screen or you lost your phone',
+
+      nameTitle: 'Name of this computer',
+      nameNote: 'The connection name shown on your phone. Rotate the code after changing it.',
+      save: 'Save',
+      versionUnknown: 'version unknown',
+      protocol: 'protocol v',
+    },
+  }
+
+  /**
+   * The language in force. Resolved from `navigator` before the first paint and
+   * replaced by the host's own as soon as the admin state answers, which is the
+   * only way this half can learn what the desktop shell was told.
+   */
+  var lang = 'zh'
+
+  /**
+   * Mirrors `normalizeLang` in src/shared/lang.js. Restated for the same reason
+   * ROUTE_PREFIX is, and test/lang.test.mjs runs both over the same spellings so
+   * the two cannot drift.
+   */
+  function normalizeLang(value) {
+    if (value === undefined || value === null) return null
+    var base = String(value).trim().toLowerCase().split(/[-_.]/)[0]
+    return base === 'zh' || base === 'en' ? base : null
+  }
+
+  /**
+   * One string, with `{}` replaced when an argument is given.
+   *
+   * The table is looked up through `lang` on every call and never captured: a
+   * dictionary held in a closure would keep painting the language the panel
+   * started in after the host reported a different one.
+   */
+  function t(key, arg) {
+    var table = STRINGS[lang] || STRINGS.zh
+    var value = table[key] !== undefined ? table[key] : STRINGS.zh[key]
+    if (value === undefined) return key
+    if (arg === undefined) return value
+    return value.replace('{}', function () {
+      return String(arg)
+    })
+  }
+
+  /** Adopt a language the host reported; true when something painted is now stale. */
+  function adoptLang(value) {
+    var next = normalizeLang(value)
+    if (next === null || next === lang) return false
+    lang = next
+    return true
+  }
 
   /* ------------------------------------------------------------------- api */
 
@@ -145,12 +313,12 @@ window.__ModuleLoader__.load({
   }
 
   function timeAgo(at) {
-    if (!at) return '从未'
+    if (!at) return t('never')
     var seconds = Math.max(0, Math.round((Date.now() - at) / 1000))
-    if (seconds < 60) return seconds + ' 秒前'
-    if (seconds < 3600) return Math.round(seconds / 60) + ' 分钟前'
-    if (seconds < 86400) return Math.round(seconds / 3600) + ' 小时前'
-    return Math.round(seconds / 86400) + ' 天前'
+    if (seconds < 60) return t('secondsAgo', seconds)
+    if (seconds < 3600) return t('minutesAgo', Math.round(seconds / 60))
+    if (seconds < 86400) return t('hoursAgo', Math.round(seconds / 3600))
+    return t('daysAgo', Math.round(seconds / 86400))
   }
 
   /* ----------------------------------------------------------------- panel */
@@ -164,9 +332,9 @@ window.__ModuleLoader__.load({
 
   /** Step 1: get the app. Always shown — a user without it cannot do step 2. */
   function downloadCard() {
-    var card = section('1 · 装 MCode App', '手机扫这个码打开下载页，或直接访问下面的地址。')
+    var card = section(t('step1Title'), t('step1Note'))
     if (model.qr && model.qr.download) {
-      card.appendChild(qrSvg(model.qr.download, 'MCode 下载页二维码'))
+      card.appendChild(qrSvg(model.qr.download, t('downloadQrLabel')))
     }
     var link = el('a', 'mbridge__link', model.state ? model.state.downloadUrl : '')
     if (model.state) {
@@ -181,34 +349,30 @@ window.__ModuleLoader__.load({
   /** Step 2: pair. The QR carries the one-shot code, so it is regenerated freely. */
   function pairCard() {
     var reach = model.state.reach
-    var card = section('2 · 配对手机', '在 App 里「新增连接 → 扫码连接」，扫下面这个码。')
+    var card = section(t('step2Title'), t('step2Note'))
 
     if (!reach.listening) {
       var bad = el(
         'p',
         'mbridge__note mbridge__note--bad',
-        reach.lan
-          ? '局域网监听没有起来' + (reach.error ? '：' + reach.error : '') + '，手机暂时连不上。'
-          : '配置里关掉了局域网监听（lan: false），手机连不上。',
+        reach.lan ? (reach.error ? t('lanDownWhy', reach.error) : t('lanDown')) : t('lanOff'),
       )
       card.appendChild(bad)
       return card
     }
 
     if (model.qr && model.qr.pairing) {
-      card.appendChild(qrSvg(model.qr.pairing, '配对二维码'))
+      card.appendChild(qrSvg(model.qr.pairing, t('pairingQrLabel')))
     }
 
     var code = el('div', 'mbridge__code', model.state.pairing.code)
-    code.title = '扫码失败时，可以在 App 里手动输入这个配对码'
+    code.title = t('codeHint')
     card.appendChild(code)
     card.appendChild(
       el(
         'p',
         'mbridge__note',
-        '配对码一次只能用一次，配对成功后会自动换新；' +
-          Math.max(0, Math.round((model.state.pairing.expiresAt - Date.now()) / 60000)) +
-          ' 分钟后过期。',
+        t('codeNote', Math.max(0, Math.round((model.state.pairing.expiresAt - Date.now()) / 60000))),
       ),
     )
 
@@ -217,13 +381,13 @@ window.__ModuleLoader__.load({
       urls.appendChild(el('li', null, url))
     })
     if (reach.urls.length === 0) {
-      urls.appendChild(el('li', 'mbridge__note--bad', '没有找到可用的局域网地址'))
+      urls.appendChild(el('li', 'mbridge__note--bad', t('noLanAddress')))
     }
-    card.appendChild(el('div', 'mbridge__label', '手机可以访问的地址'))
+    card.appendChild(el('div', 'mbridge__label', t('urlsLabel')))
     card.appendChild(urls)
 
     var actions = el('div', 'mbridge__actions')
-    var rotate = el('button', 'mbridge__button', '换一个配对码')
+    var rotate = el('button', 'mbridge__button', t('rotate'))
     rotate.type = 'button'
     rotate.disabled = model.busy
     rotate.addEventListener('click', function () {
@@ -239,52 +403,33 @@ window.__ModuleLoader__.load({
   /** Step 3: outside the LAN. The bridge cannot do this for the user, so it explains it. */
   function publicCard() {
     var reach = model.state.reach
-    var card = section(
-      '3 · 从外网连（可选）',
-      '默认只在局域网可用。要在外面连，用隧道把下面这个端口暴露出去，然后在 App 里把地址改成隧道给的 https 地址。',
-    )
-    var port = reach.port === null ? '<端口未就绪>' : String(reach.port)
+    var card = section(t('step3Title'), t('step3Note'))
+    var port = reach.port === null ? t('portPending') : String(reach.port)
     var command = el(
       'pre',
       'mbridge__pre',
       'cloudflared tunnel --url http://127.0.0.1:' + port + '\n' +
-        '# 输出里会有一个 https://xxx.trycloudflare.com\n' +
-        '# App 里的服务地址填 https://xxx.trycloudflare.com' + ROUTE_PREFIX,
+        t('tunnelOutput') + '\n' +
+        t('tunnelAddress') + ROUTE_PREFIX,
     )
     card.appendChild(command)
-    card.appendChild(
-      el(
-        'p',
-        'mbridge__note mbridge__note--bad',
-        '只暴露这个端口（' + port + '）。不要把 dsh 自己的端口放到外网——那个端口上的界面没有任何认证，' +
-          '拿到它就等于拿到这台机器的 shell。',
-      ),
-    )
-    card.appendChild(
-      el(
-        'p',
-        'mbridge__note',
-        '完整教程（含固定域名、Tailscale、反向代理）见插件目录里的 docs/public-access.md。',
-      ),
-    )
+    card.appendChild(el('p', 'mbridge__note mbridge__note--bad', t('portWarning', port)))
+    card.appendChild(el('p', 'mbridge__note', t('publicDocs')))
     return card
   }
 
   /** Paired phones, with the two revoke gestures. */
   function devicesCard() {
     var devices = model.state.devices
-    var card = section(
-      '已配对的手机（' + devices.length + '）',
-      devices.length === 0 ? '还没有手机配对过。' : null,
-    )
+    var card = section(t('devicesTitle', devices.length), devices.length === 0 ? t('devicesEmpty') : null)
     var list = el('ul', 'mbridge__devices')
     devices.forEach(function (device) {
       var row = el('li', 'mbridge__device')
       var text = el('div', 'mbridge__deviceText')
       text.appendChild(el('div', 'mbridge__deviceName', device.name))
-      text.appendChild(el('div', 'mbridge__note', '最近活动 ' + timeAgo(device.lastSeenAt)))
+      text.appendChild(el('div', 'mbridge__note', t('lastSeen', timeAgo(device.lastSeenAt))))
       row.appendChild(text)
-      var kick = el('button', 'mbridge__button mbridge__button--quiet', '解除')
+      var kick = el('button', 'mbridge__button mbridge__button--quiet', t('revoke'))
       kick.type = 'button'
       kick.disabled = model.busy
       kick.addEventListener('click', function () {
@@ -298,10 +443,10 @@ window.__ModuleLoader__.load({
     if (devices.length > 0) card.appendChild(list)
 
     var actions = el('div', 'mbridge__actions')
-    var all = el('button', 'mbridge__button mbridge__button--danger', '全部解除并换码')
+    var all = el('button', 'mbridge__button mbridge__button--danger', t('revokeAll'))
     all.type = 'button'
     all.disabled = model.busy || devices.length === 0
-    all.title = '屏幕被别人看到过、或手机丢了，就点这个'
+    all.title = t('revokeAllHint')
     all.addEventListener('click', function () {
       act(function () {
         return api.revoke({ all: true })
@@ -314,14 +459,14 @@ window.__ModuleLoader__.load({
 
   /** Host identity: the name the phone will show for this connection. */
   function nameCard() {
-    var card = section('这台机器的名字', '手机上的连接名。改了之后请重新出码。')
+    var card = section(t('nameTitle'), t('nameNote'))
     var row = el('div', 'mbridge__actions')
     var input = el('input', 'mbridge__input')
     input.type = 'text'
     input.value = model.state.displayName
     input.maxLength = 64
     row.appendChild(input)
-    var save = el('button', 'mbridge__button', '保存')
+    var save = el('button', 'mbridge__button', t('save'))
     save.type = 'button'
     save.disabled = model.busy
     save.addEventListener('click', function () {
@@ -335,7 +480,11 @@ window.__ModuleLoader__.load({
       el(
         'p',
         'mbridge__note',
-        'dsh ' + (model.state.dshVersion || '版本未知') + ' · 协议 v' + model.state.protocolVersion,
+        'dsh ' +
+          (model.state.dshVersion || t('versionUnknown')) +
+          ' · ' +
+          t('protocol') +
+          model.state.protocolVersion,
       ),
     )
     return card
@@ -348,8 +497,8 @@ window.__ModuleLoader__.load({
     panel.textContent = ''
 
     var head = el('div', 'mbridge__head')
-    head.appendChild(el('div', 'mbridge__title', '手机遥控'))
-    var close = el('button', 'mbridge__button mbridge__button--quiet', '关闭')
+    head.appendChild(el('div', 'mbridge__title', t('title')))
+    var close = el('button', 'mbridge__button mbridge__button--quiet', t('close'))
     close.type = 'button'
     close.addEventListener('click', function () {
       setOpen(false)
@@ -361,7 +510,7 @@ window.__ModuleLoader__.load({
       panel.appendChild(el('p', 'mbridge__note mbridge__note--bad', model.error))
     }
     if (model.state === null) {
-      panel.appendChild(el('p', 'mbridge__note', '正在读取状态…'))
+      panel.appendChild(el('p', 'mbridge__note', t('loading')))
       return
     }
 
@@ -381,6 +530,7 @@ window.__ModuleLoader__.load({
     run()
       .then(function (next) {
         model.state = next
+        if (adoptLang(next && next.language)) relabelEntry()
         model.drawnCode = null
         return refreshQr()
       })
@@ -398,6 +548,7 @@ window.__ModuleLoader__.load({
       .state()
       .then(function (state) {
         model.state = state
+        if (adoptLang(state.language)) relabelEntry()
         model.error = null
       })
       .catch(function (error) {
@@ -433,6 +584,29 @@ window.__ModuleLoader__.load({
       })
   }
 
+  /**
+   * Learn the language from the host half.
+   *
+   * The sidebar entry is built and painted before anything is fetched, so the
+   * first paint uses the browser's own language; this call corrects it as soon as
+   * the admin state answers. Without the shell there is no `DSH_DESKTOP_LANG` to
+   * report, the field is absent, and `navigator.language` stands — which is what
+   * a standalone install should do.
+   */
+  function refreshLang() {
+    return api
+      .state()
+      .then(function (state) {
+        if (adoptLang(state.language)) {
+          relabelEntry()
+          render()
+        }
+      })
+      .catch(function () {
+        /* no host language to be had; the browser's own is already in force */
+      })
+  }
+
   /* ------------------------------------------------------------------ mount */
 
   function sidebarRoot() {
@@ -443,14 +617,26 @@ window.__ModuleLoader__.load({
   }
 
   function buildEntry() {
-    var button = el('button', 'mbridge__entry', '手机遥控')
+    var button = el('button', 'mbridge__entry', t('title'))
     button.type = 'button'
     button.setAttribute('data-dsh-mbridge-entry', '')
-    button.title = '用手机 App 遥控这台机器上的 dsh'
+    button.title = t('entryHint')
     button.addEventListener('click', function () {
       setOpen(!model.open)
     })
     return button
+  }
+
+  /**
+   * Repaint the two labels that outlive a render: the sidebar entry is built once
+   * and kept, so a language that arrives later has to be written onto it by hand.
+   */
+  function relabelEntry() {
+    if (entry !== null) {
+      entry.textContent = t('title')
+      entry.title = t('entryHint')
+    }
+    if (panel !== null) panel.setAttribute('aria-label', t('title'))
   }
 
   /** Place the entry next to the sidebar's own family of plugin entries. */
@@ -496,7 +682,7 @@ window.__ModuleLoader__.load({
     if (entry === null) entry = buildEntry()
     if (panel === null) {
       panel = el('aside', 'mbridge')
-      panel.setAttribute('aria-label', '手机遥控')
+      panel.setAttribute('aria-label', t('title'))
     }
     placeEntry()
     placePanel()
@@ -581,8 +767,13 @@ window.__ModuleLoader__.load({
   /* ------------------------------------------------------------------ apply */
 
   function apply(ctx) {
+    // Before anything is built: the entry's label is written once, so the
+    // dictionary has to be chosen first. `navigator.language` is the only source a
+    // page has synchronously; the host's own answer follows a moment later.
+    lang = normalizeLang(typeof navigator === 'undefined' ? null : navigator.language) || 'zh'
     injectStyles()
     ensureMounted()
+    void refreshLang()
     document.addEventListener(ACTIVATE_EVENT, onActivate)
 
     // dsh's GUI re-renders its columns freely, so the entry has to be re-placed

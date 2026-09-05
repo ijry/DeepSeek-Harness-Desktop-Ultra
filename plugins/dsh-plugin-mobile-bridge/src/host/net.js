@@ -14,6 +14,7 @@
 import { hostname, networkInterfaces, userInfo } from 'node:os'
 
 import { ROUTE_PREFIX } from '../shared/protocol.js'
+import { pick } from '../shared/lang.js'
 
 /**
  * Interface names that are almost never the path a phone takes. Matching is on a
@@ -70,12 +71,12 @@ export function bridgeUrls(port, scheme = 'http') {
  */
 export function defaultDisplayName() {
   const host = String(hostname() || '').split('.')[0]
-  if (host !== '') return `${host} 的 dsh`
+  if (host !== '') return pick(`${host} 的 dsh`, `dsh on ${host}`)
   try {
     const user = String(userInfo().username || '')
-    if (user !== '') return `${user} 的 dsh`
+    if (user !== '') return pick(`${user} 的 dsh`, `dsh on ${user}`)
   } catch {
     /* userInfo throws on some minimal containers */
   }
-  return 'dsh 桌面'
+  return pick('dsh 桌面', 'dsh desktop')
 }

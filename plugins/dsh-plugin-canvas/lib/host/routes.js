@@ -5,7 +5,7 @@
  * Wire contract, ported from codeg-plus's Tauri commands so the browser half can
  * keep its revision protocol unchanged:
  *
- *   GET  /state                    → { nodes, revision }
+ *   GET  /state                    → { nodes, revision, language }
  *   GET  /sessions                 → { sessions, workspaces, agents }
  *   GET  /sessions/<id>/transcript → { turns, truncated }
  *   GET  /events                   → SSE: `hello` then one `change` per commit
@@ -23,6 +23,7 @@
  *
  * @module dsh-plugin-canvas/host/routes
  */
+import { hostLang } from '../shared/lang.js'
 import { CanvasInputError } from '../shared/model.js'
 import { readTranscript } from './transcript.js'
 import {
@@ -160,7 +161,10 @@ export function registerCanvasRoutes(ctx, options) {
       if (req.method === 'GET') {
         if (pathname === `${ROUTE_PREFIX}/state`) {
           await store.load()
-          ok(res, store.snapshot())
+          // The ledger response carries the language too: the browser half runs in
+          // dsh's page, where the shell's environment is unreachable, and this is
+          // the first thing it asks for anyway.
+          ok(res, { ...store.snapshot(), language: hostLang() })
           return
         }
         if (pathname === `${ROUTE_PREFIX}/sessions`) {

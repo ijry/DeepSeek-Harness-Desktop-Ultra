@@ -7,6 +7,7 @@
  * @module dsh-plugin-mobile-bridge/host/http
  */
 import { BridgeError, ERR, statusOf } from '../shared/protocol.js'
+import { pick } from '../shared/lang.js'
 
 /**
  * Request-body ceiling. A prompt may carry base64 image bytes, so it cannot be
@@ -37,7 +38,7 @@ export function ok(res, value, status = 200) {
  */
 export function fail(res, error) {
   const code = error instanceof BridgeError ? error.code : ERR.internal
-  const body = { code, message: String(error?.message ?? '未知错误') }
+  const body = { code, message: String(error?.message ?? pick('未知错误', 'Unknown error')) }
   if (error?.dshCode !== undefined) body.dshCode = error.dshCode
   json(res, { ok: false, error: body }, statusOf(code))
 }
@@ -55,13 +56,28 @@ export function readJson(req) {
     req.on('data', (chunk) => {
       size += chunk.length
       if (size > MAX_BODY_BYTES) {
-        reject(new BridgeError(ERR.invalidInput, `请求体超过 ${MAX_BODY_BYTES} 字节上限`))
+        reject(
+          new BridgeError(
+            ERR.invalidInput,
+            pick(
+              `请求体超过 ${MAX_BODY_BYTES} 字节上限`,
+              `Request body exceeds the ${MAX_BODY_BYTES}-byte limit`,
+            ),
+          ),
+        )
         req.destroy()
         return
       }
       chunks.push(chunk)
     })
-    req.on('error', (error) => reject(new BridgeError(ERR.invalidInput, `读取请求体失败：${error.message}`)))
+    req.on('error', (error) =>
+      reject(
+        new BridgeError(
+          ERR.invalidInput,
+          pick(`读取请求体失败：${error.message}`, `Could not read the request body: ${error.message}`),
+        ),
+      ),
+    )
     req.on('end', () => {
       const raw = Buffer.concat(chunks).toString('utf8').trim()
       if (raw === '') {
@@ -72,7 +88,12 @@ export function readJson(req) {
         const parsed = JSON.parse(raw)
         resolve(parsed !== null && typeof parsed === 'object' ? parsed : {})
       } catch (error) {
-        reject(new BridgeError(ERR.invalidInput, `请求体不是合法 JSON：${error.message}`))
+        reject(
+          new BridgeError(
+            ERR.invalidInput,
+            pick(`请求体不是合法 JSON：${error.message}`, `The request body is not valid JSON: ${error.message}`),
+          ),
+        )
       }
     })
   })

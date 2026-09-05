@@ -31,23 +31,72 @@ pub struct NodeRuntime {
     pub version: NodeVersion,
 }
 
+/// 找 Node 时的失败原因。
+///
+/// `Display` 手写而不是用 `#[error(...)]`：这些话会出现在启动页上，要跟着
+/// `i18n::current()` 变。
 #[derive(Debug, thiserror::Error)]
 pub enum NodeError {
-    #[error("未找到 Node 运行时")]
     NotFound,
 
-    #[error("Node {found} 版本过低，DeepSeek Harness 需要 Node ^22.19 或 >= 24")]
-    TooOld { found: NodeVersion, path: PathBuf },
+    TooOld {
+        found: NodeVersion,
+        path: PathBuf,
+    },
 
-    #[error("无法执行 {path}: {source}")]
     NotExecutable {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
 
-    #[error("无法解析 `node --version` 的输出: {raw}")]
-    UnparsableVersion { raw: String },
+    UnparsableVersion {
+        raw: String,
+    },
+}
+
+impl std::fmt::Display for NodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let zh = crate::i18n::is_zh();
+        match self {
+            Self::NotFound => f.write_str(if zh {
+                "未找到 Node 运行时"
+            } else {
+                "Node runtime not found"
+            }),
+            Self::TooOld { found, path } => {
+                // 带上路径：版本过低时启动就停了，`state.node` 还是空的，诊断信息里
+                // 只会写「尚未选定」——「是哪个 node 太旧」只有这一句话能交代。
+                let path = path.display();
+                if zh {
+                    write!(
+                        f,
+                        "Node {found} 版本过低（{path}），DeepSeek Harness 需要 Node ^22.19 或 >= 24"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "Node {found} at {path} is too old; DeepSeek Harness needs Node ^22.19 or >= 24"
+                    )
+                }
+            }
+            Self::NotExecutable { path, source } => {
+                let path = path.display();
+                if zh {
+                    write!(f, "无法执行 {path}: {source}")
+                } else {
+                    write!(f, "Cannot run {path}: {source}")
+                }
+            }
+            Self::UnparsableVersion { raw } => {
+                if zh {
+                    write!(f, "无法解析 `node --version` 的输出: {raw}")
+                } else {
+                    write!(f, "Cannot parse the output of `node --version`: {raw}")
+                }
+            }
+        }
+    }
 }
 
 /// 解析 `node --version` 的输出，例如 `v22.19.0\n`。

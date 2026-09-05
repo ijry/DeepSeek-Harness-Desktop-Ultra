@@ -28,7 +28,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)))
 export const PLUGIN_ID = 'dsh-plugin-canvas'
 
 /** Shared modules inlined into the bundle, in dependency order. */
-export const SHARED_MODULES = ['units.js', 'layout.js', 'snap.js', 'model.js', 'derive.js']
+export const SHARED_MODULES = ['lang.js', 'units.js', 'layout.js', 'snap.js', 'model.js', 'derive.js']
 
 /** Browser-only modules inlined ahead of the entry, in dependency order. The
  *  entry (`src/client/index.js`) comes last and is what assigns module.exports. */

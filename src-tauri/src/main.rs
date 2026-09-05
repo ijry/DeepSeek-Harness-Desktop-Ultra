@@ -2,8 +2,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod dsh;
+mod i18n;
 mod node;
 mod plugins;
+mod preferences;
 mod server;
 mod update;
 mod upstream;
@@ -80,11 +82,21 @@ pub struct AppState {
     plugin_log: Arc<Mutex<Option<String>>>,
     /// 上一次检查发现的、待安装的外壳更新。
     pending: update::Pending,
-    /// 托盘里那一项「设置」。发现新版本时要改它的文字——没有窗口开着时，
-    /// 托盘是唯一能被看见的界面。
-    settings_item: Arc<Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>>,
+    /// 托盘里的菜单项。切语言要重贴它们的文字，发现新版本要改「设置」那一项——
+    /// 没有窗口开着时，托盘是唯一能被看见的界面。
+    tray: Arc<Mutex<Option<TrayItems>>>,
     /// 已经为哪个版本弹过窗。后台每 30 分钟查一次，同一个版本反复弹比不弹更糟。
     popped_version: Arc<Mutex<Option<String>>>,
+    /// 界面语言。真正的读取方是 `i18n::current()`（错误在拿不到 State 的地方构造），
+    /// 这里存一份是为了 `get_language` 和落盘。
+    language: Arc<Mutex<i18n::Language>>,
+}
+
+/// 托盘菜单里那三项。切语言要把文字重贴一遍，发现新版本要单独改「设置」。
+pub struct TrayItems {
+    show: tauri::menu::MenuItem<tauri::Wry>,
+    pub settings: tauri::menu::MenuItem<tauri::Wry>,
+    quit: tauri::menu::MenuItem<tauri::Wry>,
 }
 
 /// 启动页那张插件卡片的状态。
@@ -107,8 +119,8 @@ impl Prompt {
                 .iter()
                 .map(|plugin| PromptPlugin {
                     id: plugin.id,
-                    title: plugin.title,
-                    summary: plugin.summary,
+                    title: plugin.title(),
+                    summary: plugin.summary(),
                     remove_command: plugins::remove_command(plugin.id),
                     install: self.selected.iter().any(|id| id == plugin.id),
                 })
@@ -139,6 +151,9 @@ pub struct PromptPlugin {
 
 impl AppState {
     fn new() -> Self {
+        // 语言要在任何错误被构造之前就位，所以在这里同时设好全局量。
+        let language = preferences::initial_language();
+        i18n::set_current(language);
         Self {
             boot: Arc::new(Mutex::new(BootState::LocatingNode)),
             server: Arc::new(Mutex::new(None)),
@@ -146,8 +161,9 @@ impl AppState {
             prompt: Arc::new((Mutex::new(Prompt::default()), Condvar::new())),
             plugin_log: Arc::new(Mutex::new(None)),
             pending: Arc::new(Mutex::new(None)),
-            settings_item: Arc::new(Mutex::new(None)),
+            tray: Arc::new(Mutex::new(None)),
             popped_version: Arc::new(Mutex::new(None)),
+            language: Arc::new(Mutex::new(language)),
         }
     }
 }
@@ -157,6 +173,68 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     match mutex.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// 当前界面语言。前端首帧调用。
+#[tauri::command]
+fn get_language(state: tauri::State<'_, AppState>) -> &'static str {
+    lock(&state.language).code()
+}
+
+/// 切换界面语言。
+///
+/// 顺序是有意的：先改全局量（之后构造的错误立刻跟着变）、再重贴托盘与窗口标题、
+/// 再广播给两个 webview，最后才落盘。写文件失败只意味着「下次启动不记得」，
+/// 那时界面已经是对的了。
+///
+/// 已经跑起来的 dsh 服务不动：语言是通过启动时的环境变量传给插件的，
+/// 要让插件也跟着变得重启服务——设置页那个「重启 dsh 服务」按钮就是干这个的。
+#[tauri::command]
+fn set_language(app: tauri::AppHandle, code: String) -> Result<(), String> {
+    let language = i18n::Language::from_code(&code).ok_or_else(|| {
+        if i18n::is_zh() {
+            format!("不认识的语言代码：{code}")
+        } else {
+            format!("Unknown language code: {code}")
+        }
+    })?;
+
+    {
+        let state = app.state::<AppState>();
+        *lock(&state.language) = language;
+    }
+    i18n::set_current(language);
+
+    // 先把看得见的东西改掉再落盘：写文件失败只是「下次启动不记得」，不该让
+    // 托盘和窗口卡在上一种语言上。
+    retitle(&app);
+    // 两个窗口都可能开着，各自重渲染
+    let _ = app.emit("language-changed", language.code());
+
+    // 读改写，而不是拿一个新结构体覆盖：这个文件以后会长出别的字段，
+    // 那时「切一次语言把别人的设置抹了」是个很难查的 bug。
+    let mut prefs = preferences::load();
+    prefs.language = Some(language);
+    preferences::save(&prefs)
+}
+
+/// 把托盘和设置窗口的标题按当前语言重贴一遍。
+///
+/// 「设置」那一项要带上「有新版本」的后缀，而那个状态只有 update 模块知道，
+/// 所以这里不自己拼它，转手交给 `update::relabel` 按当前语言重算。
+fn retitle(app: &tauri::AppHandle) {
+    {
+        let state = app.state::<AppState>();
+        let tray = lock(&state.tray);
+        if let Some(items) = tray.as_ref() {
+            let _ = items.show.set_text(i18n::pick("显示窗口", "Show window"));
+            let _ = items.quit.set_text(i18n::pick("退出", "Quit"));
+        }
+    }
+    update::relabel(app);
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.set_title(i18n::pick("设置", "Settings"));
     }
 }
 
@@ -230,13 +308,25 @@ async fn change_plugin(
     install: bool,
 ) -> Result<Vec<plugins::Status>, String> {
     // id 来自前端，查表落到静态定义上，绝不拿它去拼命令行。
-    let plugin = plugins::find(&id).ok_or_else(|| format!("未知的内置插件：{id}"))?;
+    let plugin = plugins::find(&id).ok_or_else(|| {
+        if i18n::is_zh() {
+            format!("未知的内置插件：{id}")
+        } else {
+            format!("Unknown bundled plugin: {id}")
+        }
+    })?;
     let node = {
         let state = app.state::<AppState>();
         let selected = lock(&state.node);
         selected.clone()
     }
-    .ok_or_else(|| "还没有选定 Node，等启动完成再试".to_string())?;
+    .ok_or_else(|| {
+        i18n::pick(
+            "还没有选定 Node，等启动完成再试",
+            "No Node has been selected yet — try again once startup finishes",
+        )
+        .to_string()
+    })?;
 
     tauri::async_runtime::spawn_blocking(move || {
         let entry = dsh::runtime_dir()
@@ -278,7 +368,13 @@ async fn change_plugin(
         Ok(plugins::status(Some(&node)))
     })
     .await
-    .map_err(|error| format!("插件操作的线程异常结束: {error}"))?
+    .map_err(|error| {
+        if i18n::is_zh() {
+            format!("插件操作的线程异常结束: {error}")
+        } else {
+            format!("The plugin worker thread died: {error}")
+        }
+    })?
 }
 
 /// 供错误页「复制诊断信息」使用。
@@ -290,42 +386,68 @@ async fn change_plugin(
 fn diagnostics(state: tauri::State<'_, AppState>) -> String {
     let info = collect_info(&state);
     let boot = lock(&state.boot).clone();
+    let zh = i18n::is_zh();
 
     let dsh_output = match lock(&state.server).as_ref() {
         Some(server) => {
             let snapshot = server.logs.snapshot();
             if snapshot.is_empty() {
-                "<无输出>".to_string()
+                i18n::pick("<无输出>", "<no output>").to_string()
             } else {
                 snapshot
             }
         }
-        None => "<服务未运行>".to_string(),
+        None => i18n::pick("<服务未运行>", "<service not running>").to_string(),
     };
 
     let plugin_output = lock(&state.plugin_log)
         .clone()
-        .unwrap_or_else(|| "<本次启动未执行>".to_string());
+        .unwrap_or_else(|| i18n::pick("<本次启动未执行>", "<not run this launch>").to_string());
 
-    format!(
-        "DSH Desktop Ultra {shell}\n\
-         平台: {platform}\n\
-         Node: {node}\n\
-         dsh 锁定版本: {pinned}\n\
-         dsh 已安装版本: {installed}\n\
-         运行时目录: {runtime_dir}\n\
-         {plugins}\n\
-         启动状态: {boot:?}\n\
-         \n--- dsh 输出 ---\n{dsh_output}\n\
-         \n--- dsh plugin 输出 ---\n{plugin_output}\n",
-        shell = info.shell,
-        platform = info.platform,
-        node = info.node,
-        pinned = info.dsh_pinned,
-        installed = info.dsh_installed,
-        runtime_dir = info.runtime_dir,
-        plugins = plugins::diagnostics_line(),
-    )
+    let plugins = plugins::diagnostics_line();
+    if zh {
+        format!(
+            "DSH Desktop Ultra {shell}\n\
+             平台: {platform}\n\
+             语言: {language}\n\
+             Node: {node}\n\
+             dsh 锁定版本: {pinned}\n\
+             dsh 已安装版本: {installed}\n\
+             运行时目录: {runtime_dir}\n\
+             {plugins}\n\
+             启动状态: {boot:?}\n\
+             \n--- dsh 输出 ---\n{dsh_output}\n\
+             \n--- dsh plugin 输出 ---\n{plugin_output}\n",
+            shell = info.shell,
+            platform = info.platform,
+            language = info.language,
+            node = info.node,
+            pinned = info.dsh_pinned,
+            installed = info.dsh_installed,
+            runtime_dir = info.runtime_dir,
+        )
+    } else {
+        format!(
+            "DSH Desktop Ultra {shell}\n\
+             Platform: {platform}\n\
+             Language: {language}\n\
+             Node: {node}\n\
+             dsh pinned version: {pinned}\n\
+             dsh installed version: {installed}\n\
+             Runtime directory: {runtime_dir}\n\
+             {plugins}\n\
+             Boot state: {boot:?}\n\
+             \n--- dsh output ---\n{dsh_output}\n\
+             \n--- dsh plugin output ---\n{plugin_output}\n",
+            shell = info.shell,
+            platform = info.platform,
+            language = info.language,
+            node = info.node,
+            pinned = info.dsh_pinned,
+            installed = info.dsh_installed,
+            runtime_dir = info.runtime_dir,
+        )
+    }
 }
 
 /// 设置页展示的基本信息，同时是诊断文本的数据来源——一份数据两种用法。
@@ -334,6 +456,9 @@ fn diagnostics(state: tauri::State<'_, AppState>) -> String {
 pub struct AppInfo {
     shell: String,
     platform: String,
+    /// 当前界面语言。诊断信息里带上它：一份 en 的报错贴上来时，
+    /// 得能看出那不是外壳装错了语言包，而是用户自己选的。
+    language: String,
     /// 实际选中的 Node。这个架构下「用户以为在用哪个」和「外壳真正拉起的是哪个」经常不一致。
     node: String,
     dsh_pinned: String,
@@ -345,18 +470,25 @@ fn collect_info(state: &AppState) -> AppInfo {
     AppInfo {
         shell: env!("CARGO_PKG_VERSION").to_string(),
         platform: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
+        language: lock(&state.language).code().to_string(),
         node: match lock(&state.node).as_ref() {
             Some(runtime) => format!("{} ({})", runtime.version, runtime.path.display()),
-            None => "<尚未选定>".to_string(),
+            None => i18n::pick("<尚未选定>", "<not selected yet>").to_string(),
         },
         dsh_pinned: upstream::DSH_VERSION.to_string(),
         dsh_installed: dsh::runtime_dir()
             .ok()
             .and_then(|dir| dsh::installed_version(&dir))
-            .unwrap_or_else(|| "<未安装>".to_string()),
+            .unwrap_or_else(|| i18n::pick("<未安装>", "<not installed>").to_string()),
         runtime_dir: dsh::runtime_dir()
             .map(|path| path.display().to_string())
-            .unwrap_or_else(|error| format!("<不可用: {error}>")),
+            .unwrap_or_else(|error| {
+                if i18n::is_zh() {
+                    format!("<不可用: {error}>")
+                } else {
+                    format!("<unavailable: {error}>")
+                }
+            }),
     }
 }
 
@@ -518,20 +650,30 @@ fn boot(app: tauri::AppHandle) {
                                 &app,
                                 BootState::Failed {
                                     kind: FailureKind::ServerFailed,
-                                    message: format!("跳转到 {url} 失败: {error}"),
+                                    message: if i18n::is_zh() {
+                                        format!("跳转到 {url} 失败: {error}")
+                                    } else {
+                                        format!("Could not navigate to {url}: {error}")
+                                    },
                                     log: String::new(),
                                 },
                             );
                         }
                     }
-                    Err(error) => transition(
-                        &app,
-                        BootState::Failed {
-                            kind: FailureKind::ServerFailed,
-                            message: format!("dsh 返回的地址无法解析 ({url}): {error}"),
-                            log: String::new(),
-                        },
-                    ),
+                    Err(error) => {
+                        transition(
+                            &app,
+                            BootState::Failed {
+                                kind: FailureKind::ServerFailed,
+                                message: if i18n::is_zh() {
+                                    format!("dsh 返回的地址无法解析 ({url}): {error}")
+                                } else {
+                                    format!("The address dsh reported cannot be parsed ({url}): {error}")
+                                },
+                                log: String::new(),
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -636,7 +778,7 @@ fn settle_prompt(app: &tauri::AppHandle, node: &node::NodeRuntime, entry: &Path)
         transition(
             app,
             BootState::ConfiguringPlugin {
-                name: plugin.title.to_string(),
+                name: plugin.title().to_string(),
             },
         );
 
@@ -709,7 +851,7 @@ fn open_settings(app: &tauri::AppHandle) {
             "settings",
             tauri::WebviewUrl::App("settings.html".into()),
         )
-        .title("设置")
+        .title(i18n::pick("设置", "Settings"))
         .inner_size(560.0, 640.0)
         .center()
         .resizable(false)
@@ -740,9 +882,21 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-    let show = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let show = MenuItem::with_id(
+        app,
+        "show",
+        i18n::pick("显示窗口", "Show window"),
+        true,
+        None::<&str>,
+    )?;
+    let settings = MenuItem::with_id(
+        app,
+        "settings",
+        i18n::pick("设置", "Settings"),
+        true,
+        None::<&str>,
+    )?;
+    let quit_item = MenuItem::with_id(app, "quit", i18n::pick("退出", "Quit"), true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
@@ -754,7 +908,10 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     )?;
 
     let mut builder = TrayIconBuilder::with_id("main")
-        .tooltip("DSH Desktop Ultra（运行中）")
+        .tooltip(i18n::pick(
+            "DSH Desktop Ultra（运行中）",
+            "DSH Desktop Ultra (running)",
+        ))
         .menu(&menu)
         // 左键留给「显示窗口」这个高频动作，菜单走右键
         .show_menu_on_left_click(false)
@@ -780,8 +937,12 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     }
     builder.build(app)?;
 
-    // 存下菜单项：发现新版本时要改它的文字
-    *lock(&app.state::<AppState>().settings_item) = Some(settings);
+    // 存下菜单项：切语言要重贴文字，发现新版本要改「设置」那一项
+    *lock(&app.state::<AppState>().tray) = Some(TrayItems {
+        show,
+        settings,
+        quit: quit_item,
+    });
     Ok(())
 }
 
@@ -803,6 +964,8 @@ fn main() {
             plugin_remove,
             update::update_check,
             update::update_install,
+            get_language,
+            set_language,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

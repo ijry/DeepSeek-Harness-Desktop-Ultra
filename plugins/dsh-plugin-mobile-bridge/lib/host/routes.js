@@ -32,6 +32,7 @@ import {
 import { handshakeToken, upgrade } from './carriers/websocket.js'
 import { deviceFor, mintDevice, mintToken, sha256 } from './auth.js'
 import { bearer, cors, fail, fromLoopback, ok, readJson, sse } from './http.js'
+import { hostLang, pick } from '../shared/lang.js'
 import { messagesOf, summaryOf } from './projection.js'
 import { encodeQr, toSvgPath } from '../shared/qr.js'
 
@@ -49,10 +50,20 @@ const TASK = new RegExp(`^${ROUTE_PREFIX}/sessions/([^/]+)(?:/([\\w-]+))?$`)
 /** Require a paired device, or refuse with 401. */
 async function requireDevice(deps, req) {
   const token = bearer(req)
-  if (token === '') throw new BridgeError(ERR.unauthorized, '缺少 Authorization: Bearer <token>')
+  if (token === '') {
+    throw new BridgeError(
+      ERR.unauthorized,
+      pick('缺少 Authorization: Bearer <token>', 'Missing Authorization: Bearer <token>'),
+    )
+  }
   const ledger = await deps.store.load()
   const device = deviceFor(ledger.devices, token)
-  if (device === undefined) throw new BridgeError(ERR.unauthorized, '令牌无效或已被吊销，请重新配对')
+  if (device === undefined) {
+    throw new BridgeError(
+      ERR.unauthorized,
+      pick('令牌无效或已被吊销，请重新配对', 'This token is invalid or has been revoked; pair again'),
+    )
+  }
   deps.store.touch(device.deviceId, deps.now())
   return device
 }
@@ -60,7 +71,10 @@ async function requireDevice(deps, req) {
 /** Require the admin carrier and a local peer, or refuse with 403. */
 function requireAdmin(deps, req) {
   if (deps.admin !== true || !fromLoopback(req)) {
-    throw new BridgeError(ERR.forbidden, '这个接口只在本机的 dsh 界面里可用')
+    throw new BridgeError(
+      ERR.forbidden,
+      pick('这个接口只在本机的 dsh 界面里可用', 'This endpoint is only available in the dsh UI on this machine'),
+    )
   }
 }
 
@@ -99,11 +113,20 @@ function pairResponse(tokens, deps, ledger) {
 /** Exchange a pairing code for a device's first token pair. */
 async function pair(deps, req) {
   if (deps.offers.throttled()) {
-    throw new BridgeError(ERR.rateLimited, '配对尝试过于频繁，请稍后再试')
+    throw new BridgeError(
+      ERR.rateLimited,
+      pick('配对尝试过于频繁，请稍后再试', 'Too many pairing attempts; try again in a minute'),
+    )
   }
   const body = await readJson(req)
   if (!deps.offers.consume(body.code, body.secret)) {
-    throw new BridgeError(ERR.pairingFailed, '配对码或密钥不正确、已过期，或已经被用过——请在 dsh 里重新出码')
+    throw new BridgeError(
+      ERR.pairingFailed,
+      pick(
+        '配对码或密钥不正确、已过期，或已经被用过——请在 dsh 里重新出码',
+        'The pairing code or secret is wrong, expired, or already used — rotate the code in dsh',
+      ),
+    )
   }
   const now = deps.now()
   const { tokens, record } = mintDevice(body.deviceName ?? body.name, now)
@@ -116,7 +139,12 @@ async function refresh(deps, req) {
   const body = await readJson(req)
   const ledger = await deps.store.load()
   const device = deviceFor(ledger.devices, body.refreshToken, 'refreshHash')
-  if (device === undefined) throw new BridgeError(ERR.unauthorized, '刷新令牌无效或已被吊销，请重新配对')
+  if (device === undefined) {
+    throw new BridgeError(
+      ERR.unauthorized,
+      pick('刷新令牌无效或已被吊销，请重新配对', 'This refresh token is invalid or has been revoked; pair again'),
+    )
+  }
   const accessToken = mintToken()
   const refreshToken = mintToken()
   // Both halves rotate together: leaving the refresh token in place would make a
@@ -148,7 +176,12 @@ function contentOf(body) {
       ...(image.name === undefined ? {} : { name: String(image.name).slice(0, 120) }),
     })
   }
-  if (parts.length === 0) throw new BridgeError(ERR.invalidInput, '消息为空：至少要有文本或一张图片')
+  if (parts.length === 0) {
+    throw new BridgeError(
+      ERR.invalidInput,
+      pick('消息为空：至少要有文本或一张图片', 'Empty message: it needs text or at least one image'),
+    )
+  }
   return parts
 }
 
@@ -195,7 +228,7 @@ async function sessionRoute(deps, req, res, sessionId, action, method) {
   if (method === 'POST' && action === 'rename') {
     const body = await readJson(req)
     const title = String(body.title ?? '').trim()
-    if (title === '') throw new BridgeError(ERR.invalidInput, '标题不能为空')
+    if (title === '') throw new BridgeError(ERR.invalidInput, pick('标题不能为空', 'The title cannot be empty'))
     return ok(res, await deps.bridge.rename(sessionId, title))
   }
 
@@ -204,7 +237,10 @@ async function sessionRoute(deps, req, res, sessionId, action, method) {
     const provider = String(body.provider ?? '')
     const model = String(body.model ?? '')
     if (provider === '' || model === '') {
-      throw new BridgeError(ERR.invalidInput, 'provider 与 model 都是必填')
+      throw new BridgeError(
+        ERR.invalidInput,
+        pick('provider 与 model 都是必填', 'both provider and model are required'),
+      )
     }
     return ok(
       res,
@@ -220,37 +256,51 @@ async function sessionRoute(deps, req, res, sessionId, action, method) {
   if (method === 'GET' && action === undefined) {
     const list = await deps.bridge.listSessions()
     const row = (list.items ?? []).map(summaryOf).find((item) => item.sessionId === sessionId)
-    if (row === undefined) throw new BridgeError(ERR.notFound, '没有这个会话')
+    if (row === undefined) throw new BridgeError(ERR.notFound, pick('没有这个会话', 'No such session'))
     return ok(res, row)
   }
 
-  throw new BridgeError(ERR.notFound, `未知的会话操作 ${method} ${action ?? ''}`)
+  throw new BridgeError(
+    ERR.notFound,
+    pick(`未知的会话操作 ${method} ${action ?? ''}`, `Unknown session action ${method} ${action ?? ''}`),
+  )
 }
 
 /** Answer one approval or question the agent is waiting on. */
 async function answer(deps, req) {
   const body = await readJson(req)
   const requestId = String(body.requestId ?? '')
-  if (requestId === '') throw new BridgeError(ERR.invalidInput, 'requestId 是必填的')
+  if (requestId === '') {
+    throw new BridgeError(ERR.invalidInput, pick('requestId 是必填的', 'requestId is required'))
+  }
   const sessionId = String(body.sessionId ?? '')
-  if (sessionId === '') throw new BridgeError(ERR.invalidInput, 'sessionId 是必填的')
+  if (sessionId === '') {
+    throw new BridgeError(ERR.invalidInput, pick('sessionId 是必填的', 'sessionId is required'))
+  }
 
   if (body.kind === ANSWER_KIND.approval) {
     const outcome = String(body.outcome ?? '')
     if (outcome !== APPROVAL_OUTCOME.allow && outcome !== APPROVAL_OUTCOME.deny) {
       throw new BridgeError(
         ERR.invalidInput,
-        `outcome 只能是 ${APPROVAL_OUTCOME.allow} 或 ${APPROVAL_OUTCOME.deny}`,
+        pick(
+          `outcome 只能是 ${APPROVAL_OUTCOME.allow} 或 ${APPROVAL_OUTCOME.deny}`,
+          `outcome must be ${APPROVAL_OUTCOME.allow} or ${APPROVAL_OUTCOME.deny}`,
+        ),
       )
     }
     const approvalId = String(body.approvalId ?? '')
-    if (approvalId === '') throw new BridgeError(ERR.invalidInput, 'approvalId 是必填的')
+    if (approvalId === '') {
+      throw new BridgeError(ERR.invalidInput, pick('approvalId 是必填的', 'approvalId is required'))
+    }
     return deps.bridge.respond(requestId, { sessionId, approvalId, outcome })
   }
 
   if (body.kind === ANSWER_KIND.question) {
     const answers = Array.isArray(body.answers) ? body.answers : null
-    if (answers === null) throw new BridgeError(ERR.invalidInput, 'answers 必须是数组')
+    if (answers === null) {
+      throw new BridgeError(ERR.invalidInput, pick('answers 必须是数组', 'answers must be an array'))
+    }
     // dsh validates the batch against the pending question itself (unknown
     // labels, missing ids, empty custom text), so the bridge only shapes it.
     return deps.bridge.respond(requestId, {
@@ -265,7 +315,10 @@ async function answer(deps, req) {
     })
   }
 
-  throw new BridgeError(ERR.invalidInput, `未知的回答类型 ${String(body.kind)}`)
+  throw new BridgeError(
+    ERR.invalidInput,
+    pick(`未知的回答类型 ${String(body.kind)}`, `Unknown answer kind ${String(body.kind)}`),
+  )
 }
 
 /** The panel's whole view: reachability, the live offer, and paired devices. */
@@ -278,6 +331,11 @@ async function adminState(deps) {
   return {
     ...hello(deps, ledger),
     displayName: name,
+    // The panel runs in dsh's page, which has no environment to read: it cannot
+    // see `DSH_DESKTOP_LANG` or a locale variable. So the language the host half
+    // resolved rides along with the state the panel already polls, and the panel
+    // only falls back to `navigator.language` when this field is missing.
+    language: hostLang(),
     reach,
     // The code alone cannot pair anything — the secret is required too, and it
     // only ever leaves through `/admin/qr`. So this route stays free of it, and a
@@ -415,7 +473,9 @@ export function createRoutes(deps) {
       }
       if (method === 'GET' && path === `${ROUTE_PREFIX}/search`) {
         const query = String(url.searchParams.get('q') ?? '').trim()
-        if (query === '') throw new BridgeError(ERR.invalidInput, '搜索词不能为空')
+        if (query === '') {
+          throw new BridgeError(ERR.invalidInput, pick('搜索词不能为空', 'The search term cannot be empty'))
+        }
         const controller = new AbortController()
         req.on('close', () => controller.abort())
         return ok(res, await deps.bridge.searchSessions(query, controller.signal))
@@ -433,7 +493,7 @@ export function createRoutes(deps) {
         return await sessionRoute(deps, req, res, decodeURIComponent(match[1]), match[2], method)
       }
 
-      throw new BridgeError(ERR.notFound, `没有这个接口：${method} ${path}`)
+      throw new BridgeError(ERR.notFound, pick(`没有这个接口：${method} ${path}`, `No such endpoint: ${method} ${path}`))
     } catch (error) {
       fail(res, error)
     }
@@ -462,7 +522,7 @@ async function adminRoute(deps, req, res, action, method) {
     if (body.all === true) await deps.store.revokeAll(deps.now())
     else {
       const deviceId = String(body.deviceId ?? '')
-      if (deviceId === '') throw new BridgeError(ERR.invalidInput, 'deviceId 是必填的')
+      if (deviceId === '') throw new BridgeError(ERR.invalidInput, pick('deviceId 是必填的', 'deviceId is required'))
       await deps.store.revokeDevice(deviceId, deps.now())
     }
     // Revoking is also the "someone saw my screen" button, so it rotates the
@@ -470,7 +530,10 @@ async function adminRoute(deps, req, res, action, method) {
     deps.offers.rotate()
     return ok(res, await adminState(deps))
   }
-  throw new BridgeError(ERR.notFound, `没有这个管理接口：${method} ${action}`)
+  throw new BridgeError(
+    ERR.notFound,
+    pick(`没有这个管理接口：${method} ${action}`, `No such admin endpoint: ${method} ${action}`),
+  )
 }
 
 /**
@@ -520,7 +583,12 @@ export function createUpgradeHandler(deps) {
       const token = handshakeToken(req)
       const ledger = await deps.store.load()
       device = deviceFor(ledger.devices, token)
-      if (device === undefined) throw new BridgeError(ERR.unauthorized, '令牌无效或已被吊销')
+      if (device === undefined) {
+        throw new BridgeError(
+          ERR.unauthorized,
+          pick('令牌无效或已被吊销', 'This token is invalid or has been revoked'),
+        )
+      }
     } catch (error) {
       const code = error instanceof BridgeError ? error.code : ERR.internal
       socket.write(

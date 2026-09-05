@@ -10,6 +10,7 @@
  *
  * @module dsh-plugin-taskboard/host/routes
  */
+import { hostLang } from '../shared/lang.js'
 import {
   HOLD_STATUSES,
   canUserReject,
@@ -136,7 +137,9 @@ export function registerTaskboardRoutes(ctx, options) {
       if (req.method === 'GET') {
         if (pathname === `${ROUTE_PREFIX}/state`) {
           await store.load()
-          ok(res, store.snapshot())
+          // `language` is how the browser half learns the shell's UI language:
+          // it runs in the DSH page and cannot read DSH_DESKTOP_LANG itself.
+          ok(res, { ...store.snapshot(), language: hostLang() })
           return
         }
         if (pathname === `${ROUTE_PREFIX}/workspaces`) {

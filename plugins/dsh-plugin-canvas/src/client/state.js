@@ -262,6 +262,10 @@ export function refetchState() {
   refetchInFlight = api('/state')
     .then((snapshot) => {
       refetchInFlight = null
+      // The ledger response is also where the language comes from — the browser
+      // half cannot see the shell's environment. Adopted before the emit below, so
+      // nothing has painted in the wrong language yet.
+      setLanguage(snapshot?.language)
       if (!Number.isFinite(snapshot?.revision)) return
       const before = model.revision
       // A snapshot read BEFORE a mutation we already applied has not repaired

@@ -166,3 +166,32 @@ pre {
   word-break: break-all;
   user-select: all;
 }
+
+/* 语言开关。刻意做得比按钮轻：它在启动页上是次要动作，不该跟「重试」抢注意力。 */
+.langpick {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.langpick__option {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 4px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.langpick__option:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* 当前语言：用边框而不是填充，免得看起来像个待点的主按钮 */
+.langpick__option[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--surface);
+}

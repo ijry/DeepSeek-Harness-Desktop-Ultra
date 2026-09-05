@@ -115,6 +115,12 @@
     view.dataset.open = String(model.open)
     if (entry !== null) {
       entry.dataset.active = String(model.open)
+      // Relabelled on every paint, not once at build time: the seat is taken
+      // before the board is ever opened, and /state — the only thing that knows
+      // which language the shell chose — is not fetched until it is.
+      entry.setAttribute('aria-label', L.title)
+      const label = entry.querySelector('.dshc-entry-label')
+      if (label !== null) label.textContent = L.title
       const stats = entry.querySelector('.dshc-entry-stats')
       if (stats !== null) stats.textContent = model.nodes.size === 0 ? '' : String(model.nodes.size)
     }

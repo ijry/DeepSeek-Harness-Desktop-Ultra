@@ -16,6 +16,7 @@
  * @module dsh-plugin-taskboard/host/tools
  */
 import { defineTool } from './sdk.js'
+import { hostLang } from '../shared/lang.js'
 import {
   HOLD_STATUSES,
   agentCanMove,
@@ -30,6 +31,66 @@ import {
   normalizeWorkspaceId,
   summarizeTask,
 } from '../shared/protocol.js'
+
+/**
+ * Model-facing text of the rendered tool output, per language. The language is
+ * resolved once at load: the dsh process never switches language while running.
+ */
+const STRINGS = {
+  zh: {
+    lineProject: (value) => `项目 ${value}`,
+    lineNoProject: '无项目',
+    lineClaimed: '已被认领',
+    lineComments: (count) => `评论${count}`,
+    detailHead: (task) => `任务 ${task.id} 「${task.title}」`,
+    detailStatus: (task) => `状态: ${task.status}（看板列 ${columnForStatus(task.status)}）v${task.version}`,
+    detailProject: (value) => `项目: ${value}`,
+    detailNone: '（无）',
+    detailCreated: (value) => `创建: ${value}`,
+    detailUpdated: (value) => `更新: ${value}`,
+    detailClaim: (who) => `认领: agent ${who}`,
+    detailDescription: (value) => `描述: ${value}`,
+    detailPrompt: (value) => `执行 Prompt: ${value}`,
+    detailComments: (count) => `评论 (${count}):`,
+    listEmpty: '任务看板为空（当前过滤下没有任务）。',
+    listHead: (count) => `任务看板共 ${count} 个任务（按最近更新排序）：`,
+    created: (task) => `已创建任务 ${task.id} 「${task.title}」（status=todo, v${task.version}）。`,
+    updateNoop: '没有变化，任务未更新。',
+    updated: (task) => `已更新任务 ${task.id}「${task.title}」到 v${task.version}。`,
+    moveNoop: '没有变化，任务未移动。',
+    moved: (task) => `任务 ${task.id}「${task.title}」→ ${task.status}（看板列 ${columnForStatus(task.status)}），v${task.version}。`,
+    commentNoop: '评论未提交。',
+    commented: (task) => `已评论任务 ${task.id}「${task.title}」（现 v${task.version}）。`,
+  },
+  en: {
+    lineProject: (value) => `project ${value}`,
+    lineNoProject: 'no project',
+    lineClaimed: 'claimed',
+    lineComments: (count) => `comments ${count}`,
+    detailHead: (task) => `task ${task.id} "${task.title}"`,
+    detailStatus: (task) => `status: ${task.status} (board column ${columnForStatus(task.status)}) v${task.version}`,
+    detailProject: (value) => `project: ${value}`,
+    detailNone: '(none)',
+    detailCreated: (value) => `created: ${value}`,
+    detailUpdated: (value) => `updated: ${value}`,
+    detailClaim: (who) => `claimed by: agent ${who}`,
+    detailDescription: (value) => `description: ${value}`,
+    detailPrompt: (value) => `prompt: ${value}`,
+    detailComments: (count) => `comments (${count}):`,
+    listEmpty: 'The task board is empty (no tasks under the current filter).',
+    listHead: (count) => `The task board has ${count} task(s), freshest first:`,
+    created: (task) => `Created task ${task.id} "${task.title}" (status=todo, v${task.version}).`,
+    updateNoop: 'Nothing changed; the task was not updated.',
+    updated: (task) => `Updated task ${task.id} "${task.title}" to v${task.version}.`,
+    moveNoop: 'Nothing changed; the task was not moved.',
+    moved: (task) => `Task ${task.id} "${task.title}" → ${task.status} (board column ${columnForStatus(task.status)}), v${task.version}.`,
+    commentNoop: 'The comment was not posted.',
+    commented: (task) => `Commented on task ${task.id} "${task.title}" (now v${task.version}).`,
+  },
+}
+
+/** The active label set (Chinese unless the shell runs in English). */
+const TEXT = STRINGS[hostLang()] ?? STRINGS.zh
 
 /** Stable error codes used by both tools and routes. */
 export const ERR = {
@@ -87,12 +148,12 @@ function taskLine(t, workspaces) {
     `- ${t.id} [${t.status}/${columnForStatus(t.status)}] v${t.version} · ${t.title}`,
   ]
   if (t.workspaceId !== undefined && t.workspaceId !== '') {
-    parts.push(`项目 ${workspace !== undefined ? `${workspace.title}(${workspace.id})` : t.workspaceId}`)
+    parts.push(TEXT.lineProject(workspace !== undefined ? `${workspace.title}(${workspace.id})` : t.workspaceId))
   } else {
-    parts.push('无项目')
+    parts.push(TEXT.lineNoProject)
   }
-  if (isClaimedBy(t)) parts.push('已被认领')
-  if (Array.isArray(t.comments) && t.comments.length > 0) parts.push(`评论${t.comments.length}`)
+  if (isClaimedBy(t)) parts.push(TEXT.lineClaimed)
+  if (Array.isArray(t.comments) && t.comments.length > 0) parts.push(TEXT.lineComments(t.comments.length))
   return parts.join(' ')
 }
 
@@ -100,17 +161,17 @@ function taskLine(t, workspaces) {
 function taskDetail(t, workspaces) {
   const workspace = workspaces !== undefined ? workspaces.get(t.workspaceId ?? '') : undefined
   const lines = [
-    `任务 ${t.id} 「${t.title}」`,
-    `状态: ${t.status}（看板列 ${columnForStatus(t.status)}）v${t.version}`,
-    `项目: ${t.workspaceId !== undefined && t.workspaceId !== '' ? (workspace !== undefined ? `${workspace.title} (${t.workspaceId}, ${workspace.path})` : t.workspaceId) : '（无）'}`,
-    `创建: ${new Date(t.createdAt).toISOString()}${t.createdBy?.kind !== undefined ? ` by ${actorLabel(t.createdBy)}` : ''}`,
-    `更新: ${new Date(t.updatedAt).toISOString()}${t.updatedBy?.kind !== undefined ? ` by ${actorLabel(t.updatedBy)}` : ''}`,
+    TEXT.detailHead(t),
+    TEXT.detailStatus(t),
+    TEXT.detailProject(t.workspaceId !== undefined && t.workspaceId !== '' ? (workspace !== undefined ? `${workspace.title} (${t.workspaceId}, ${workspace.path})` : t.workspaceId) : TEXT.detailNone),
+    TEXT.detailCreated(`${new Date(t.createdAt).toISOString()}${t.createdBy?.kind !== undefined ? ` by ${actorLabel(t.createdBy)}` : ''}`),
+    TEXT.detailUpdated(`${new Date(t.updatedAt).toISOString()}${t.updatedBy?.kind !== undefined ? ` by ${actorLabel(t.updatedBy)}` : ''}`),
   ]
-  if (t.claimedBy !== undefined) lines.push(`认领: agent ${t.claimedBy}`)
-  if (t.description !== undefined && t.description.length > 0) lines.push(`描述: ${t.description}`)
-  if (t.prompt !== undefined && t.prompt.length > 0) lines.push(`执行 Prompt: ${t.prompt}`)
+  if (t.claimedBy !== undefined) lines.push(TEXT.detailClaim(t.claimedBy))
+  if (t.description !== undefined && t.description.length > 0) lines.push(TEXT.detailDescription(t.description))
+  if (t.prompt !== undefined && t.prompt.length > 0) lines.push(TEXT.detailPrompt(t.prompt))
   const comments = Array.isArray(t.comments) ? t.comments : []
-  lines.push(`评论 (${comments.length}):`)
+  lines.push(TEXT.detailComments(comments.length))
   for (const comment of comments) {
     lines.push(`  [${new Date(comment.createdAt).toISOString()} ${actorLabel(comment.actor)}] ${comment.body}`)
   }
@@ -231,8 +292,8 @@ export function registerTaskboardTools(ctx, deps) {
       }).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
       const lines = rows.map((task) => taskLine(task, workspaces))
       const text = rows.length === 0
-        ? '任务看板为空（当前过滤下没有任务）。'
-        : `任务看板共 ${rows.length} 个任务（按最近更新排序）：\n${lines.join('\n')}`
+        ? TEXT.listEmpty
+        : `${TEXT.listHead(rows.length)}\n${lines.join('\n')}`
       return { tasks: rows.map(summarizeTask), text }
     },
   }))
@@ -285,7 +346,7 @@ export function registerTaskboardTools(ctx, deps) {
         ledger.tasks.push(task)
         return [task]
       })
-      const text = `已创建任务 ${task.id} 「${task.title}」（status=todo, v${task.version}）。`
+      const text = TEXT.created(task)
       return { task: { ...task }, text }
     },
   }))
@@ -320,7 +381,7 @@ export function registerTaskboardTools(ctx, deps) {
       const task = changed.changed.length > 0 ? store.get(args.id) : undefined
       return {
         task: task === undefined ? undefined : { ...task },
-        text: task === undefined ? '没有变化，任务未更新。' : `已更新任务 ${task.id}「${task.title}」到 v${task.version}。`,
+        text: task === undefined ? TEXT.updateNoop : TEXT.updated(task),
       }
     },
   }))
@@ -382,8 +443,8 @@ export function registerTaskboardTools(ctx, deps) {
       })
       const after = changed.changed.length > 0 ? store.get(args.id) : undefined
       const text = after === undefined
-        ? '没有变化，任务未移动。'
-        : `任务 ${after.id}「${after.title}」→ ${after.status}（看板列 ${columnForStatus(after.status)}），v${after.version}。`
+        ? TEXT.moveNoop
+        : TEXT.moved(after)
       return { task: after === undefined ? undefined : { ...after }, text }
     },
   }))
@@ -424,7 +485,7 @@ export function registerTaskboardTools(ctx, deps) {
       const after = changed.changed.length > 0 ? store.get(args.id) : undefined
       return {
         task: after === undefined ? undefined : { ...after },
-        text: after === undefined ? '评论未提交。' : `已评论任务 ${after.id}「${after.title}」（现 v${after.version}）。`,
+        text: after === undefined ? TEXT.commentNoop : TEXT.commented(after),
       }
     },
   }))

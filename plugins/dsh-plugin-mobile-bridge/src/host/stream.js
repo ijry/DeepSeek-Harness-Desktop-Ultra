@@ -16,6 +16,7 @@
  * @module dsh-plugin-mobile-bridge/host/stream
  */
 import { FRAME } from '../shared/protocol.js'
+import { pick } from '../shared/lang.js'
 import { framesOf, hostFramesOf } from './projection.js'
 
 /** Frames kept for reconnect replay. Roughly a minute of a chatty turn. */
@@ -84,7 +85,10 @@ export class EventHub {
         this.publish({
           type: FRAME.error,
           code: 'dsh_error',
-          message: `dsh 事件流中断：${error?.message ?? error}`,
+          message: pick(
+            `dsh 事件流中断：${error?.message ?? error}`,
+            `The dsh event stream was interrupted: ${error?.message ?? error}`,
+          ),
         })
       }
       if (!this.running) return

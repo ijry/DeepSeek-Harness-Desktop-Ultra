@@ -8,6 +8,59 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;
+    // ---- inlined src/shared/lang.js ----
+/**
+ * The two languages this plugin speaks, and how each half learns which one it is.
+ *
+ * The shell hands the dsh process its language in `DSH_DESKTOP_LANG`, so the Node
+ * half only has to read the environment (`hostLang`). The browser half runs inside
+ * dsh's own page and has no shell to ask: it takes the language from the
+ * `language` field of `GET /state`, and falls back to `navigator.language` so a
+ * plugin installed straight from npm — no shell anywhere — still speaks the
+ * user's language. That fallback is why the parser lives in `shared/`: the wrap
+ * step inlines this file into the client bundle. `hostLang` rides along there
+ * unused, because nothing in the browser calls it.
+ *
+ * Locale spellings are matched exactly as the shell matches them (src-tauri
+ * i18n.rs): case-insensitively, and only the part before the first `-`, `_` or
+ * `.` counts, so `zh`, `zh-CN` and `zh_CN.UTF-8` are one language.
+ *
+ * @module dsh-plugin-canvas/shared/lang
+ */
+
+/** Every language with a full string table. Chinese first — it is the default. */
+const LANGS = ['zh', 'en']
+
+/** What the Node half reads, in order: the shell's own variable outranks the
+ *  ambient locale, and the first RECOGNISED value wins (a `LANG` of `C.UTF-8`
+ *  names no language, so it must not shadow a `LANG` further down). */
+const HOST_ENV_KEYS = ['DSH_DESKTOP_LANG', 'LC_ALL', 'LC_MESSAGES', 'LANG']
+
+/**
+ * A locale string → one of [`LANGS`], or null when it names neither of them
+ * (`fr`, `C.UTF-8`) or is nullish.
+ */
+function normalizeLang(value) {
+  if (value === null || value === undefined) return null
+  const base = String(value).trim().toLowerCase().split(/[-_.]/)[0]
+  return LANGS.includes(base) ? base : null
+}
+
+/**
+ * The language of the Node half, Chinese when nothing names one.
+ *
+ * Read at call time rather than cached: a process's environment does not change
+ * under it, and module-level state resolved at import time is state a test cannot
+ * set.
+ */
+function hostLang() {
+  for (const key of HOST_ENV_KEYS) {
+    const found = normalizeLang(process.env[key])
+    if (found !== null) return found
+  }
+  return 'zh'
+}
+
     // ---- inlined src/shared/units.js ----
 /**
  * dsh-plugin-canvas — board units and region chrome geometry.
@@ -1478,6 +1531,10 @@ function refetchState() {
   refetchInFlight = api('/state')
     .then((snapshot) => {
       refetchInFlight = null
+      // The ledger response is also where the language comes from — the browser
+      // half cannot see the shell's environment. Adopted before the emit below, so
+      // nothing has painted in the wrong language yet.
+      setLanguage(snapshot?.language)
       if (!Number.isFinite(snapshot?.revision)) return
       const before = model.revision
       // A snapshot read BEFORE a mutation we already applied has not repaired
@@ -1796,75 +1853,203 @@ function centerOn(rect, point) {
  * @module dsh-plugin-canvas/client/render
  */
 
-/** Every user-visible string, mirroring codeg-plus's `Canvas` i18n namespace. */
-const L = {
-  title: '无限会话',
-  untitled: '未命名会话',
-  unresolvedSession: '会话已删除',
-  removeCard: '移除卡片',
-  unresolvedWorkspace: '工作区不可用',
-  unresolvedWorkspaceHint: '绑定的工作区已从注册表移除。重新添加后此区域会自动恢复。',
-  customRegion: '收藏区',
-  workspaceRegion: '工作区',
-  agentRegion: '智能体',
-  runningCount: (n) => `${n} 个进行中`,
-  rename: '重命名',
-  collapse: '折叠',
-  expand: '展开',
-  color: '颜色',
-  removeRegion: '移除区域',
-  removeNote: '删除便签',
-  showMore: (n) => `还有 ${n} 个`,
-  showAllMembers: '显示全部会话',
-  showFewerMembers: '收起多余会话',
-  emptyRegion: '这里还没有会话',
-  emptyCustomHint: '把会话卡片拖到这里收集',
-  notePlaceholder: '写点什么…',
-  noteEmptyHint: '双击开始编辑',
-  addNode: '添加到画布',
-  newSession: '新建会话',
-  newSessionIn: '在哪个工作区新建',
-  addWorkspaceRegion: '工作区区域',
-  addAgentRegion: '智能体区域',
-  addSessionCard: '会话卡片',
-  addCustomRegion: '自定义区域',
-  addNote: '便签卡片',
-  searchSessions: '搜索会话…',
-  noWorkspaces: '没有工作区',
-  noSessions: '未找到会话',
-  noAgents: '没有智能体预设',
-  fitView: '适应视图',
-  zoomIn: '放大',
-  zoomOut: '缩小',
-  resetZoom: '重置缩放为 100%',
-  showMinimap: '显示导航地图',
-  hideMinimap: '隐藏导航地图',
-  autoArrange: '自动整理',
-  empty: '画布还是空的',
-  emptyHint: '用空间方式梳理工作：区域对应工作区和智能体，卡片对应会话，便签记录其它。',
-  seedFromWorkspaces: '从当前工作区生成',
-  grid: '网格',
-  gridColumns: '列数',
-  gridRows: '行数',
-  gridAuto: '自动',
-  createRegionFromSelection: '收进新区域',
-  selectedCount: (n) => `已选 ${n} 个`,
-  openInGui: '在会话界面打开',
-  expandSession: '展开会话',
-  collapseSession: '收起会话',
-  removeFromRegion: '从区域移除',
-  detachToCanvas: '移出到画布',
-  deleteSelected: '删除所选',
-  confirmDeleteTitle: '删除选中内容？',
-  confirmDeleteNotes: (n) => `你写下的 ${n} 条便签将被永久删除，此操作无法撤销。`,
-  confirmDeleteCancel: '取消',
-  confirmDeleteConfirm: '删除',
-  canvasActions: '画布操作',
-  viewportControls: '视图',
-  mergeIntoNewRegion: '新建区域',
-  transcriptEmpty: '这个会话还没有内容',
-  transcriptFailed: '读取会话内容失败',
-  loading: '载入中…',
+/**
+ * Every user-visible string in both languages, mirroring codeg-plus's `Canvas`
+ * i18n namespace.
+ *
+ * Entries that carry a value are functions: the counts in the chrome, and the
+ * failure toasts, which take the message the host sent. The punctuation belongs
+ * inside the entry — a Chinese toast joins its detail with a full-width colon and
+ * an English one does not.
+ */
+const STRINGS = {
+  zh: {
+    title: '无限会话',
+    untitled: '未命名会话',
+    unresolvedSession: '会话已删除',
+    removeCard: '移除卡片',
+    unresolvedWorkspace: '工作区不可用',
+    unresolvedWorkspaceHint: '绑定的工作区已从注册表移除。重新添加后此区域会自动恢复。',
+    customRegion: '收藏区',
+    workspaceRegion: '工作区',
+    agentRegion: '智能体',
+    runningCount: (n) => `${n} 个进行中`,
+    rename: '重命名',
+    collapse: '折叠',
+    expand: '展开',
+    color: '颜色',
+    removeRegion: '移除区域',
+    removeNote: '删除便签',
+    showMore: (n) => `还有 ${n} 个`,
+    showAllMembers: '显示全部会话',
+    showFewerMembers: '收起多余会话',
+    emptyRegion: '这里还没有会话',
+    emptyCustomHint: '把会话卡片拖到这里收集',
+    notePlaceholder: '写点什么…',
+    noteEmptyHint: '双击开始编辑',
+    addNode: '添加到画布',
+    newSession: '新建会话',
+    newSessionIn: '在哪个工作区新建',
+    addWorkspaceRegion: '工作区区域',
+    addAgentRegion: '智能体区域',
+    addSessionCard: '会话卡片',
+    addCustomRegion: '自定义区域',
+    addNote: '便签卡片',
+    searchSessions: '搜索会话…',
+    noWorkspaces: '没有工作区',
+    noSessions: '未找到会话',
+    noAgents: '没有智能体预设',
+    fitView: '适应视图',
+    zoomIn: '放大',
+    zoomOut: '缩小',
+    resetZoom: '重置缩放为 100%',
+    showMinimap: '显示导航地图',
+    hideMinimap: '隐藏导航地图',
+    autoArrange: '自动整理',
+    empty: '画布还是空的',
+    emptyHint: '用空间方式梳理工作：区域对应工作区和智能体，卡片对应会话，便签记录其它。',
+    seedFromWorkspaces: '从当前工作区生成',
+    grid: '网格',
+    gridColumns: '列数',
+    gridRows: '行数',
+    gridAuto: '自动',
+    createRegionFromSelection: '收进新区域',
+    selectedCount: (n) => `已选 ${n} 个`,
+    openInGui: '在会话界面打开',
+    expandSession: '展开会话',
+    collapseSession: '收起会话',
+    removeFromRegion: '从区域移除',
+    detachToCanvas: '移出到画布',
+    deleteSelected: '删除所选',
+    confirmDeleteTitle: '删除选中内容？',
+    confirmDeleteNotes: (n) => `你写下的 ${n} 条便签将被永久删除，此操作无法撤销。`,
+    confirmDeleteCancel: '取消',
+    confirmDeleteConfirm: '删除',
+    canvasActions: '画布操作',
+    viewportControls: '视图',
+    mergeIntoNewRegion: '新建区域',
+    transcriptEmpty: '这个会话还没有内容',
+    transcriptFailed: '读取会话内容失败',
+    loading: '载入中…',
+    saveFailed: (m) => `保存失败：${m}`,
+    createFailed: (m) => `创建失败：${m}`,
+    moveFailed: (m) => `移动失败：${m}`,
+    deleteFailed: (m) => `删除失败：${m}`,
+    detachFailed: (m) => `移出失败：${m}`,
+    groupFailed: (m) => `收进区域失败：${m}`,
+    noSessionNav: '这个 dsh 版本没有暴露会话导航接口',
+    openSessionFailed: (m) => `打开会话失败：${m}`,
+    newSessionFailed: (m) => `新建会话失败：${m}`,
+  },
+  en: {
+    title: 'Infinite Sessions',
+    untitled: 'Untitled session',
+    unresolvedSession: 'Session deleted',
+    removeCard: 'Remove card',
+    unresolvedWorkspace: 'Workspace unavailable',
+    unresolvedWorkspaceHint:
+      'The bound workspace was removed from the registry. Add it back and this region returns on its own.',
+    customRegion: 'Collection',
+    workspaceRegion: 'Workspace',
+    agentRegion: 'Agent',
+    runningCount: (n) => `${n} running`,
+    rename: 'Rename',
+    collapse: 'Collapse',
+    expand: 'Expand',
+    color: 'Color',
+    removeRegion: 'Remove region',
+    removeNote: 'Delete note',
+    showMore: (n) => `${n} more`,
+    showAllMembers: 'Show all sessions',
+    showFewerMembers: 'Show fewer sessions',
+    emptyRegion: 'No sessions here yet',
+    emptyCustomHint: 'Drag session cards here to collect them',
+    notePlaceholder: 'Write something…',
+    noteEmptyHint: 'Double-click to edit',
+    addNode: 'Add to canvas',
+    newSession: 'New session',
+    newSessionIn: 'New session in',
+    addWorkspaceRegion: 'Workspace region',
+    addAgentRegion: 'Agent region',
+    addSessionCard: 'Session card',
+    addCustomRegion: 'Custom region',
+    addNote: 'Sticky note',
+    searchSessions: 'Search sessions…',
+    noWorkspaces: 'No workspaces',
+    noSessions: 'No sessions found',
+    noAgents: 'No agent presets',
+    fitView: 'Fit to view',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    resetZoom: 'Reset zoom to 100%',
+    showMinimap: 'Show minimap',
+    hideMinimap: 'Hide minimap',
+    autoArrange: 'Auto arrange',
+    empty: 'The canvas is empty',
+    emptyHint:
+      'Lay your work out in space: regions for workspaces and agents, cards for sessions, notes for everything else.',
+    seedFromWorkspaces: 'Build from current workspaces',
+    grid: 'Grid',
+    gridColumns: 'Columns',
+    gridRows: 'Rows',
+    gridAuto: 'Auto',
+    createRegionFromSelection: 'Collect into a new region',
+    selectedCount: (n) => `${n} selected`,
+    openInGui: 'Open in the session view',
+    expandSession: 'Expand session',
+    collapseSession: 'Collapse session',
+    removeFromRegion: 'Remove from region',
+    detachToCanvas: 'Move out to the canvas',
+    deleteSelected: 'Delete selection',
+    confirmDeleteTitle: 'Delete the selection?',
+    confirmDeleteNotes: (n) =>
+      `${n} note${n === 1 ? '' : 's'} you wrote will be deleted for good. This cannot be undone.`,
+    confirmDeleteCancel: 'Cancel',
+    confirmDeleteConfirm: 'Delete',
+    canvasActions: 'Canvas actions',
+    viewportControls: 'View',
+    mergeIntoNewRegion: 'New region',
+    transcriptEmpty: 'Nothing in this session yet',
+    transcriptFailed: 'Could not read the session',
+    loading: 'Loading…',
+    saveFailed: (m) => `Save failed: ${m}`,
+    createFailed: (m) => `Create failed: ${m}`,
+    moveFailed: (m) => `Move failed: ${m}`,
+    deleteFailed: (m) => `Delete failed: ${m}`,
+    detachFailed: (m) => `Move out failed: ${m}`,
+    groupFailed: (m) => `Collect into a region failed: ${m}`,
+    noSessionNav: 'This dsh build exposes no session navigation api',
+    openSessionFailed: (m) => `Could not open the session: ${m}`,
+    newSessionFailed: (m) => `Could not create the session: ${m}`,
+  },
+}
+
+/**
+ * The dictionary every call site reads.
+ *
+ * One module-level binding rather than a `t(key)` indirection: the chrome reads
+ * `L.something` while it PAINTS, and the board repaints on every state change, so
+ * swapping the table swaps the whole surface and no call site can be left holding
+ * the old one. Two places build DOM once and are relabelled on each paint for
+ * exactly that reason — the sidebar entry (client/index.js) and the two toolbar
+ * aria-labels (client/dock.js).
+ */
+let L = STRINGS.zh
+
+/**
+ * Adopt a language, before anything paints with it.
+ *
+ * `value` is the `language` field of GET /state: the host half reads the shell's
+ * environment, the browser half cannot reach it. Without that field — an older
+ * host, or this plugin installed straight from npm — the browser's own locale
+ * decides, and Chinese has the last word.
+ */
+function setLanguage(value) {
+  const resolved =
+    normalizeLang(value) ??
+    normalizeLang(typeof navigator === 'undefined' ? null : navigator.language) ??
+    'zh'
+  L = STRINGS[resolved]
 }
 
 /** Glyph per region kind / element type. Emoji rather than an icon font: the
@@ -2349,7 +2534,9 @@ function notesAtRisk(ids) {
   return ids.filter((id) => noteHoldsProse(model.nodes.get(id))).length
 }
 
-async function run(label, apply, request) {
+/** One optimistic write, rolled back if the host refuses it. `failure` turns the
+ *  host's own message into the toast. */
+async function run(failure, apply, request) {
   const rollback = new Map(model.nodes)
   if (apply !== undefined) {
     const nodes = new Map(model.nodes)
@@ -2362,7 +2549,7 @@ async function run(label, apply, request) {
   } catch (error) {
     model.nodes = rollback
     emit()
-    toast(`${label}：${error?.message ?? error}`)
+    toast(failure(error?.message ?? error))
     void refetchState()
     return undefined
   }
@@ -2386,7 +2573,7 @@ async function patchNode(id, patch) {
     memberIds = [...memberIds, String(patch.memberAdd)]
   }
   const result = await run(
-    '保存失败',
+    L.saveFailed,
     (nodes) => nodes.set(id, { ...before, ...optimistic, memberIds }),
     () => api(`/nodes/${id}/update`, patch)
   )
@@ -2398,7 +2585,7 @@ async function patchNode(id, patch) {
 
 /** Create one node and select it. */
 async function createNode(input) {
-  const result = await run('创建失败', undefined, () => api('/nodes', input))
+  const result = await run(L.createFailed, undefined, () => api('/nodes', input))
   if (result === undefined) return undefined
   applyResponse(result.revision, (nodes) => nodes.set(result.value.id, result.value))
   selectOnly(nodeElementId(result.value.id))
@@ -2409,7 +2596,7 @@ async function createNode(input) {
 async function moveNodesCmd(moves) {
   if (moves.length === 0) return
   const result = await run(
-    '移动失败',
+    L.moveFailed,
     (nodes) => {
       for (const move of moves) {
         const existing = nodes.get(move.id)
@@ -2428,7 +2615,7 @@ async function moveNodesCmd(moves) {
 }
 
 async function deleteNodeCmd(id) {
-  const result = await run('删除失败', (nodes) => nodes.delete(id), () => api(`/nodes/${id}/delete`, {}))
+  const result = await run(L.deleteFailed, (nodes) => nodes.delete(id), () => api(`/nodes/${id}/delete`, {}))
   if (result === undefined) return
   applyResponse(result.revision, (nodes) => nodes.delete(id))
   model.selected.delete(nodeElementId(id))
@@ -2438,7 +2625,7 @@ async function deleteNodeCmd(id) {
 async function deleteNodesCmd(ids) {
   if (ids.length === 0) return
   const result = await run(
-    '删除失败',
+    L.deleteFailed,
     (nodes) => {
       for (const id of ids) nodes.delete(id)
     },
@@ -2464,7 +2651,7 @@ function selectOnly(elementId) {
  *  the new pin as a transcript card — a member cannot expand in place, because a
  *  520-wide surface inside a uniform grid would tear the row apart. */
 async function detachMemberCmd(regionId, sessionId, x, y, options = {}) {
-  const result = await run('移出失败', undefined, () =>
+  const result = await run(L.detachFailed, undefined, () =>
     api(`/nodes/${regionId}/detach`, { sessionId, x, y })
   )
   if (result === undefined) return undefined
@@ -2493,7 +2680,7 @@ async function detachMemberCmd(regionId, sessionId, x, y, options = {}) {
 /** Collect sessions into a region: the box-select gesture, a card dropped into a
  *  custom region, and two cards dropped onto each other. */
 async function groupCmd(input) {
-  const result = await run('收进区域失败', undefined, () => api('/group', input))
+  const result = await run(L.groupFailed, undefined, () => api('/group', input))
   if (result === undefined) return undefined
   const { node, deletedIds } = result.value
   applyResponse(result.revision, (nodes) => {
@@ -2589,7 +2776,7 @@ function setCardDetail(nodeId, open) {
  * Load the transcript of every card that is already expanded.
  *
  * Cards restored from device-local storage were never opened in THIS visit, so
- * nothing else would ever ask for their text — they would sit on "载入中…"
+ * nothing else would ever ask for their text — they would sit on `L.loading`
  * forever. Called once the ledger lands, when the rows those ids name exist.
  */
 function loadOpenTranscripts() {
@@ -2635,7 +2822,7 @@ async function loadTranscript(sessionId, force = false) {
 function openInGui(sessionId) {
   if (sessionId === undefined || sessionId === null) return
   if (model.host?.openSession === undefined) {
-    toast('这个 dsh 版本没有暴露会话导航接口')
+    toast(L.noSessionNav)
     return
   }
   try {
@@ -2645,7 +2832,7 @@ function openInGui(sessionId) {
     model.open = false
     emit()
   } catch (error) {
-    toast(`打开会话失败：${error?.message ?? error}`)
+    toast(L.openSessionFailed(error?.message ?? error))
   }
 }
 
@@ -2690,7 +2877,7 @@ async function createSession(options) {
     }
     value = result.value
   } catch (error) {
-    toast(`新建会话失败：${error?.message ?? error}`)
+    toast(L.newSessionFailed(error?.message ?? error))
     return undefined
   }
   // The new session has to be in the view before the ledger will accept a card
@@ -3835,12 +4022,10 @@ function buildChrome(refs) {
   gViewRoot = view
   const dock = el('div', 'dshc-dock')
   dock.setAttribute('role', 'toolbar')
-  dock.setAttribute('aria-label', L.canvasActions)
   const corner = el('div', 'dshc-corner')
   const map = el('div', 'dshc-map')
   const zoom = el('div', 'dshc-zoom')
   zoom.setAttribute('role', 'toolbar')
-  zoom.setAttribute('aria-label', L.viewportControls)
   corner.append(map, zoom)
   const empty = el('div', 'dshc-empty')
   const toasts = el('div', 'dshc-toasts')
@@ -3892,6 +4077,9 @@ function buildChrome(refs) {
   const paintDock = () => {
     const rect = surface.getBoundingClientRect()
     dock.textContent = ''
+    // The label is re-applied here, not once at build time: the chrome is built
+    // when the seat is taken, which is before /state has said which language.
+    dock.setAttribute('aria-label', L.canvasActions)
     dock.append(
       dockButton(L.addNode, '＋', (button) => openMenu(button, (menu) => buildAddMenu(menu, rect)))
     )
@@ -3909,6 +4097,7 @@ function buildChrome(refs) {
   const paintZoom = () => {
     const percent = Math.round(model.viewport.zoom * 100)
     zoom.textContent = ''
+    zoom.setAttribute('aria-label', L.viewportControls)
     zoom.append(
       dockButton(model.minimap ? L.hideMinimap : L.showMinimap, '🗺', () => {
         model.minimap = !model.minimap
@@ -4091,6 +4280,12 @@ function closeMenus() {
     view.dataset.open = String(model.open)
     if (entry !== null) {
       entry.dataset.active = String(model.open)
+      // Relabelled on every paint, not once at build time: the seat is taken
+      // before the board is ever opened, and /state — the only thing that knows
+      // which language the shell chose — is not fetched until it is.
+      entry.setAttribute('aria-label', L.title)
+      const label = entry.querySelector('.dshc-entry-label')
+      if (label !== null) label.textContent = L.title
       const stats = entry.querySelector('.dshc-entry-stats')
       if (stats !== null) stats.textContent = model.nodes.size === 0 ? '' : String(model.nodes.size)
     }

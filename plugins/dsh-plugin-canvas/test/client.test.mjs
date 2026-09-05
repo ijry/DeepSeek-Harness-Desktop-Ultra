@@ -351,6 +351,45 @@ test('把成员卡拖到空白处 = 移出成散卡：发 detach，并乐观地�
   assert.equal(types.filter((t) => t === 'sessionCard').length, 1, '成员卡应当变成一张散卡')
 })
 
+test('语言来自 /state：宿主说 en，界面就整块换成英文', async () => {
+  const { exports, dom } = await boot()
+  // 浏览器半边读不到外壳的环境变量，这个字段是它唯一的语言来源。
+  dom.routes['/dsh-plugin-canvas/state'] = { ...LEDGER, language: 'en' }
+  const sidebar = new dom.globals.HTMLElement('div')
+  sidebar.className = 'x_sidebarCol'
+  const conversation = new dom.globals.HTMLElement('div')
+  conversation.className = 'x_centerCol'
+  dom.body.append(sidebar, conversation)
+  exports.apply({ inject: () => {}, effect: () => {} })
+  dom.flush()
+  const entry = dom.html.querySelector('[data-dshc-entry]')
+  // 入口在账本之前就装好了，所以它得在每次重绘时把标签重新写一遍。
+  assert.equal(entry.querySelector('[class*="dshc-entry-label"]').textContent, '无限会话')
+  entry.dispatch('click')
+  for (let i = 0; i < 4; i++) {
+    dom.flush()
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+  dom.flush()
+
+  const view = dom.html.querySelector('[data-dshc-view]')
+  assert.equal(entry.querySelector('[class*="dshc-entry-label"]').textContent, 'Infinite Sessions')
+  assert.equal(entry.getAttribute('aria-label'), 'Infinite Sessions')
+  const dock = view.querySelector('[class*="dshc-dock"]')
+  assert.equal(dock.getAttribute('aria-label'), 'Canvas actions')
+  const labels = dock.children.map((c) => c.getAttribute('aria-label')).filter(Boolean)
+  assert.ok(labels.includes('Add to canvas'), `工具条动词应当是英文：${labels.join('/')}`)
+  // 选中便签，看动词那一半也跟着换。
+  const note = nodeOf(view, 'note')
+  note.firstElementChild.dispatch('mousedown', { button: 0, buttons: 1 })
+  dom.flush()
+  const selected = view
+    .querySelector('[class*="dshc-dock"]')
+    .children.map((c) => c.getAttribute('aria-label'))
+    .filter(Boolean)
+  assert.ok(selected.includes('Delete note'), `便签动词应当是英文：${selected.join('/')}`)
+})
+
 test('内联后没有重名的顶层声明——那正是这个构建步骤唯一会自伤的地方', async () => {
   const source = await readFile(join(root, 'lib', 'client.js'), 'utf8')
   const counts = new Map()

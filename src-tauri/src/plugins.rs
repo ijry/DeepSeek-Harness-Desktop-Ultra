@@ -32,33 +32,54 @@ const ADD_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 const MAX_FAILURES: u32 = 2;
 
 /// 一个内置插件。
+///
+/// 标题和说明各存两种语言：它们要发到启动页和设置页上给人看，取哪一种由
+/// `i18n::current()` 决定。
 pub struct Bundled {
     /// npm 包名，同时是 profile bundles 里的行名。
     pub id: &'static str,
     /// 卡片上的短名。
-    pub title: &'static str,
+    title_zh: &'static str,
+    title_en: &'static str,
     /// 卡片上的一句话说明。
-    pub summary: &'static str,
+    summary_zh: &'static str,
+    summary_en: &'static str,
+}
+
+impl Bundled {
+    pub fn title(&self) -> &'static str {
+        crate::i18n::pick(self.title_zh, self.title_en)
+    }
+
+    pub fn summary(&self) -> &'static str {
+        crate::i18n::pick(self.summary_zh, self.summary_en)
+    }
 }
 
 /// 目前的内置插件。
 pub const TASKBOARD: Bundled = Bundled {
     id: "dsh-plugin-taskboard",
-    title: "任务看板",
-    summary: "在 dsh 侧栏加一个四列任务看板：agent 用工具领活、交活，你在看板上验收或退回。它会给 agent 增加六个 taskboard_* 工具，并往系统提示里加一段工作协议。",
+    title_zh: "任务看板",
+    title_en: "Task board",
+    summary_zh: "在 dsh 侧栏加一个四列任务看板：agent 用工具领活、交活，你在看板上验收或退回。它会给 agent 增加六个 taskboard_* 工具，并往系统提示里加一段工作协议。",
+    summary_en: "Adds a four-column task board to the dsh sidebar: agents claim and hand off work with tools, you accept or send it back on the board. It gives agents six taskboard_* tools and adds a working protocol to the system prompt.",
 };
 
 pub const CANVAS: Bundled = Bundled {
     id: "dsh-plugin-canvas",
-    title: "无限会话画布",
-    summary: "在 dsh 侧栏加一块无限画布：区域按工作区/智能体聚会话，卡片钉住单个会话，便签写想法，拖拽收进区域并带对齐参考线。纯 GUI 插件，不注册工具、不改系统提示，装了不会影响 agent 的行为。",
+    title_zh: "无限会话画布",
+    title_en: "Infinite session canvas",
+    summary_zh: "在 dsh 侧栏加一块无限画布：区域按工作区/智能体聚会话，卡片钉住单个会话，便签写想法，拖拽收进区域并带对齐参考线。纯 GUI 插件，不注册工具、不改系统提示，装了不会影响 agent 的行为。",
+    summary_en: "Adds an infinite canvas to the dsh sidebar: regions group sessions by workspace or agent, cards pin a single session, notes hold ideas, and dragging into a region snaps with alignment guides. A GUI-only plugin: it registers no tools and touches no system prompt, so agent behaviour is unchanged.",
 };
 
 /// 手机遥控：给手机 App 开一个带鉴权的窄接口。
 pub const MOBILE_BRIDGE: Bundled = Bundled {
     id: "dsh-plugin-mobile-bridge",
-    title: "手机遥控",
-    summary: "在 dsh 侧栏加一个「手机遥控」面板：扫码把 MCode 手机 App 配对到这台机器，就能在手机上看会话、发消息、批准工具调用。它不注册工具、不改系统提示，也不改 dsh 的绑定方式——另起一个只认令牌的监听，默认只在局域网可达。",
+    title_zh: "手机遥控",
+    title_en: "Mobile remote",
+    summary_zh: "在 dsh 侧栏加一个「手机遥控」面板：扫码把 MCode 手机 App 配对到这台机器，就能在手机上看会话、发消息、批准工具调用。它不注册工具、不改系统提示，也不改 dsh 的绑定方式——另起一个只认令牌的监听，默认只在局域网可达。",
+    summary_en: "Adds a \"Mobile remote\" panel to the dsh sidebar: scan a QR code to pair the MCode phone app with this machine, then read sessions, send messages and approve tool calls from your phone. It registers no tools, touches no system prompt and does not change how dsh binds — it opens a separate token-only listener, reachable on the LAN only by default.",
 };
 
 /// 安装包带上的插件，按卡片顺序。新增一个插件只要往这里加一行，装卸、首启询问、
@@ -75,45 +96,135 @@ pub fn remove_command(id: &str) -> String {
     format!("dsh plugin --profile {PROFILE} remove {id}")
 }
 
+/// 失败原因。
+///
+/// 刻意不用 `thiserror` 的 `#[error(...)]` 生成 `Display`：这些文字会走到界面上，
+/// 要跟着 `i18n::current()` 变。手写 `Display` 的代价是多一个 match，换来的是
+/// 两种语言并排可读、参数留在原地用 `format!` 检查。
 #[derive(Debug, thiserror::Error)]
 pub enum PluginError {
-    #[error(transparent)]
     Dsh(#[from] DshError),
 
-    #[error("无法确定用户主目录")]
     NoHome,
 
-    #[error("定位内置插件资源失败: {0}")]
     Resource(#[source] tauri::Error),
 
-    #[error("把内置插件复制到 {path} 失败: {source}")]
     Stage {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
 
-    #[error("读取 {path} 失败: {source}")]
     Manifest {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
 
-    #[error("执行 dsh plugin 失败: {0}")]
     Spawn(#[source] std::io::Error),
 
-    #[error("dsh plugin 失败（退出码 {code}）:\n{log}")]
-    AddFailed { code: String, log: String },
+    AddFailed {
+        code: String,
+        log: String,
+    },
 
-    #[error("dsh plugin 超过 {}s 仍未完成:\n{log}", ADD_TIMEOUT.as_secs())]
-    AddTimeout { log: String },
+    AddTimeout {
+        log: String,
+    },
 
-    #[error("add 报告成功，但 {path} 的 bundles 里没有 {id}——插件并没有被激活")]
-    NotActivated { path: PathBuf, id: &'static str },
+    NotActivated {
+        path: PathBuf,
+        id: &'static str,
+    },
 
-    #[error("remove 报告成功，但 {path} 的 bundles 里还有 {id}")]
-    StillActivated { path: PathBuf, id: &'static str },
+    StillActivated {
+        path: PathBuf,
+        id: &'static str,
+    },
+}
+
+impl std::fmt::Display for PluginError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let zh = crate::i18n::is_zh();
+        match self {
+            Self::Dsh(source) => write!(f, "{source}"),
+            Self::NoHome => f.write_str(if zh {
+                "无法确定用户主目录"
+            } else {
+                "Cannot determine the user home directory"
+            }),
+            Self::Resource(source) => {
+                if zh {
+                    write!(f, "定位内置插件资源失败: {source}")
+                } else {
+                    write!(f, "Failed to locate the bundled plugin resource: {source}")
+                }
+            }
+            Self::Stage { path, source } => {
+                let path = path.display();
+                if zh {
+                    write!(f, "把内置插件复制到 {path} 失败: {source}")
+                } else {
+                    write!(f, "Failed to copy the bundled plugin to {path}: {source}")
+                }
+            }
+            Self::Manifest { path, source } => {
+                let path = path.display();
+                if zh {
+                    write!(f, "读取 {path} 失败: {source}")
+                } else {
+                    write!(f, "Failed to read {path}: {source}")
+                }
+            }
+            Self::Spawn(source) => {
+                if zh {
+                    write!(f, "执行 dsh plugin 失败: {source}")
+                } else {
+                    write!(f, "Failed to run dsh plugin: {source}")
+                }
+            }
+            Self::AddFailed { code, log } => {
+                if zh {
+                    write!(f, "dsh plugin 失败（退出码 {code}）:\n{log}")
+                } else {
+                    write!(f, "dsh plugin failed (exit code {code}):\n{log}")
+                }
+            }
+            Self::AddTimeout { log } => {
+                let seconds = ADD_TIMEOUT.as_secs();
+                if zh {
+                    write!(f, "dsh plugin 超过 {seconds}s 仍未完成:\n{log}")
+                } else {
+                    write!(f, "dsh plugin did not finish within {seconds}s:\n{log}")
+                }
+            }
+            Self::NotActivated { path, id } => {
+                let path = path.display();
+                if zh {
+                    write!(
+                        f,
+                        "add 报告成功，但 {path} 的 bundles 里没有 {id}——插件并没有被激活"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "add reported success, but {id} is missing from the bundles in {path} — the plugin was not activated"
+                    )
+                }
+            }
+            Self::StillActivated { path, id } => {
+                let path = path.display();
+                if zh {
+                    write!(f, "remove 报告成功，但 {path} 的 bundles 里还有 {id}")
+                } else {
+                    write!(
+                        f,
+                        "remove reported success, but {id} is still in the bundles in {path}"
+                    )
+                }
+            }
+        }
+    }
 }
 
 /// 首启询问的结果。
@@ -144,16 +255,27 @@ impl Choice {
     }
 
     fn describe(&self) -> String {
+        let zh = crate::i18n::is_zh();
         if !self.installed.is_empty() {
-            return format!("已装 {}", self.installed.join(", "));
+            let list = self.installed.join(", ");
+            return if zh {
+                format!("已装 {list}")
+            } else {
+                format!("installed {list}")
+            };
         }
         if self.declined {
-            return "用户已拒绝".into();
+            return crate::i18n::pick("用户已拒绝", "declined by user").to_string();
         }
         if self.failures > 0 {
-            return format!("失败 {} 次", self.failures);
+            let times = self.failures;
+            return if zh {
+                format!("失败 {times} 次")
+            } else {
+                format!("failed {times} time(s)")
+            };
         }
-        "尚未询问".into()
+        crate::i18n::pick("尚未询问", "not asked yet").to_string()
     }
 }
 
@@ -462,6 +584,7 @@ pub fn uninstall(
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub id: &'static str,
+    /// 已按当前语言取好。前端拿到就直接显示。
     pub title: &'static str,
     pub summary: &'static str,
     /// profile 的 bundles 里有它。
@@ -482,8 +605,8 @@ pub fn status(node: Option<&NodeRuntime>) -> Vec<Status> {
         .iter()
         .map(|plugin| Status {
             id: plugin.id,
-            title: plugin.title,
-            summary: plugin.summary,
+            title: plugin.title(),
+            summary: plugin.summary(),
             installed: activated(&manifest, plugin.id),
             pnpm,
             remove_command: remove_command(plugin.id),
@@ -500,18 +623,25 @@ pub fn diagnostics_line() -> String {
         .map(|plugin| plugin.id)
         .collect();
     let state = if !installed.is_empty() {
-        format!("已装 {}", installed.join(", "))
+        let list = installed.join(", ");
+        if crate::i18n::is_zh() {
+            format!("已装 {list}")
+        } else {
+            format!("installed {list}")
+        }
     } else {
         choice.describe()
     };
-    format!(
-        "内置插件（{}）: {state}",
-        BUNDLED
-            .iter()
-            .map(|plugin| plugin.id)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
+    let all = BUNDLED
+        .iter()
+        .map(|plugin| plugin.id)
+        .collect::<Vec<_>>()
+        .join(", ");
+    if crate::i18n::is_zh() {
+        format!("内置插件（{all}）: {state}")
+    } else {
+        format!("Bundled plugins ({all}): {state}")
+    }
 }
 
 #[cfg(test)]

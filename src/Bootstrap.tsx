@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
+import { type Dict, type Lang, LANGS, strings, useLang } from "./i18n";
 
 type FailureKind =
   | "nodeMissing"
@@ -40,37 +41,47 @@ type PromptPlugin = {
 /** 还能改主意的阶段。之后卡片就该收起来了。 */
 const CHOICE_STAGES = ["locatingNode", "installingDsh", "awaitingChoice"];
 
-const PROGRESS_LABELS: Record<string, string> = {
-  locatingNode: "正在查找 Node 运行时…",
-  awaitingChoice: "先确认一个可选插件",
-  startingServer: "正在启动 DeepSeek Harness…",
-  ready: "即将进入…",
-};
+/** 不带参数的那几个阶段各自一句话。带参数的两个在下面单独拼。 */
+function progressLabel(stage: string, s: Dict): string {
+  switch (stage) {
+    case "locatingNode":
+      return s.bootLocatingNode;
+    case "awaitingChoice":
+      return s.bootAwaitingChoice;
+    case "startingServer":
+      return s.bootStartingServer;
+    case "ready":
+      return s.bootReady;
+    default:
+      return s.bootStarting;
+  }
+}
 
 /** 每种失败对应一段可执行的指引，而不是只把报错抛给用户。 */
-const FAILURE_GUIDANCE: Record<
-  FailureKind,
-  { title: string; hint: string; action?: { label: string; url: string } }
-> = {
-  nodeMissing: {
-    title: "未找到 Node 运行时",
-    hint: "DSH Desktop Ultra 依赖你系统上的 Node 来运行 DeepSeek Harness。请安装 Node 22.19+ 或 24+ 后重试。若已安装但仍提示未找到，可用环境变量 DSH_DESKTOP_NODE 指定 node 可执行文件的完整路径。",
-    action: { label: "下载 Node.js", url: "https://nodejs.org/en/download" },
-  },
-  nodeTooOld: {
-    title: "Node 版本过低",
-    hint: "DeepSeek Harness 需要 Node ^22.19 或 >= 24。请升级后重试；如果你用 nvm/fnm 管理多版本，记得把新版本设为默认。",
-    action: { label: "下载 Node.js", url: "https://nodejs.org/en/download" },
-  },
-  installFailed: {
-    title: "安装 DeepSeek Harness 失败",
-    hint: "首次启动需要从 npm 下载 harness。请检查网络连接与 npm registry 配置（公司网络可能需要代理），然后重试。",
-  },
-  serverFailed: {
-    title: "DeepSeek Harness 启动失败",
-    hint: "harness 进程已安装但没能正常启动。下面的日志通常能说明原因。",
-  },
-};
+function failureGuidance(
+  kind: FailureKind,
+  s: Dict,
+): { title: string; hint: string; action?: { label: string; url: string } } {
+  const nodeDownload = { label: s.downloadNode, url: "https://nodejs.org/en/download" };
+  switch (kind) {
+    case "nodeMissing":
+      return {
+        title: s.failNodeMissingTitle,
+        hint: s.failNodeMissingHint,
+        action: nodeDownload,
+      };
+    case "nodeTooOld":
+      return {
+        title: s.failNodeTooOldTitle,
+        hint: s.failNodeTooOldHint,
+        action: nodeDownload,
+      };
+    case "installFailed":
+      return { title: s.failInstallTitle, hint: s.failInstallHint };
+    case "serverFailed":
+      return { title: s.failServerTitle, hint: s.failServerHint };
+  }
+}
 
 export default function Bootstrap() {
   const [state, setState] = useState<BootState>({ stage: "locatingNode" });
@@ -79,6 +90,8 @@ export default function Bootstrap() {
   /** 当前勾选的插件 id。默认由后端给（全勾）。 */
   const [selected, setSelected] = useState<string[]>([]);
   const [confirmed, setConfirmed] = useState(false);
+  const [lang, setLang] = useLang();
+  const s = strings(lang);
 
   useEffect(() => {
     let active = true;
@@ -139,6 +152,21 @@ export default function Bootstrap() {
     };
   }, [state.stage, prompt]);
 
+  // 插件的名字和说明是 Rust 按语言渲染好发过来的，所以切语言之后要重新取一次，
+  // 否则卡片上会留着上一种语言的文字。
+  useEffect(() => {
+    if (prompt === null) return;
+    let active = true;
+    invoke<PluginPrompt | null>("plugin_prompt")
+      .then((current) => {
+        if (active && current) setPrompt(current);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [lang]);
+
   /** 每次切换都推给 Rust：dsh 装完时以它为准，用户不必点任何按钮。 */
   const toggleInstall = (id: string, next: boolean) => {
     setSelected((current) =>
@@ -157,7 +185,7 @@ export default function Bootstrap() {
       const text = await invoke<string>("diagnostics");
       const extra =
         state.stage === "failed"
-          ? `\n错误: ${state.message}\n\n日志:\n${state.log}`
+          ? s.diagnosticsError(state.message) + s.diagnosticsLog(state.log)
           : "";
       await navigator.clipboard.writeText(text + extra);
       setCopied(true);
@@ -168,7 +196,7 @@ export default function Bootstrap() {
   };
 
   if (state.stage === "failed") {
-    const guidance = FAILURE_GUIDANCE[state.kind];
+    const guidance = failureGuidance(state.kind, s);
     return (
       <main className="shell shell--error" role="alert">
         <h1>{guidance.title}</h1>
@@ -177,14 +205,14 @@ export default function Bootstrap() {
 
         {state.log && (
           <details>
-            <summary>查看日志</summary>
+            <summary>{s.viewLog}</summary>
             <pre>{state.log}</pre>
           </details>
         )}
 
         <div className="actions">
           <button type="button" onClick={() => invoke("retry_boot")}>
-            重试
+            {s.retry}
           </button>
           {guidance.action && (
             <button
@@ -203,19 +231,20 @@ export default function Bootstrap() {
             className="button--secondary"
             onClick={copyDiagnostics}
           >
-            {copied ? "已复制" : "复制诊断信息"}
+            {copied ? s.copied : s.copyDiagnostics}
           </button>
         </div>
+        <LanguagePicker lang={lang} onPick={setLang} />
       </main>
     );
   }
 
   const label =
     state.stage === "installingDsh"
-      ? `首次启动，正在安装 DeepSeek Harness ${state.version}…`
+      ? s.bootInstallingDsh(state.version)
       : state.stage === "configuringPlugin"
-        ? `正在启用${state.name}插件…`
-        : (PROGRESS_LABELS[state.stage] ?? "正在启动…");
+        ? s.bootConfiguringPlugin(state.name)
+        : progressLabel(state.stage, s);
 
   // 等用户勾选时不该转圈，也不该报告「忙」——忙的是人，不是程序
   const waiting = state.stage === "awaitingChoice";
@@ -235,13 +264,13 @@ export default function Bootstrap() {
           {/* harness 是「一切皆插件」架构,依赖树有 100+ 个包。npm 在解析
               阶段会长时间不输出,所以这里同时显示包数和已耗时——只显示
               包数的话,静默期看起来还是卡死的。 */}
-          已获取 {state.fetched} 个包 · 已用 {formatElapsed(state.elapsedSecs)}
+          {s.bootFetched(state.fetched, formatElapsed(state.elapsedSecs, s))}
           <br />
-          依赖较多，首次可能需要数分钟；之后启动会直接进入。
+          {s.bootInstallNote}
         </p>
       )}
       {prompt && CHOICE_STAGES.includes(state.stage) && (
-        <section className="offer" aria-label="可选插件">
+        <section className="offer" aria-label={s.optionalPlugins}>
           {prompt.plugins.map((plugin) => (
             <div key={plugin.id}>
               <label className="offer__pick">
@@ -250,31 +279,63 @@ export default function Bootstrap() {
                   checked={selected.includes(plugin.id)}
                   onChange={(event) => toggleInstall(plugin.id, event.target.checked)}
                 />
-                <span>安装{plugin.title}插件（推荐）</span>
+                <span>{s.installPlugin(plugin.title)}</span>
               </label>
               <p className="offer__note">{plugin.summary}</p>
               <p className="offer__note">
-                以后要移除，运行 <code>{plugin.removeCommand}</code>
+                {s.removeLater} <code>{plugin.removeCommand}</code>
               </p>
             </div>
           ))}
           <p className="offer__note">
-            {prompt.requiresClick
-              ? "点「继续」后按当前选择处理。"
-              : "安装完成后会按当前选择继续，不需要再点任何按钮。"}
-            移除需要命令行与 pnpm——这个 dsh 版本还没有插件卸载界面，也可以走托盘 →
-            设置 → 插件。
+            {prompt.requiresClick ? s.promptRequiresClick : s.promptAutoContinue}{" "}
+            {s.promptRemovalNote}
           </p>
           {prompt.requiresClick && (
             <div className="actions">
               <button type="button" onClick={confirmPlugins} disabled={confirmed}>
-                {confirmed ? "正在继续…" : "继续"}
+                {confirmed ? s.continuing : s.continueButton}
               </button>
             </div>
           )}
         </section>
       )}
+      <LanguagePicker lang={lang} onPick={setLang} />
     </main>
+  );
+}
+
+/**
+ * 语言开关。
+ *
+ * 放在启动页上而不是只放设置页：首次启动要装 dsh，用户会在这一页上待好几分钟，
+ * 而这也是「装不上」的指引唯一出现的地方——那段话看不懂的时候，托盘远了一点。
+ */
+function LanguagePicker({
+  lang,
+  onPick,
+}: {
+  lang: Lang;
+  onPick: (next: Lang) => Promise<void>;
+}) {
+  return (
+    <div className="langpick" role="group" aria-label="语言 / Language">
+      {LANGS.map((entry) => (
+        <button
+          key={entry.code}
+          type="button"
+          className="langpick__option"
+          aria-pressed={entry.code === lang}
+          onClick={() => {
+            // 切换失败只有「写不进偏好文件」一种，界面已经切好了，不值得在
+            // 启动页上再占一行去说它
+            onPick(entry.code).catch(() => {});
+          }}
+        >
+          {entry.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -283,9 +344,11 @@ function pickedOf(prompt: PluginPrompt): string[] {
   return prompt.plugins.filter((plugin) => plugin.install).map((plugin) => plugin.id);
 }
 
-function formatElapsed(seconds: number): string {
-  if (seconds < 60) return `${seconds} 秒`;
+function formatElapsed(seconds: number, s: Dict): string {
+  if (seconds < 60) return s.elapsedSeconds(seconds);
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
-  return rest === 0 ? `${minutes} 分` : `${minutes} 分 ${rest} 秒`;
+  return rest === 0
+    ? s.elapsedMinutes(minutes)
+    : s.elapsedMinutesSeconds(minutes, rest);
 }

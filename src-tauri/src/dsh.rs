@@ -18,60 +18,173 @@ use crate::node::NodeRuntime;
 use crate::server::LogRing;
 use crate::upstream::{package_spec, DSH_PACKAGE, DSH_VERSION};
 
+/// 安装/定位 dsh 时的失败原因。
+///
+/// `Display` 手写而不是用 `#[error(...)]`：这些话会出现在启动页上，要跟着
+/// `i18n::current()` 变。
 #[derive(Debug, thiserror::Error)]
 pub enum DshError {
-    #[error("无法确定应用数据目录")]
     NoDataDir,
 
-    #[error("创建运行时目录 {path} 失败: {source}")]
     CreateDir {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
 
-    #[error("未找到 npm（应与 Node 一同安装）")]
     NpmNotFound,
 
-    #[error("npm 安装 {spec} 失败（退出码 {code}）:\n{stderr}")]
     InstallFailed {
         spec: String,
         code: String,
         stderr: String,
     },
 
-    #[error("安装 {spec} 超过 {minutes} 分钟仍未完成:\n{log}")]
     InstallTimeout {
         spec: String,
         minutes: u64,
         log: String,
     },
 
-    #[error("执行 npm 失败: {0}")]
     NpmSpawn(#[source] std::io::Error),
 
-    #[error("安装完成但未找到 {DSH_PACKAGE} 的 package.json: {path}")]
-    ManifestMissing { path: PathBuf },
+    ManifestMissing {
+        path: PathBuf,
+    },
 
-    #[error("解析 {path} 失败: {source}")]
     ManifestUnreadable {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
 
-    #[error("解析 {path} 的 JSON 失败: {source}")]
     ManifestInvalid {
         path: PathBuf,
         #[source]
         source: serde_json::Error,
     },
 
-    #[error("{DSH_PACKAGE} 的 package.json 里没有可用的 bin 入口")]
     NoBinEntry,
 
-    #[error("bin 入口指向的文件不存在: {path}")]
-    BinMissing { path: PathBuf },
+    BinMissing {
+        path: PathBuf,
+    },
+
+    /// npm 说装好了，但装到的版本不是锁定的那个。
+    VersionMismatch {
+        installed: String,
+    },
+}
+
+impl std::fmt::Display for DshError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let zh = crate::i18n::is_zh();
+        match self {
+            Self::NoDataDir => f.write_str(if zh {
+                "无法确定应用数据目录"
+            } else {
+                "Cannot determine the application data directory"
+            }),
+            Self::CreateDir { path, source } => {
+                let path = path.display();
+                if zh {
+                    write!(f, "创建运行时目录 {path} 失败: {source}")
+                } else {
+                    write!(f, "Failed to create the runtime directory {path}: {source}")
+                }
+            }
+            Self::NpmNotFound => f.write_str(if zh {
+                "未找到 npm（应与 Node 一同安装）"
+            } else {
+                "npm not found (it ships with Node)"
+            }),
+            Self::InstallFailed { spec, code, stderr } => {
+                if zh {
+                    write!(f, "npm 安装 {spec} 失败（退出码 {code}）:\n{stderr}")
+                } else {
+                    write!(
+                        f,
+                        "npm failed to install {spec} (exit code {code}):\n{stderr}"
+                    )
+                }
+            }
+            Self::InstallTimeout { spec, minutes, log } => {
+                if zh {
+                    write!(f, "安装 {spec} 超过 {minutes} 分钟仍未完成:\n{log}")
+                } else {
+                    write!(
+                        f,
+                        "Installing {spec} did not finish within {minutes} minute(s):\n{log}"
+                    )
+                }
+            }
+            Self::NpmSpawn(source) => {
+                if zh {
+                    write!(f, "执行 npm 失败: {source}")
+                } else {
+                    write!(f, "Failed to run npm: {source}")
+                }
+            }
+            Self::ManifestMissing { path } => {
+                let path = path.display();
+                if zh {
+                    write!(f, "安装完成但未找到 {DSH_PACKAGE} 的 package.json: {path}")
+                } else {
+                    write!(
+                        f,
+                        "Install finished but the package.json of {DSH_PACKAGE} is missing: {path}"
+                    )
+                }
+            }
+            Self::ManifestUnreadable { path, source } => {
+                let path = path.display();
+                if zh {
+                    write!(f, "解析 {path} 失败: {source}")
+                } else {
+                    write!(f, "Failed to read {path}: {source}")
+                }
+            }
+            Self::ManifestInvalid { path, source } => {
+                let path = path.display();
+                if zh {
+                    write!(f, "解析 {path} 的 JSON 失败: {source}")
+                } else {
+                    write!(f, "Failed to parse the JSON in {path}: {source}")
+                }
+            }
+            Self::NoBinEntry => {
+                if zh {
+                    write!(f, "{DSH_PACKAGE} 的 package.json 里没有可用的 bin 入口")
+                } else {
+                    write!(
+                        f,
+                        "The package.json of {DSH_PACKAGE} has no usable bin entry"
+                    )
+                }
+            }
+            Self::BinMissing { path } => {
+                let path = path.display();
+                if zh {
+                    write!(f, "bin 入口指向的文件不存在: {path}")
+                } else {
+                    write!(f, "The file the bin entry points at does not exist: {path}")
+                }
+            }
+            Self::VersionMismatch { installed } => {
+                if zh {
+                    write!(
+                        f,
+                        "npm 报告成功，但安装到的版本是 {installed}，期望 {DSH_VERSION}"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "npm reported success, but the installed version is {installed}, expected {DSH_VERSION}"
+                    )
+                }
+            }
+        }
+    }
 }
 
 /// `@deepseek-ai/dsh` 的 package.json（只取我们关心的字段）。
@@ -304,13 +417,8 @@ pub fn ensure_installed(
     // 安装声称成功，但要确认落到磁盘上的确实是锁定的版本
     let installed = installed_version(&runtime);
     if installed.as_deref() != Some(DSH_VERSION) {
-        return Err(DshError::InstallFailed {
-            spec: package_spec(),
-            code: "0".into(),
-            stderr: format!(
-                "npm 报告成功，但安装到的版本是 {}，期望 {DSH_VERSION}",
-                installed.unwrap_or_else(|| "<无>".into())
-            ),
+        return Err(DshError::VersionMismatch {
+            installed: installed.unwrap_or_else(|| crate::i18n::pick("<无>", "<none>").to_string()),
         });
     }
 

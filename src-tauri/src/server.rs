@@ -19,19 +19,62 @@ const POLL_INTERVAL: Duration = Duration::from_millis(150);
 /// 保留的日志行数——够定位启动失败，又不会无界增长。
 const LOG_RING_CAPACITY: usize = 400;
 
+/// 启动 dsh 服务时的失败原因。
+///
+/// `Display` 手写而不是用 `#[error(...)]`：这些话会出现在启动页上，要跟着
+/// `i18n::current()` 变。
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
-    #[error("无法分配本地端口: {0}")]
     NoPort(#[source] std::io::Error),
 
-    #[error("启动 dsh 进程失败: {0}")]
     Spawn(#[source] std::io::Error),
 
-    #[error("dsh 进程在就绪前退出（退出码 {code}）:\n{log}")]
     ExitedEarly { code: String, log: String },
 
-    #[error("等待 dsh 就绪超时（{}s）:\n{log}", READY_TIMEOUT.as_secs())]
     ReadyTimeout { log: String },
+}
+
+impl std::fmt::Display for ServerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let zh = crate::i18n::is_zh();
+        match self {
+            Self::NoPort(source) => {
+                if zh {
+                    write!(f, "无法分配本地端口: {source}")
+                } else {
+                    write!(f, "Cannot allocate a local port: {source}")
+                }
+            }
+            Self::Spawn(source) => {
+                if zh {
+                    write!(f, "启动 dsh 进程失败: {source}")
+                } else {
+                    write!(f, "Failed to start the dsh process: {source}")
+                }
+            }
+            Self::ExitedEarly { code, log } => {
+                if zh {
+                    write!(f, "dsh 进程在就绪前退出（退出码 {code}）:\n{log}")
+                } else {
+                    write!(
+                        f,
+                        "The dsh process exited before it was ready (exit code {code}):\n{log}"
+                    )
+                }
+            }
+            Self::ReadyTimeout { log } => {
+                let seconds = READY_TIMEOUT.as_secs();
+                if zh {
+                    write!(f, "等待 dsh 就绪超时（{seconds}s）:\n{log}")
+                } else {
+                    write!(
+                        f,
+                        "Timed out after {seconds}s waiting for dsh to become ready:\n{log}"
+                    )
+                }
+            }
+        }
+    }
 }
 
 /// 子进程输出的环形缓冲，失败时用来展示原因。
@@ -161,7 +204,14 @@ pub fn start(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env("NO_COLOR", "1");
+        .env("NO_COLOR", "1")
+        // 插件跑在 dsh 自己的页面里，拿不到外壳的 IPC，也不能靠外壳往那个页面
+        // 注入任何东西（那会越过「不改 dsh 的 UI」这条边界）。所以语言走环境变量：
+        // 插件的 host 半边读它，再由自己的接口发给浏览器半边。
+        //
+        // 只在启动时读一次，因此设置里切完语言要重启服务才生效——设置页那个
+        // 「重启 dsh 服务」按钮就是这条路。
+        .env("DSH_DESKTOP_LANG", crate::i18n::current().code());
 
     if let Some(dir) = workspace {
         command.current_dir(dir);

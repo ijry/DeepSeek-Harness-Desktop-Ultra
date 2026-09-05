@@ -21,6 +21,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 
 import { CODE_ALPHABET, normalizeCode } from '../shared/protocol.js'
+import { pick } from '../shared/lang.js'
 
 /** How long one pairing offer stays valid, in milliseconds. */
 export const PAIRING_TTL_MS = 30 * 60 * 1000
@@ -109,7 +110,10 @@ export function mintDevice(name, now) {
     tokens: { accessToken, refreshToken },
     record: {
       deviceId: randomUUID(),
-      name: String(name ?? '').slice(0, 64) || '未命名设备',
+      // The name is persisted as the phone spelled it, so an unnamed device is
+      // stamped in whatever language the host speaks at pairing time — renaming
+      // it later is the phone's business, not a migration.
+      name: String(name ?? '').slice(0, 64) || pick('未命名设备', 'Unnamed device'),
       tokenHash: sha256(accessToken),
       refreshHash: sha256(refreshToken),
       createdAt: now,

@@ -18,11 +18,12 @@
  * @module dsh-plugin-repopanel
  */
 import {
-  REPOPANEL_PROTOCOL,
   REPOPANEL_SECTION_NAME,
   REPOPANEL_SECTION_ORDER,
+  repopanelProtocol,
 } from './host/protocol-text.js'
 import { CREDENTIALS_FILE } from './host/auth.js'
+import { hostLang } from './shared/lang.js'
 import { dshHomePath } from './host/sdk.js'
 import { PanelStore } from './host/store.js'
 import { registerRepoPanelRoutes, workspaceFace } from './host/routes.js'
@@ -53,14 +54,15 @@ export function apply(ctx) {
   const credentialsFile = dshHomePath(CREDENTIALS_FILE)
   const now = () => Date.now()
 
-  // The untrusted-data discipline. Optional: a build without a system-prompt
-  // service still serves the panel, it just loses the standing reminder.
+  // The untrusted-data discipline, in the shell's language. Optional: a build
+  // without a system-prompt service still serves the panel, it just loses the
+  // standing reminder.
   // cordis inject semantics: the callback's return value is the disposer, and
   // `section()` already returns exactly that.
   ctx.inject(['systemPrompt'], (promptCtx) => promptCtx.systemPrompt.section({
     name: REPOPANEL_SECTION_NAME,
     order: REPOPANEL_SECTION_ORDER,
-    text: REPOPANEL_PROTOCOL,
+    text: repopanelProtocol(hostLang()),
   }))
 
   // Routes need both the workspace registry (a repository is derived from a

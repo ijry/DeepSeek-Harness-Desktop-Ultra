@@ -420,12 +420,10 @@ export function buildChrome(refs) {
   gViewRoot = view
   const dock = el('div', 'dshc-dock')
   dock.setAttribute('role', 'toolbar')
-  dock.setAttribute('aria-label', L.canvasActions)
   const corner = el('div', 'dshc-corner')
   const map = el('div', 'dshc-map')
   const zoom = el('div', 'dshc-zoom')
   zoom.setAttribute('role', 'toolbar')
-  zoom.setAttribute('aria-label', L.viewportControls)
   corner.append(map, zoom)
   const empty = el('div', 'dshc-empty')
   const toasts = el('div', 'dshc-toasts')
@@ -477,6 +475,9 @@ export function buildChrome(refs) {
   const paintDock = () => {
     const rect = surface.getBoundingClientRect()
     dock.textContent = ''
+    // The label is re-applied here, not once at build time: the chrome is built
+    // when the seat is taken, which is before /state has said which language.
+    dock.setAttribute('aria-label', L.canvasActions)
     dock.append(
       dockButton(L.addNode, '＋', (button) => openMenu(button, (menu) => buildAddMenu(menu, rect)))
     )
@@ -494,6 +495,7 @@ export function buildChrome(refs) {
   const paintZoom = () => {
     const percent = Math.round(model.viewport.zoom * 100)
     zoom.textContent = ''
+    zoom.setAttribute('aria-label', L.viewportControls)
     zoom.append(
       dockButton(model.minimap ? L.hideMinimap : L.showMinimap, '🗺', () => {
         model.minimap = !model.minimap

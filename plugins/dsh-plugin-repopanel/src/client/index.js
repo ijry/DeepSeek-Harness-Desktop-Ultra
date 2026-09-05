@@ -16,7 +16,10 @@
  * The item / scenario / pagination vocabulary below is a hand-kept COPY of
  * src/shared/protocol.js: this bundle has no module resolution, so it cannot
  * import it. The two copies MUST change together — the same constraint the
- * taskboard plugin documents at its client/index.js:17-19.
+ * taskboard plugin documents at its client/index.js:17-19. For the same reason
+ * the UI strings live in the `strings` section right below it rather than in
+ * src/shared/lang.js, and the language is learned over HTTP: the `language`
+ * field of GET /settings, else navigator.language, else Chinese.
  *
  * Security stance: forge text (titles, bodies, comments, label names, branch
  * names) is attacker-controlled — anyone who can open an issue on the
@@ -65,48 +68,6 @@
   const MAX_ISSUE_TITLE_CHARS = 255
   const MAX_LABELS = 100
   const TERMINAL_TASK_STATUSES = ['done', 'canceled']
-  const STATE_FILTERS = [
-    { id: 'open', label: '打开' },
-    { id: 'closed', label: '已关闭' },
-    { id: 'all', label: '全部' },
-  ]
-  const SORTS = [
-    { id: 'newest', label: '最新' },
-    { id: 'oldest', label: '最早' },
-    { id: 'recently_updated', label: '最近更新' },
-    { id: 'least_recently_updated', label: '最久未更新' },
-  ]
-  const SCENARIOS = {
-    fix: { label: '修复实现', hint: '直接动手改：先读代码确认现状，再实现，改完自己验证。' },
-    plan_first: { label: '先出方案', hint: '只出方案：读代码、复现问题、写清打算怎么改，等人确认后再动手。' },
-    review_fix: { label: '审查并修复', hint: '先读 diff 与上下文，能自己修的就修，修不了的写清原因。' },
-    review_only: { label: '只审查', hint: '只给意见，不改任何代码；按严重程度逐条列出问题与建议。' },
-  }
-  /** Standing-instruction tabs; `all` comes first because it prepends to every
-   *  scenario's own instruction. */
-  const PROMPT_TABS = [
-    { id: 'all', label: '通用' },
-    { id: 'fix', label: '修复实现' },
-    { id: 'plan_first', label: '先出方案' },
-    { id: 'review_fix', label: '审查并修复' },
-    { id: 'review_only', label: '只审查' },
-  ]
-  /** Task statuses, mirroring dsh-plugin-taskboard's vocabulary. */
-  const TASK_STATUS_LABELS = {
-    todo: '待办', queued: '排队', preparing: '准备中', running: '执行中',
-    awaiting_input: '等待输入', review: '待验收', merging: '合并中',
-    failed: '失败', done: '已完成', canceled: '已取消',
-  }
-
-  /** GitLab calls the second tab "merge requests"; GitHub calls it pull requests. */
-  function tabLabel(tab, provider) {
-    if (tab === 'issues') return 'Issues'
-    return provider === 'gitlab' ? 'Merge requests' : 'Pull requests'
-  }
-  /** The noun used in prose for a change on this forge. */
-  function prNoun(provider) {
-    return provider === 'gitlab' ? '合并请求' : 'Pull Request'
-  }
   /** Which scenarios apply to an item kind (protocol mirror). */
   function scenariosForKind(kind) {
     return kind === 'pr' ? ['review_fix', 'review_only'] : ['fix', 'plan_first']
@@ -197,6 +158,619 @@
     return allowed.includes(preferred) ? preferred : allowed[0]
   }
 
+  // ---------------------------------------------------------------- strings
+  /**
+   * The whole UI in both languages. This bundle cannot import
+   * src/shared/lang.js (no module resolution), so the language chain lives
+   * here: the `language` field of GET /settings wins, then navigator.language,
+   * then Chinese — this plugin's original UI language.
+   *
+   * Entries that need a value are stored as functions; t(key, arg) calls them.
+   */
+  const STRINGS = {
+    zh: {
+      // vocabulary labels
+      stateOpen: '打开',
+      stateClosed: '已关闭',
+      stateAll: '全部',
+      sortNewest: '最新',
+      sortOldest: '最早',
+      sortRecentlyUpdated: '最近更新',
+      sortLeastRecentlyUpdated: '最久未更新',
+      scenarioFix: '修复实现',
+      scenarioFixHint: '直接动手改：先读代码确认现状，再实现，改完自己验证。',
+      scenarioPlanFirst: '先出方案',
+      scenarioPlanFirstHint: '只出方案：读代码、复现问题、写清打算怎么改，等人确认后再动手。',
+      scenarioReviewFix: '审查并修复',
+      scenarioReviewFixHint: '先读 diff 与上下文，能自己修的就修，修不了的写清原因。',
+      scenarioReviewOnly: '只审查',
+      scenarioReviewOnlyHint: '只给意见，不改任何代码；按严重程度逐条列出问题与建议。',
+      promptTabAll: '通用',
+      taskTodo: '待办',
+      taskQueued: '排队',
+      taskPreparing: '准备中',
+      taskRunning: '执行中',
+      taskAwaitingInput: '等待输入',
+      taskReview: '待验收',
+      taskMerging: '合并中',
+      taskFailed: '失败',
+      taskDone: '已完成',
+      taskCanceled: '已取消',
+      mergeRequest: '合并请求',
+      // relative time
+      justNow: '刚刚',
+      minutesAgo: (n) => n + ' 分钟前',
+      hoursAgo: (n) => n + ' 小时前',
+      daysAgo: (n) => n + ' 天前',
+      // errors
+      unknownError: '未知错误',
+      errNoAccount: '还没有配置这个代码托管服务的访问令牌',
+      errNoRemote: '这个工作区没有可识别的 origin 远端',
+      errUnsupportedHost: '不支持这个代码托管服务',
+      errRateLimited: '被代码托管服务限流了，稍等一会儿再试',
+      errForbidden: '当前令牌没有权限做这个操作',
+      errNotFound: '这个条目已经不存在了',
+      errForgeError: (m) => '代码托管服务返回了错误：' + m,
+      errInvalidInput: (m) => '请求不合法：' + m,
+      // panel chrome
+      panelTitle: '仓库面板',
+      itemListRegion: '仓库条目列表',
+      taskCreatedOpenBoard: '任务已经建好了，打开任务看板就能看到',
+      selectWorkspaceAria: '选择工作区',
+      selectWorkspaceOption: '选择工作区…',
+      newIssue: '新建 issue',
+      newIssueBtn: '＋ 新建 issue',
+      itemKindTablist: '条目类型',
+      refresh: '刷新',
+      settingsAria: '仓库面板设置',
+      settings: '设置',
+      connecting: '连接中…',
+      liveUp: '实时同步中',
+      liveDown: '实时同步断开',
+      searchPlaceholder: '搜索标题与正文',
+      clearSearch: '清空搜索',
+      stateFilterAria: '状态筛选',
+      assignedToMe: '指派给我',
+      labels: '标签',
+      sortAria: '排序',
+      resolvingRemote: '解析远端…',
+      noRecognizableRemote: '没有可识别的远端',
+      openRepoInBrowser: (repo) => '在浏览器中打开 ' + repo,
+      filterByLabel: '按标签筛选',
+      filterByLabelPicked: (n) => '按标签筛选，已选 ' + n + ' 个',
+      filterLabels: '筛选标签',
+      clearLabels: '清除标签',
+      labelsTruncated: (n) => '只列出前 ' + n + ' 个标签',
+      noMatchingLabels: '没有匹配的标签',
+      listSep: '、',
+      // row glyphs and state words
+      glyphDraftPr: (noun) => '草稿 ' + noun,
+      glyphMergedPr: (noun) => '已合并的' + noun,
+      glyphClosedPr: (noun) => '已关闭的' + noun,
+      glyphOpenPr: (noun) => '打开的' + noun,
+      glyphClosedIssue: '已关闭的 issue',
+      glyphOpenIssue: '打开的 issue',
+      wordDraft: '草稿',
+      wordMerged: '已合并',
+      // empty and error states
+      pickWorkspaceTitle: '请选择一个工作区',
+      pickWorkspaceText: '面板会读取这个工作区 origin 远端指向的仓库。',
+      noForgeRemoteTitle: '这个工作区的 origin 远端不是可识别的代码托管服务',
+      noForgeRemoteText: '面板只能读取 GitHub 或 GitLab 上的仓库。给这个工作区配一个 origin 远端，或者换一个工作区。',
+      noForgeRemoteShort: '面板只能读取 GitHub 或 GitLab 上的仓库。',
+      emptyTitle: '这里什么都没有',
+      emptyFiltered: '试试放宽筛选条件，或者把状态切到「全部」。',
+      emptyPlain: '这个仓库在这个分类下还没有条目。',
+      unsupportedTitle: '暂不支持这个代码托管服务',
+      unknownHost: '未知主机',
+      remotePointsAt: (host) => '远端指向 ' + host + '，',
+      onlyGitHubGitLab: '面板目前只会读取 GitHub 与 GitLab（含自建 GitLab）。',
+      remoteUrlLine: (url) => '\n远端地址：' + url,
+      readRepoFailed: '读取仓库信息失败',
+      loadListFailed: '加载列表失败',
+      needTokenTitle: '需要访问令牌',
+      thisService: '这个代码托管服务',
+      needTokenText: (v) => v.host + ' 还没有配置访问令牌，面板读不到 issue 和' + v.noun +
+        '。\n在设置里填一个有仓库读写权限的令牌就可以了。',
+      openSettingsFillToken: '打开设置填令牌',
+      retry: '重试',
+      // list rows
+      untitled: '（无标题）',
+      openInBrowser: '在浏览器中打开',
+      commentCountAria: (n) => n + ' 条评论',
+      startAria: (n) => '把 #' + n + ' 交给 Agent 处理',
+      chipAria: (word) => '在任务看板中查看这条任务，当前状态：' + word,
+      chipTitle: '在任务看板中查看',
+      retriggerAria: (n) => '重新触发 #' + n,
+      retrigger: '重新触发',
+      // footer
+      searchTimedOut: '搜索超时，这一页可能漏了结果',
+      pagingCapped: (n) => '只能翻到前 ' + n + ' 条，请缩小筛选范围',
+      pagination: '分页',
+      prevPage: '上一页',
+      nextPage: '下一页',
+      pageNAria: (n) => '第 ' + n + ' 页',
+      perPageAria: '每页条数',
+      perPage: '每页',
+      // modal frames
+      close: '关闭',
+      cancel: '取消',
+      confirm: '确定',
+      // detail drawer
+      loading: '加载中…',
+      loadingAria: '加载中',
+      closeDetail: '关闭详情',
+      comments: '评论',
+      commentsWithCount: (n) => '评论 · ' + n,
+      refreshDetail: '刷新详情与评论',
+      loadMore: '加载更多',
+      postComment: '发表评论',
+      composerPlaceholder: '写评论…（Ctrl/⌘ + Enter 发表）',
+      updatedAgo: (rel) => '更新于 ' + rel,
+      loadingBody: '加载正文中…',
+      cannotReadItem: '读不到这个条目',
+      noBody: '（没有正文）',
+      loadingComments: '加载评论中…',
+      noComments: '还没有评论',
+      commentAs: (user) => '以 ' + user + ' 的身份评论',
+      posting: '发表中…',
+      unknownAuthor: '未知',
+      lastEditedAt: (abs) => '最后编辑于 ' + abs,
+      edited: '已编辑',
+      openCommentInBrowser: '在浏览器中打开这条评论',
+      permalink: '固定链接',
+      reopen: '重新打开',
+      readDetailFailed: (m) => '读取详情失败：' + m,
+      readCommentsFailed: (m) => '读取评论失败：' + m,
+      writeSomethingFirst: '先写点评论内容',
+      commentPosted: '评论已发表',
+      postCommentFailed: (m) => '发表评论失败：' + m,
+      // close / reopen on the forge
+      closeNumber: (n) => '关闭 #' + n,
+      reopenNumber: (n) => '重新打开 #' + n,
+      closeOnForgeAria: (n) => '在远端关闭 #' + n,
+      reopenOnForgeAria: (n) => '在远端重新打开 #' + n,
+      theRemoteRepo: '远端仓库',
+      toggleStateText: (v) => '这会在 ' + v.repo + ' 上' + (v.closing ? '关闭' : '重新打开') +
+        '这个 ' + v.noun + ' #' + v.number + '，不是关掉这个详情面板。',
+      closeOnForge: '在远端关闭',
+      reopenOnForge: '在远端重新打开',
+      closedOnForge: '已在远端关闭',
+      reopenedOnForge: '已在远端重新打开',
+      closeFailed: (m) => '关闭失败：' + m,
+      reopenFailed: (m) => '重新打开失败：' + m,
+      // start dialog
+      currentWorkspace: '当前工作区',
+      quotedScope: (ws) => '「' + ws + '」',
+      thisRepo: '这个仓库',
+      startHint: (v) => '会在' + v.scope + '建一条任务，交给 Agent 处理 ' + v.repo + ' 的 ' +
+        v.noun + ' #' + v.number +
+        '。Prompt 由主机拼好：场景模板 + 常驻说明 + 你的补充说明 + 这条内容的快照。',
+      howToHandle: '处理方式',
+      writebackItem: '把结果回帖到该条目',
+      extraNotes: '补充说明',
+      extraNotesPlaceholder: '这次特别要注意什么（可选）',
+      viewSnapshot: '查看会带给 Agent 的内容快照',
+      handToAgent: '交给 Agent',
+      creating: '创建中…',
+      duplicateHint: '这条已经有任务了。可以去看已有的那条，或者仍然再建一条新的。',
+      viewExistingTask: '查看已有任务',
+      createAnyway: '仍然创建',
+      taskCreated: '任务已创建，去任务看板看进度',
+      createTaskFailed: (m) => '创建任务失败：' + m,
+      // new issue dialog
+      titlePlaceholder: '一句话说清要做什么',
+      titleLabel: '标题',
+      titleRequired: '标题 *',
+      bodyPlaceholder: '正文（可选）',
+      bodyLabel: '正文',
+      create: '创建',
+      titleEmpty: '标题不能为空',
+      titleTooLong: (v) => '标题最多 ' + v.cap + ' 个字符，现在有 ' + v.length + ' 个',
+      issueCreated: 'issue 已创建',
+      createIssueFailed: (m) => '创建 issue 失败：' + m,
+      // settings modal
+      settingsTitle: '仓库面板设置',
+      settingsScope: '设置范围',
+      whichSettings: '这个工作区用哪套设置',
+      globalDefaults: '全局默认',
+      custom: '自定义',
+      issueDefaultScenario: 'issue 默认场景',
+      prDefaultScenario: 'PR 默认场景',
+      writebackDefault: '默认把结果回帖到该条目',
+      standingInstructions: '常驻说明',
+      standingPlaceholder: '每次交给 Agent 时都会带上的说明（可选）',
+      defaultScenarios: '默认场景',
+      standingHint: '「通用」会加在每个场景前面，其余只对该场景生效。',
+      accessTokens: '访问令牌',
+      save: '保存',
+      allWorkspaces: '全部工作区（全局默认）',
+      scopeGlobalHint: '这里改的是所有工作区的默认值。',
+      scopeFollowHint: '这个工作区跟着全局默认走。保存后会删掉它自己的那套设置。',
+      scopeCustomHint: '这个工作区用自己的一整套设置；以后改全局默认不会影响它。',
+      saving: '保存中…',
+      loadingSettings: '正在读取已存的设置…',
+      noTokensYet: '还没有配置任何访问令牌。',
+      envTokenScope: (v) => '环境变量里的令牌只对 ' + v.hosts + ' 生效，对 ' + v.host +
+        ' 无效——这个主机要在上面单独存一个令牌。',
+      envTokenSource: (v) => '来自环境变量 ' + v.variable + '，仅对 ' + v.host + ' 生效，不在这里管理',
+      serviceCanonicalHost: '该服务的官方主机',
+      envShadowsStored: '这个主机也存了一个令牌，但环境变量优先，存的那个当前不生效。',
+      deleteStoredToken: '删除存的令牌',
+      tokenStoredPlaceholder: '已存令牌，填新的可替换',
+      pasteTokenPlaceholder: '粘贴访问令牌',
+      tokenForHostAria: (host) => host + ' 的访问令牌',
+      storedLocally: '存在本机',
+      notConfigured: '未配置',
+      remove: '删除',
+      pasteTokenFirst: '先粘贴一个访问令牌',
+      tokenSaved: '令牌已保存',
+      saveTokenFailed: (m) => '保存令牌失败：' + m,
+      deleteTokenTitle: (host) => '删除 ' + host + ' 的令牌',
+      deleteTokenAria: (host) => '删除 ' + host + ' 的访问令牌',
+      deleteTokenText: '删除后面板就读不到这个主机上的仓库了。',
+      tokenDeleted: '令牌已删除',
+      deleteTokenFailed: (m) => '删除令牌失败：' + m,
+      standingTooLong: (v) => '常驻说明最多 ' + v.cap + ' 个字符，「' + v.label + '」超了',
+      settingsSaved: '设置已保存',
+      saveSettingsFailed: (m) => '保存设置失败：' + m,
+    },
+    en: {
+      // vocabulary labels
+      stateOpen: 'Open',
+      stateClosed: 'Closed',
+      stateAll: 'All',
+      sortNewest: 'Newest',
+      sortOldest: 'Oldest',
+      sortRecentlyUpdated: 'Recently updated',
+      sortLeastRecentlyUpdated: 'Least recently updated',
+      scenarioFix: 'Fix it',
+      scenarioFixHint: 'Straight to the code: read it, confirm what it does now, implement, then verify your own change.',
+      scenarioPlanFirst: 'Plan first',
+      scenarioPlanFirstHint: 'Plan only: read the code, reproduce the problem, write down what you would change, and wait for a human.',
+      scenarioReviewFix: 'Review and fix',
+      scenarioReviewFixHint: 'Read the diff and its context first; fix what you can, and say why for what you cannot.',
+      scenarioReviewOnly: 'Review only',
+      scenarioReviewOnlyHint: 'Comments only, no code changes; list every finding and suggestion by severity.',
+      promptTabAll: 'Common',
+      taskTodo: 'To do',
+      taskQueued: 'Queued',
+      taskPreparing: 'Preparing',
+      taskRunning: 'Running',
+      taskAwaitingInput: 'Awaiting input',
+      taskReview: 'Review',
+      taskMerging: 'Merging',
+      taskFailed: 'Failed',
+      taskDone: 'Done',
+      taskCanceled: 'Canceled',
+      mergeRequest: 'Merge Request',
+      // relative time
+      justNow: 'just now',
+      minutesAgo: (n) => n + ' min ago',
+      hoursAgo: (n) => n + ' h ago',
+      daysAgo: (n) => n + ' d ago',
+      // errors
+      unknownError: 'Unknown error',
+      errNoAccount: 'No access token configured for this code-hosting service',
+      errNoRemote: 'This workspace has no recognizable origin remote',
+      errUnsupportedHost: 'This code-hosting service is not supported',
+      errRateLimited: 'Rate-limited by the code-hosting service; try again shortly',
+      errForbidden: 'The current token is not allowed to do this',
+      errNotFound: 'This item no longer exists',
+      errForgeError: (m) => 'The code-hosting service returned an error: ' + m,
+      errInvalidInput: (m) => 'Invalid request: ' + m,
+      // panel chrome
+      panelTitle: 'Repo panel',
+      itemListRegion: 'Repository items',
+      taskCreatedOpenBoard: 'The task is ready — open the task board to see it',
+      selectWorkspaceAria: 'Select a workspace',
+      selectWorkspaceOption: 'Select a workspace…',
+      newIssue: 'New issue',
+      newIssueBtn: '+ New issue',
+      itemKindTablist: 'Item type',
+      refresh: 'Refresh',
+      settingsAria: 'Repo panel settings',
+      settings: 'Settings',
+      connecting: 'Connecting…',
+      liveUp: 'Live',
+      liveDown: 'Offline',
+      searchPlaceholder: 'Search titles and bodies',
+      clearSearch: 'Clear the search',
+      stateFilterAria: 'State filter',
+      assignedToMe: 'Assigned to me',
+      labels: 'Labels',
+      sortAria: 'Sort',
+      resolvingRemote: 'Resolving the remote…',
+      noRecognizableRemote: 'No recognizable remote',
+      openRepoInBrowser: (repo) => 'Open ' + repo + ' in the browser',
+      filterByLabel: 'Filter by label',
+      filterByLabelPicked: (n) => 'Filter by label, ' + n + ' selected',
+      filterLabels: 'Filter labels',
+      clearLabels: 'Clear labels',
+      labelsTruncated: (n) => 'Only the first ' + n + ' labels are listed',
+      noMatchingLabels: 'No matching label',
+      listSep: ', ',
+      // row glyphs and state words
+      glyphDraftPr: (noun) => 'Draft ' + noun,
+      glyphMergedPr: (noun) => 'Merged ' + noun,
+      glyphClosedPr: (noun) => 'Closed ' + noun,
+      glyphOpenPr: (noun) => 'Open ' + noun,
+      glyphClosedIssue: 'Closed issue',
+      glyphOpenIssue: 'Open issue',
+      wordDraft: 'Draft',
+      wordMerged: 'Merged',
+      // empty and error states
+      pickWorkspaceTitle: 'Pick a workspace',
+      pickWorkspaceText: 'The panel reads the repository this workspace\'s origin remote points at.',
+      noForgeRemoteTitle: 'This workspace\'s origin remote is not a recognized code-hosting service',
+      noForgeRemoteText: 'The panel can only read repositories on GitHub or GitLab. Give this workspace an origin remote, or switch to another workspace.',
+      noForgeRemoteShort: 'The panel can only read repositories on GitHub or GitLab.',
+      emptyTitle: 'Nothing here',
+      emptyPlain: 'This repository has no items in this tab yet.',
+      emptyFiltered: 'Try loosening the filters, or switch the state to "All".',
+      unsupportedTitle: 'This code-hosting service is not supported yet',
+      unknownHost: 'an unknown host',
+      remotePointsAt: (host) => 'The remote points at ' + host + '. ',
+      onlyGitHubGitLab: 'The panel currently reads only GitHub and GitLab (self-hosted GitLab included).',
+      remoteUrlLine: (url) => '\nRemote URL: ' + url,
+      readRepoFailed: 'Could not read the repository',
+      loadListFailed: 'Could not load the list',
+      needTokenTitle: 'An access token is needed',
+      thisService: 'this code-hosting service',
+      needTokenText: (v) => v.host + ' has no access token configured, so the panel cannot read issues or ' +
+        v.noun + 's.\nAdd a token with read/write access to the repository in the settings.',
+      openSettingsFillToken: 'Open the settings and add a token',
+      retry: 'Retry',
+      // list rows
+      untitled: '(untitled)',
+      openInBrowser: 'Open in the browser',
+      commentCountAria: (n) => n + ' comments',
+      startAria: (n) => 'Hand #' + n + ' to an agent',
+      chipAria: (word) => 'View this task on the task board, current status: ' + word,
+      chipTitle: 'View on the task board',
+      retriggerAria: (n) => 'Re-trigger #' + n,
+      retrigger: 'Re-trigger',
+      // footer
+      searchTimedOut: 'The search timed out; this page may be missing results',
+      pagingCapped: (n) => 'Only the first ' + n + ' items can be paged through; narrow the filters',
+      pagination: 'Pagination',
+      prevPage: 'Previous',
+      nextPage: 'Next',
+      pageNAria: (n) => 'Page ' + n,
+      perPageAria: 'Items per page',
+      perPage: 'Per page',
+      // modal frames
+      close: 'Close',
+      cancel: 'Cancel',
+      confirm: 'OK',
+      // detail drawer
+      loading: 'Loading…',
+      loadingAria: 'Loading',
+      closeDetail: 'Close the details',
+      comments: 'Comments',
+      commentsWithCount: (n) => 'Comments · ' + n,
+      refreshDetail: 'Refresh the details and comments',
+      loadMore: 'Load more',
+      postComment: 'Post comment',
+      composerPlaceholder: 'Write a comment… (Ctrl/⌘ + Enter to post)',
+      updatedAgo: (rel) => 'updated ' + rel,
+      loadingBody: 'Loading the body…',
+      cannotReadItem: 'Cannot read this item',
+      noBody: '(no body)',
+      loadingComments: 'Loading comments…',
+      noComments: 'No comments yet',
+      commentAs: (user) => 'Comment as ' + user,
+      posting: 'Posting…',
+      unknownAuthor: 'unknown',
+      lastEditedAt: (abs) => 'Last edited ' + abs,
+      edited: 'edited',
+      openCommentInBrowser: 'Open this comment in the browser',
+      permalink: 'Permalink',
+      reopen: 'Reopen',
+      readDetailFailed: (m) => 'Could not read the details: ' + m,
+      readCommentsFailed: (m) => 'Could not read the comments: ' + m,
+      writeSomethingFirst: 'Write something first',
+      commentPosted: 'Comment posted',
+      postCommentFailed: (m) => 'Could not post the comment: ' + m,
+      // close / reopen on the forge
+      closeNumber: (n) => 'Close #' + n,
+      reopenNumber: (n) => 'Reopen #' + n,
+      closeOnForgeAria: (n) => 'Close #' + n + ' on the remote',
+      reopenOnForgeAria: (n) => 'Reopen #' + n + ' on the remote',
+      theRemoteRepo: 'the remote repository',
+      toggleStateText: (v) => 'This will ' + (v.closing ? 'close' : 'reopen') + ' ' + v.noun + ' #' +
+        v.number + ' on ' + v.repo + ' — it does not dismiss this details panel.',
+      closeOnForge: 'Close on the remote',
+      reopenOnForge: 'Reopen on the remote',
+      closedOnForge: 'Closed on the remote',
+      reopenedOnForge: 'Reopened on the remote',
+      closeFailed: (m) => 'Could not close it: ' + m,
+      reopenFailed: (m) => 'Could not reopen it: ' + m,
+      // start dialog
+      currentWorkspace: 'the current workspace',
+      quotedScope: (ws) => '"' + ws + '"',
+      thisRepo: 'this repository',
+      startHint: (v) => 'This creates a task in ' + v.scope + ' and hands ' + v.noun + ' #' +
+        v.number + ' of ' + v.repo + ' to an agent. The host composes the prompt: ' +
+        'scenario template + standing instructions + your extra notes + a snapshot of this item.',
+      howToHandle: 'How to handle it',
+      writebackItem: 'Post the result back to this item',
+      extraNotes: 'Extra notes',
+      extraNotesPlaceholder: 'Anything to watch out for this time (optional)',
+      viewSnapshot: 'View the snapshot the agent will get',
+      handToAgent: 'Hand to agent',
+      creating: 'Creating…',
+      duplicateHint: 'This item already has a task. Open the existing one, or create another anyway.',
+      viewExistingTask: 'View the existing task',
+      createAnyway: 'Create anyway',
+      taskCreated: 'Task created — follow it on the task board',
+      createTaskFailed: (m) => 'Could not create the task: ' + m,
+      // new issue dialog
+      titlePlaceholder: 'One line on what needs doing',
+      titleLabel: 'Title',
+      titleRequired: 'Title *',
+      bodyPlaceholder: 'Body (optional)',
+      bodyLabel: 'Body',
+      create: 'Create',
+      titleEmpty: 'The title cannot be empty',
+      titleTooLong: (v) => 'The title takes at most ' + v.cap + ' characters; it has ' + v.length,
+      issueCreated: 'Issue created',
+      createIssueFailed: (m) => 'Could not create the issue: ' + m,
+      // settings modal
+      settingsTitle: 'Repo panel settings',
+      settingsScope: 'Scope',
+      whichSettings: 'Which settings this workspace uses',
+      globalDefaults: 'Global defaults',
+      custom: 'Custom',
+      issueDefaultScenario: 'Default issue scenario',
+      prDefaultScenario: 'Default PR scenario',
+      writebackDefault: 'Post the result back to the item by default',
+      standingInstructions: 'Standing instructions',
+      standingPlaceholder: 'Notes carried along on every hand-off to an agent (optional)',
+      defaultScenarios: 'Default scenarios',
+      standingHint: '"Common" is prepended to every scenario; the rest apply to their own scenario only.',
+      accessTokens: 'Access tokens',
+      save: 'Save',
+      allWorkspaces: 'All workspaces (global defaults)',
+      scopeGlobalHint: 'This edits the defaults for every workspace.',
+      scopeFollowHint: 'This workspace follows the global defaults. Saving deletes its own set of settings.',
+      scopeCustomHint: 'This workspace uses its own full set of settings; later changes to the global defaults will not reach it.',
+      saving: 'Saving…',
+      loadingSettings: 'Reading the stored settings…',
+      noTokensYet: 'No access token configured yet.',
+      envTokenScope: (v) => 'The token in the environment only applies to ' + v.hosts + ', not to ' +
+        v.host + ' — that host needs its own token stored above.',
+      envTokenSource: (v) => 'From the environment variable ' + v.variable + ', only for ' + v.host +
+        ', not managed here',
+      serviceCanonicalHost: 'that service\'s canonical host',
+      envShadowsStored: 'A token is stored for this host too, but the environment variable wins, so the stored one is inactive.',
+      deleteStoredToken: 'Delete the stored token',
+      tokenStoredPlaceholder: 'Token stored; enter a new one to replace it',
+      pasteTokenPlaceholder: 'Paste an access token',
+      tokenForHostAria: (host) => 'Access token for ' + host,
+      storedLocally: 'Stored locally',
+      notConfigured: 'Not configured',
+      remove: 'Delete',
+      pasteTokenFirst: 'Paste an access token first',
+      tokenSaved: 'Token saved',
+      saveTokenFailed: (m) => 'Could not save the token: ' + m,
+      deleteTokenTitle: (host) => 'Delete the token for ' + host,
+      deleteTokenAria: (host) => 'Delete the access token for ' + host,
+      deleteTokenText: 'After this the panel can no longer read repositories on this host.',
+      tokenDeleted: 'Token deleted',
+      deleteTokenFailed: (m) => 'Could not delete the token: ' + m,
+      standingTooLong: (v) => 'Standing instructions take at most ' + v.cap + ' characters; "' +
+        v.label + '" is over',
+      settingsSaved: 'Settings saved',
+      saveSettingsFailed: (m) => 'Could not save the settings: ' + m,
+    },
+  }
+
+  /** The active language and its dictionary; everything reads L through t(). */
+  let lang = 'zh'
+  let L = STRINGS.zh
+
+  /** Inline mirror of normalizeLang() in src/shared/lang.js. */
+  function normalizeLangTag(value) {
+    if (typeof value !== 'string') return null
+    const primary = value.trim().toLowerCase().replace(/_/g, '-').split(/[-.@]/)[0]
+    return primary === 'zh' || primary === 'en' ? primary : null
+  }
+
+  /** One string. A missing key returns the key itself rather than `undefined`. */
+  function t(key, arg) {
+    const value = L[key]
+    if (typeof value === 'function') return value(arg)
+    return typeof value === 'string' ? value : key
+  }
+
+  // The label tables are REBUILT on a language switch rather than resolved
+  // lazily, so no <option>, chip or radio row can keep a label the old
+  // dictionary produced.
+  function buildStateFilters() {
+    return [
+      { id: 'open', label: t('stateOpen') },
+      { id: 'closed', label: t('stateClosed') },
+      { id: 'all', label: t('stateAll') },
+    ]
+  }
+  function buildSorts() {
+    return [
+      { id: 'newest', label: t('sortNewest') },
+      { id: 'oldest', label: t('sortOldest') },
+      { id: 'recently_updated', label: t('sortRecentlyUpdated') },
+      { id: 'least_recently_updated', label: t('sortLeastRecentlyUpdated') },
+    ]
+  }
+  function buildScenarios() {
+    return {
+      fix: { label: t('scenarioFix'), hint: t('scenarioFixHint') },
+      plan_first: { label: t('scenarioPlanFirst'), hint: t('scenarioPlanFirstHint') },
+      review_fix: { label: t('scenarioReviewFix'), hint: t('scenarioReviewFixHint') },
+      review_only: { label: t('scenarioReviewOnly'), hint: t('scenarioReviewOnlyHint') },
+    }
+  }
+  /** Standing-instruction tabs; `all` comes first because it prepends to every
+   *  scenario's own instruction. */
+  function buildPromptTabs() {
+    return [
+      { id: 'all', label: t('promptTabAll') },
+      { id: 'fix', label: t('scenarioFix') },
+      { id: 'plan_first', label: t('scenarioPlanFirst') },
+      { id: 'review_fix', label: t('scenarioReviewFix') },
+      { id: 'review_only', label: t('scenarioReviewOnly') },
+    ]
+  }
+  /** Task statuses, mirroring dsh-plugin-taskboard's vocabulary. */
+  function buildTaskStatusLabels() {
+    return {
+      todo: t('taskTodo'), queued: t('taskQueued'), preparing: t('taskPreparing'),
+      running: t('taskRunning'), awaiting_input: t('taskAwaitingInput'),
+      review: t('taskReview'), merging: t('taskMerging'), failed: t('taskFailed'),
+      done: t('taskDone'), canceled: t('taskCanceled'),
+    }
+  }
+
+  let STATE_FILTERS = buildStateFilters()
+  let SORTS = buildSorts()
+  let SCENARIOS = buildScenarios()
+  let PROMPT_TABS = buildPromptTabs()
+  let TASK_STATUS_LABELS = buildTaskStatusLabels()
+
+  /**
+   * Switch language. An unrecognised or nullish value KEEPS the current one —
+   * that is how "the host said nothing" falls through to the browser's guess.
+   * Returns whether anything actually changed.
+   */
+  function applyLang(value) {
+    const next = normalizeLangTag(value)
+    if (next === null || next === lang) return false
+    lang = next
+    L = STRINGS[next]
+    STATE_FILTERS = buildStateFilters()
+    SORTS = buildSorts()
+    SCENARIOS = buildScenarios()
+    PROMPT_TABS = buildPromptTabs()
+    TASK_STATUS_LABELS = buildTaskStatusLabels()
+    return true
+  }
+
+  /** The browser's own guess, used until (and unless) the host says otherwise. */
+  function browserLang() {
+    if (typeof navigator === 'undefined' || navigator === null) return null
+    return normalizeLangTag(navigator.language)
+  }
+
+  /** GitLab calls the second tab "merge requests"; GitHub calls it pull requests. */
+  function tabLabel(tab, provider) {
+    if (tab === 'issues') return 'Issues'
+    return provider === 'gitlab' ? 'Merge requests' : 'Pull requests'
+  }
+  /** The noun used in prose for a change on this forge. */
+  function prNoun(provider) {
+    return provider === 'gitlab' ? t('mergeRequest') : 'Pull Request'
+  }
+
   // ---------------------------------------------------------------- helpers
   /** Tiny DOM builder: el(tag, attrs, ...children). Same shape as the sibling. */
   function el(tag, attrs) {
@@ -267,10 +841,10 @@
     const ms = toMillis(value)
     if (ms === undefined) return ''
     const delta = Date.now() - ms
-    if (delta < 60000) return '刚刚'
-    if (delta < 3600000) return Math.floor(delta / 60000) + ' 分钟前'
-    if (delta < 86400000) return Math.floor(delta / 3600000) + ' 小时前'
-    if (delta < 2592000000) return Math.floor(delta / 86400000) + ' 天前'
+    if (delta < 60000) return t('justNow')
+    if (delta < 3600000) return t('minutesAgo', Math.floor(delta / 60000))
+    if (delta < 86400000) return t('hoursAgo', Math.floor(delta / 3600000))
+    if (delta < 2592000000) return t('daysAgo', Math.floor(delta / 86400000))
     return fmtAbsolute(value)
   }
   /** localStorage is optional: a sandboxed iframe throws on access. */
@@ -979,7 +1553,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
 
   /** Message of an unknown throwable, never `[object Object]`. */
   function messageOf(error) {
-    if (error === null || error === undefined) return '未知错误'
+    if (error === null || error === undefined) return t('unknownError')
     if (typeof error.message === 'string' && error.message.length > 0) return error.message
     return String(error)
   }
@@ -989,14 +1563,14 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
   /** Localize the host's stable error codes; unknown codes keep their prose. */
   function friendlyError(error) {
     switch (codeOf(error)) {
-      case 'no_account': return '还没有配置这个代码托管服务的访问令牌'
-      case 'no_remote': return '这个工作区没有可识别的 origin 远端'
-      case 'unsupported_host': return '不支持这个代码托管服务'
-      case 'rate_limited': return '被代码托管服务限流了，稍等一会儿再试'
-      case 'forbidden': return '当前令牌没有权限做这个操作'
-      case 'not_found': return '这个条目已经不存在了'
-      case 'forge_error': return '代码托管服务返回了错误：' + messageOf(error)
-      case 'invalid_input': return '请求不合法：' + messageOf(error)
+      case 'no_account': return t('errNoAccount')
+      case 'no_remote': return t('errNoRemote')
+      case 'unsupported_host': return t('errUnsupportedHost')
+      case 'rate_limited': return t('errRateLimited')
+      case 'forbidden': return t('errForbidden')
+      case 'not_found': return t('errNotFound')
+      case 'forge_error': return t('errForgeError', messageOf(error))
+      case 'invalid_input': return t('errInvalidInput', messageOf(error))
       default: return messageOf(error)
     }
   }
@@ -1073,7 +1647,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       setOpen(false)
       const seat = document.querySelector(TASKBOARD_ENTRY)
       if (seat !== null && typeof seat.click === 'function') seat.click()
-      else toast('任务已经建好了，打开任务看板就能看到', 'success')
+      else toast(t('taskCreatedOpenBoard'), 'success')
     } catch (error) {
       console.warn(LOG + ' could not reveal the taskboard:', messageOf(error))
     }
@@ -1275,6 +1849,10 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
         ? value
         : { global: defaultPanelSettings(), folders: {} }
       model.settingsLoaded = true
+      // This payload is also how the shell's language reaches the browser (the
+      // bundle cannot read the environment). It outranks navigator.language, so
+      // any chrome already built with the previous dictionary is rebuilt.
+      if (applyLang(model.settings.language)) relabelPanel()
     } catch (error) {
       console.warn(LOG + ' settings unavailable:', messageOf(error))
     }
@@ -1420,25 +1998,25 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
   function glyphFor(row, provider) {
     const noun = prNoun(provider)
     if (row.isPr === true) {
-      if (row.draft === true) return { glyph: '⊘', tone: 'muted', label: '草稿 ' + noun }
-      if (row.state === 'merged') return { glyph: '⑃', tone: 'violet', label: '已合并的' + noun }
-      if (row.state === 'closed') return { glyph: '✕', tone: 'rose', label: '已关闭的' + noun }
-      return { glyph: '⇅', tone: 'emerald', label: '打开的' + noun }
+      if (row.draft === true) return { glyph: '⊘', tone: 'muted', label: t('glyphDraftPr', noun) }
+      if (row.state === 'merged') return { glyph: '⑃', tone: 'violet', label: t('glyphMergedPr', noun) }
+      if (row.state === 'closed') return { glyph: '✕', tone: 'rose', label: t('glyphClosedPr', noun) }
+      return { glyph: '⇅', tone: 'emerald', label: t('glyphOpenPr', noun) }
     }
     if (row.state === 'closed' || row.state === 'merged') {
-      return { glyph: '✓', tone: 'violet', label: '已关闭的 issue' }
+      return { glyph: '✓', tone: 'violet', label: t('glyphClosedIssue') }
     }
-    return { glyph: '◍', tone: 'emerald', label: '打开的 issue' }
+    return { glyph: '◍', tone: 'emerald', label: t('glyphOpenIssue') }
   }
 
   /** The state word used in prose (the drawer's meta line). */
   function stateWord(row) {
     if (row.isPr === true) {
-      if (row.draft === true) return '草稿'
-      if (row.state === 'merged') return '已合并'
-      return row.state === 'closed' ? '已关闭' : '打开'
+      if (row.draft === true) return t('wordDraft')
+      if (row.state === 'merged') return t('wordMerged')
+      return row.state === 'closed' ? t('stateClosed') : t('stateOpen')
     }
-    return row.state === 'open' ? '打开' : '已关闭'
+    return row.state === 'open' ? t('stateOpen') : t('stateClosed')
   }
 
   function kindOf(row) {
@@ -1539,12 +2117,13 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     button.type = 'button'
     button.dataset.dshRepopanelEntry = ''
     button.className = 'dsh-rp-entry'
-    button.setAttribute('aria-label', '仓库面板')
     // Static plugin-authored markup. This is the ONLY innerHTML in the file and
-    // it contains no forge text — see the security note in the file header.
+    // it contains no forge text — see the security note in the file header. The
+    // label is filled in by renderEntry(), which also relabels it on a language
+    // switch, so no localized string ever goes through innerHTML.
     button.innerHTML =
       '<span class="dsh-rp-entry-icon" aria-hidden="true">🗂</span>' +
-      '<span class="dsh-rp-entry-label">仓库面板</span>' +
+      '<span class="dsh-rp-entry-label"></span>' +
       '<span class="dsh-rp-entry-stats"></span>'
     button.addEventListener('click', () => setOpen(!model.open))
     return button
@@ -1595,7 +2174,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     row2El = el('div', { class: 'dsh-rp-row2' })
     headEl = el('div', { class: 'dsh-rp-head' }, row1El, row2El)
     bodyAreaEl = el('div', {
-      class: 'dsh-rp-body-area', role: 'region', 'aria-label': '仓库条目列表',
+      class: 'dsh-rp-body-area', role: 'region', 'aria-label': t('itemListRegion'),
     })
     buildRow1()
     buildRow2()
@@ -1606,10 +2185,27 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     view.append(panelEl)
   }
 
+  /**
+   * Throw away the chrome built with the previous dictionary and rebuild it. The
+   * header controls are created ONCE and updated in place, so a language that
+   * arrives after the first paint has to be applied by reconstruction.
+   */
+  function relabelPanel() {
+    if (view === null || panelEl === null) return
+    closeAllOverlays()
+    view.textContent = ''
+    panelEl = null
+    wsOptionsSignature = null
+    buildPanelDom()
+  }
+
   function renderEntry() {
     if (entry === null) return
     if (model.open) entry.dataset.active = 'true'
     else delete entry.dataset.active
+    entry.setAttribute('aria-label', t('panelTitle'))
+    const label = entry.querySelector('.dsh-rp-entry-label')
+    if (label !== null) label.textContent = t('panelTitle')
     const stats = entry.querySelector('.dsh-rp-entry-stats')
     if (stats === null) return
     const issues = model.counts.issues
@@ -1657,15 +2253,15 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
   /** Row 1: workspace + owner/repo chip, 新建 issue, the tab switcher, 刷新, gear. */
   function buildRow1() {
     wsSelectEl = el('select', {
-      class: 'dsh-rp-ws-select', 'aria-label': '选择工作区',
+      class: 'dsh-rp-ws-select', 'aria-label': t('selectWorkspaceAria'),
       onChange: () => selectWorkspace(wsSelectEl.value),
     })
     repoChipEl = el('div', { class: 'dsh-rp-repo-chip' }, wsSelectEl)
     newIssueBtn = el('button', {
       class: 'dsh-rp-btn', 'data-kind': 'primary', type: 'button',
       onClick: () => openNewIssue(),
-    }, '＋ 新建 issue')
-    const tabs = el('div', { class: 'dsh-rp-tabs', role: 'tablist', 'aria-label': '条目类型' })
+    }, t('newIssueBtn'))
+    const tabs = el('div', { class: 'dsh-rp-tabs', role: 'tablist', 'aria-label': t('itemKindTablist') })
     tabParts = {}
     for (const tab of TABS) {
       const labelEl = el('span', {})
@@ -1677,14 +2273,14 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       tabParts[tab] = { button, labelEl, countEl }
       tabs.append(button)
     }
-    const refreshBtn = el('button', { class: 'dsh-rp-btn', type: 'button', onClick: () => refreshAll() }, '刷新')
+    const refreshBtn = el('button', { class: 'dsh-rp-btn', type: 'button', onClick: () => refreshAll() }, t('refresh'))
     const gearBtn = el('button', {
       class: 'dsh-rp-btn dsh-rp-icon-btn', type: 'button',
-      'aria-label': '仓库面板设置', title: '设置',
+      'aria-label': t('settingsAria'), title: t('settings'),
       onClick: () => openSettings({}),
     }, '⚙')
     // The SSE dot: without it a dead stream looks exactly like "no task moved".
-    liveEl = el('span', { class: 'dsh-rp-live', 'data-state': 'down' }, '连接中…')
+    liveEl = el('span', { class: 'dsh-rp-live', 'data-state': 'down' }, t('connecting'))
     row1El.append(repoChipEl, newIssueBtn, tabs, liveEl,
       el('span', { class: 'dsh-rp-spacer' }), refreshBtn, gearBtn)
   }
@@ -1692,8 +2288,8 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
   /** Row 2: the search box (350 ms debounced, Escape clears) and its X button. */
   function buildSearchBox() {
     searchInput = el('input', {
-      class: 'dsh-rp-search', type: 'text', placeholder: '搜索标题与正文',
-      'aria-label': '搜索标题与正文',
+      class: 'dsh-rp-search', type: 'text', placeholder: t('searchPlaceholder'),
+      'aria-label': t('searchPlaceholder'),
       onInput: () => { renderSearchClear(); searchDebounce.run() },
       onKeydown: (event) => {
         if (event.key !== 'Escape') return
@@ -1705,7 +2301,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       },
     })
     searchClearBtn = el('button', {
-      class: 'dsh-rp-search-clear', type: 'button', 'aria-label': '清空搜索',
+      class: 'dsh-rp-search-clear', type: 'button', 'aria-label': t('clearSearch'),
       onClick: () => { clearSearch(); searchInput.focus() },
     }, '✕')
     searchClearBtn.hidden = true
@@ -1728,22 +2324,22 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
   /** Row 2, rest: state select, 指派给我 pill, labels popover trigger, sort. */
   function buildRow2() {
     stateSelectEl = el('select', {
-      class: 'dsh-rp-select', 'aria-label': '状态筛选',
+      class: 'dsh-rp-select', 'aria-label': t('stateFilterAria'),
       onChange: () => setStateFilter(stateSelectEl.value),
     }, STATE_FILTERS.map((row) => el('option', { value: row.id }, row.label)))
     assignedPill = el('button', {
       class: 'dsh-rp-pill', type: 'button', 'aria-pressed': 'false',
       onClick: () => toggleAssigned(),
-    }, '指派给我')
+    }, t('assignedToMe'))
     labelsCountEl = el('span', { class: 'dsh-rp-labels-count' })
     labelsCountEl.hidden = true
     labelsBtn = el('button', {
       class: 'dsh-rp-btn', type: 'button', 'aria-haspopup': 'true', 'aria-expanded': 'false',
       onClick: () => toggleLabelPopover(),
-    }, '标签', labelsCountEl)
+    }, t('labels'), labelsCountEl)
     labelsWrapEl = el('div', { class: 'dsh-rp-labels-wrap' }, labelsBtn)
     sortSelectEl = el('select', {
-      class: 'dsh-rp-select', 'aria-label': '排序',
+      class: 'dsh-rp-select', 'aria-label': t('sortAria'),
       onChange: () => setSort(sortSelectEl.value),
     }, SORTS.map((row) => el('option', { value: row.id }, row.label)))
     row2El.append(buildSearchBox(), stateSelectEl, assignedPill, labelsWrapEl, sortSelectEl)
@@ -1756,7 +2352,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     headEl.dataset.pending = model.pending > 0 ? 'true' : 'false'
     if (liveEl !== null) {
       liveEl.dataset.state = model.connected ? 'up' : 'down'
-      liveEl.textContent = model.connected ? '实时同步中' : '实时同步断开'
+      liveEl.textContent = model.connected ? t('liveUp') : t('liveDown')
     }
     renderWorkspaceSelect()
     renderRepoChip()
@@ -1785,7 +2381,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     if (signature !== wsOptionsSignature) {
       wsOptionsSignature = signature
       wsSelectEl.textContent = ''
-      wsSelectEl.append(el('option', { value: '' }, '选择工作区…'))
+      wsSelectEl.append(el('option', { value: '' }, t('selectWorkspaceOption')))
       for (const workspace of model.workspaces) {
         wsSelectEl.append(el('option', { value: String(workspace.id ?? '') },
           String(workspace.title ?? workspace.path ?? workspace.id ?? '')))
@@ -1800,18 +2396,18 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     for (const stale of repoChipEl.querySelectorAll('.dsh-rp-repo-link, .dsh-rp-repo-note')) stale.remove()
     if (model.workspaceId === '') return
     if (model.resolving) {
-      repoChipEl.append(el('span', { class: 'dsh-rp-repo-note' }, '解析远端…'))
+      repoChipEl.append(el('span', { class: 'dsh-rp-repo-note' }, t('resolvingRemote')))
       return
     }
     const url = repoUrl()
     const ownerRepo = model.remote === null ? '' : String(model.remote.ownerRepo ?? '')
     if (url === undefined || ownerRepo === '') {
-      repoChipEl.append(el('span', { class: 'dsh-rp-repo-note' }, '没有可识别的远端'))
+      repoChipEl.append(el('span', { class: 'dsh-rp-repo-note' }, t('noRecognizableRemote')))
       return
     }
     repoChipEl.append(el('a', {
       class: 'dsh-rp-repo-link', href: url, target: '_blank', rel: 'noopener noreferrer',
-      title: '在浏览器中打开 ' + ownerRepo,
+      title: t('openRepoInBrowser', ownerRepo),
     }, ownerRepo))
   }
 
@@ -1846,7 +2442,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       labelsCountEl.textContent = picked === 0 ? '' : String(picked)
     }
     if (labelsBtn !== null) {
-      labelsBtn.setAttribute('aria-label', picked === 0 ? '按标签筛选' : '按标签筛选，已选 ' + picked + ' 个')
+      labelsBtn.setAttribute('aria-label', picked === 0 ? t('filterByLabel') : t('filterByLabelPicked', picked))
     }
   }
 
@@ -1869,9 +2465,9 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
   function openLabelPopover() {
     if (labelsWrapEl === null || labelsBtn === null) return
     let filter = ''
-    const list = el('div', { class: 'dsh-rp-pop-list', role: 'group', 'aria-label': '标签' })
+    const list = el('div', { class: 'dsh-rp-pop-list', role: 'group', 'aria-label': t('labels') })
     const search = el('input', {
-      class: 'dsh-rp-input', type: 'text', placeholder: '筛选标签', 'aria-label': '筛选标签',
+      class: 'dsh-rp-input', type: 'text', placeholder: t('filterLabels'), 'aria-label': t('filterLabels'),
       onInput: () => { filter = search.value.trim().toLowerCase(); renderItems() },
       onKeydown: (event) => {
         if (event.key !== 'Escape') return
@@ -1884,11 +2480,11 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     const clearBtn = el('button', {
       class: 'dsh-rp-link-btn', type: 'button',
       onClick: () => { clearLabels(); renderItems() },
-    }, '清除标签')
+    }, t('clearLabels'))
     const pop = el('div', { class: 'dsh-rp-pop' }, search, list,
       el('div', { class: 'dsh-rp-pop-foot' }, clearBtn))
     if (model.labelsTruncated) {
-      pop.append(el('div', { class: 'dsh-rp-pop-note' }, '只列出前 ' + MAX_LABELS + ' 个标签'))
+      pop.append(el('div', { class: 'dsh-rp-pop-note' }, t('labelsTruncated', MAX_LABELS)))
     }
 
     function renderItems() {
@@ -1896,7 +2492,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       const rows = model.labels.filter((row) =>
         filter === '' || String(row.name).toLowerCase().includes(filter))
       if (rows.length === 0) {
-        list.append(el('div', { class: 'dsh-rp-pop-note' }, '没有匹配的标签'))
+        list.append(el('div', { class: 'dsh-rp-pop-note' }, t('noMatchingLabels')))
         return
       }
       for (const row of rows) {
@@ -1959,21 +2555,20 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
   /** The block that replaces the list, or null when rows should be shown. */
   function listState() {
     if (model.workspaceId === '') {
-      return stateBlock('🗂', '请选择一个工作区', '面板会读取这个工作区 origin 远端指向的仓库。')
+      return stateBlock('🗂', t('pickWorkspaceTitle'), t('pickWorkspaceText'))
     }
     if (model.resolving || (!model.resolved && model.remoteError === null)) return listSkeleton(3)
     if (model.remoteError !== null) return remoteErrorBlock(model.remoteError)
     if (model.remote === null) {
-      return stateBlock('🔌', '这个工作区的 origin 远端不是可识别的代码托管服务',
-        '面板只能读取 GitHub 或 GitLab 上的仓库。给这个工作区配一个 origin 远端，或者换一个工作区。')
+      return stateBlock('🔌', t('noForgeRemoteTitle'), t('noForgeRemoteText'))
     }
     if (model.remote.supported !== true) return unsupportedBlock()
     if (model.listError !== null) return listErrorBlock(model.listError)
     if (!model.listLoaded && model.rows.length === 0) return listSkeleton(6)
     if (model.rows.length === 0) {
-      return stateBlock('🫙', '这里什么都没有', hasActiveFilters()
-        ? '试试放宽筛选条件，或者把状态切到「全部」。'
-        : '这个仓库在这个分类下还没有条目。')
+      return stateBlock('🫙', t('emptyTitle'), hasActiveFilters()
+        ? t('emptyFiltered')
+        : t('emptyPlain'))
     }
     return null
   }
@@ -1994,46 +2589,44 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
   function unsupportedBlock() {
     const host = model.remote === null ? '' : String(model.remote.host ?? '')
     const url = model.remote === null ? '' : String(model.remote.remoteUrl ?? '')
-    return stateBlock('🚧', '暂不支持这个代码托管服务',
-      '远端指向 ' + (host === '' ? '未知主机' : host) +
-      '，面板目前只会读取 GitHub 与 GitLab（含自建 GitLab）。' +
-      (url === '' ? '' : '\n远端地址：' + url))
+    return stateBlock('🚧', t('unsupportedTitle'),
+      t('remotePointsAt', host === '' ? t('unknownHost') : host) +
+      t('onlyGitHubGitLab') +
+      (url === '' ? '' : t('remoteUrlLine', url)))
   }
 
   function remoteErrorBlock(error) {
     const code = codeOf(error)
     if (code === 'no_remote') {
-      return stateBlock('🔌', '这个工作区的 origin 远端不是可识别的代码托管服务',
-        '面板只能读取 GitHub 或 GitLab 上的仓库。')
+      return stateBlock('🔌', t('noForgeRemoteTitle'), t('noForgeRemoteShort'))
     }
     if (code === 'unsupported_host') {
-      return stateBlock('🚧', '暂不支持这个代码托管服务',
-        messageOf(error) + '\n面板目前只会读取 GitHub 与 GitLab（含自建 GitLab）。')
+      return stateBlock('🚧', t('unsupportedTitle'),
+        messageOf(error) + '\n' + t('onlyGitHubGitLab'))
     }
     if (code === 'no_account') return noAccountBlock()
-    return stateBlock('⚠', '读取仓库信息失败', friendlyError(error), [retryButton()])
+    return stateBlock('⚠', t('readRepoFailed'), friendlyError(error), [retryButton()])
   }
 
   function listErrorBlock(error) {
     if (codeOf(error) === 'no_account') return noAccountBlock()
-    return stateBlock('⚠', '加载列表失败', friendlyError(error), [retryButton()])
+    return stateBlock('⚠', t('loadListFailed'), friendlyError(error), [retryButton()])
   }
 
   /** The one error with a fix the panel can offer: open the settings modal. */
   function noAccountBlock() {
     const provider = model.remote === null ? undefined : model.remote.provider
     const host = model.remote === null ? '' : String(model.remote.host ?? '')
-    return stateBlock('🔑', '需要访问令牌',
-      (host === '' ? '这个代码托管服务' : host) + ' 还没有配置访问令牌，面板读不到 issue 和' +
-      prNoun(provider) + '。\n在设置里填一个有仓库读写权限的令牌就可以了。',
+    return stateBlock('🔑', t('needTokenTitle'),
+      t('needTokenText', { host: host === '' ? t('thisService') : host, noun: prNoun(provider) }),
       [el('button', {
         class: 'dsh-rp-btn', 'data-kind': 'primary', type: 'button',
         onClick: () => openSettings({ focus: 'credentials' }),
-      }, '打开设置填令牌')])
+      }, t('openSettingsFillToken'))])
   }
 
   function retryButton() {
-    return el('button', { class: 'dsh-rp-btn', type: 'button', onClick: () => refreshAll() }, '重试')
+    return el('button', { class: 'dsh-rp-btn', type: 'button', onClick: () => refreshAll() }, t('retry'))
   }
 
   function listSkeleton(rows) {
@@ -2065,13 +2658,13 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     const head = el('div', { class: 'dsh-rp-row-head' }, el('button', {
       class: 'dsh-rp-row-title', type: 'button',
       onClick: () => openDrawer(kind, number, row),
-    }, String(row.title ?? '（无标题）')))
+    }, String(row.title ?? t('untitled'))))
     const labels = Array.isArray(row.labels) ? row.labels : []
     for (const label of labels.slice(0, MAX_ROW_LABELS)) head.append(labelChip(label))
     if (labels.length > MAX_ROW_LABELS) {
       head.append(el('span', {
         class: 'dsh-rp-chip-label',
-        title: labels.map((label) => String(label.name ?? '')).join('、'),
+        title: labels.map((label) => String(label.name ?? '')).join(t('listSep')),
       }, '+' + (labels.length - MAX_ROW_LABELS)))
     }
 
@@ -2079,7 +2672,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     const href = typeof row.htmlUrl === 'string' && row.htmlUrl !== '' ? row.htmlUrl : undefined
     meta.append(href === undefined
       ? el('span', {}, '#' + number)
-      : el('a', { href: href, target: '_blank', rel: 'noopener noreferrer', title: '在浏览器中打开' }, '#' + number))
+      : el('a', { href: href, target: '_blank', rel: 'noopener noreferrer', title: t('openInBrowser') }, '#' + number))
     if (typeof row.author === 'string' && row.author !== '') {
       meta.append(el('span', { class: 'dsh-rp-sep' }, '·'), el('span', {}, row.author))
     }
@@ -2091,7 +2684,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     // A comment count of zero is noise, so it is simply not rendered.
     if (typeof row.comments === 'number' && row.comments > 0) {
       meta.append(el('span', { class: 'dsh-rp-sep' }, '·'),
-        el('span', { 'aria-label': row.comments + ' 条评论' }, '💬 ' + row.comments))
+        el('span', { 'aria-label': t('commentCountAria', row.comments) }, '💬 ' + row.comments))
     }
 
     item.append(el('div', { class: 'dsh-rp-row-main' }, head, meta))
@@ -2111,7 +2704,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     if (state === 'none') {
       return [el('button', {
         class: 'dsh-rp-btn', 'data-kind': 'primary', 'data-size': size, type: 'button',
-        'aria-label': '把 #' + row.number + ' 交给 Agent 处理',
+        'aria-label': t('startAria', row.number),
         onClick: () => openStartDialog(row),
       }, 'Start')]
     }
@@ -2119,16 +2712,16 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     const word = TASK_STATUS_LABELS[status] ?? status
     const chip = el('button', {
       class: 'dsh-rp-status-chip', type: 'button', 'data-tone': taskTone(status),
-      'aria-label': '在任务看板中查看这条任务，当前状态：' + word,
-      title: typeof link.title === 'string' && link.title !== '' ? link.title : '在任务看板中查看',
+      'aria-label': t('chipAria', word),
+      title: typeof link.title === 'string' && link.title !== '' ? link.title : t('chipTitle'),
       onClick: () => revealTaskboard(),
     }, word)
     if (state === 'active') return [chip]
     return [chip, el('button', {
       class: 'dsh-rp-link-btn', type: 'button',
-      'aria-label': '重新触发 #' + row.number,
+      'aria-label': t('retriggerAria', row.number),
       onClick: () => openStartDialog(row),
-    }, '重新触发')]
+    }, t('retrigger'))]
   }
 
   // ------------------------------------------------------------------- footer
@@ -2145,12 +2738,12 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     if (model.listError !== null) return
     const notes = el('div', { class: 'dsh-rp-foot-notes' })
     if (model.incomplete) {
-      notes.append(el('div', { class: 'dsh-rp-note', 'data-kind': 'warn' }, '搜索超时，这一页可能漏了结果'))
+      notes.append(el('div', { class: 'dsh-rp-note', 'data-kind': 'warn' }, t('searchTimedOut')))
     }
     const capped = cappedTotal()
     if (capped !== undefined) {
       notes.append(el('div', { class: 'dsh-rp-note', 'data-kind': 'warn' },
-        '只能翻到前 ' + capped + ' 条，请缩小筛选范围'))
+        t('pagingCapped', capped)))
     }
     if (notes.childElementCount > 0) footEl.append(notes)
     footEl.append(el('div', { class: 'dsh-rp-pager-row' }, pagerFor(), perPageControl()))
@@ -2180,11 +2773,11 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
 
   function pagerFor() {
     const count = reachablePageCount()
-    const pager = el('nav', { class: 'dsh-rp-pager', 'aria-label': '分页' })
+    const pager = el('nav', { class: 'dsh-rp-pager', 'aria-label': t('pagination') })
     pager.append(el('button', {
-      class: 'dsh-rp-page-btn', type: 'button', 'aria-label': '上一页',
+      class: 'dsh-rp-page-btn', type: 'button', 'aria-label': t('prevPage'),
       disabled: model.page <= 1, onClick: () => setPage(model.page - 1),
-    }, '上一页'))
+    }, t('prevPage')))
     if (count === undefined) {
       // The forge gave no total: degrade to 上一页 · n · 下一页.
       pager.append(el('span', { class: 'dsh-rp-page-btn', 'aria-current': 'page' }, String(model.page)))
@@ -2196,7 +2789,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
         }
         const current = slot === model.page
         pager.append(el('button', {
-          class: 'dsh-rp-page-btn', type: 'button', 'aria-label': '第 ' + slot + ' 页',
+          class: 'dsh-rp-page-btn', type: 'button', 'aria-label': t('pageNAria', slot),
           'aria-current': current ? 'page' : undefined, disabled: current,
           onClick: () => setPage(slot),
         }, String(slot)))
@@ -2204,19 +2797,19 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     }
     const hasNext = count === undefined ? model.hasNext : model.page < count
     pager.append(el('button', {
-      class: 'dsh-rp-page-btn', type: 'button', 'aria-label': '下一页',
+      class: 'dsh-rp-page-btn', type: 'button', 'aria-label': t('nextPage'),
       disabled: !hasNext, onClick: () => setPage(model.page + 1),
-    }, '下一页'))
+    }, t('nextPage')))
     return pager
   }
 
   function perPageControl() {
     const select = el('select', {
-      class: 'dsh-rp-select', 'aria-label': '每页条数',
+      class: 'dsh-rp-select', 'aria-label': t('perPageAria'),
       onChange: () => setPerPage(select.value),
     }, PAGE_SIZES.map((size) => el('option', { value: String(size) }, String(size))))
     select.value = String(model.perPage)
-    return el('label', { class: 'dsh-rp-perpage' }, '每页', select)
+    return el('label', { class: 'dsh-rp-perpage' }, t('perPage'), select)
   }
 
   // --------------------------------------------------------------- rendering
@@ -2261,7 +2854,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     const bodyEl = el('div', { class: 'dsh-rp-modal-body' })
     const modalFootEl = el('div', { class: 'dsh-rp-modal-foot' })
     const closeBtn = el('button', {
-      class: 'dsh-rp-btn dsh-rp-icon-btn dsh-rp-modal-close', type: 'button', 'aria-label': '关闭',
+      class: 'dsh-rp-btn dsh-rp-icon-btn dsh-rp-modal-close', type: 'button', 'aria-label': t('close'),
     }, '✕')
     const titleEl = el('h3', { class: 'dsh-rp-modal-title', id: titleId }, String(titleText))
     const modal = el('div', {
@@ -2315,11 +2908,11 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       const cancelBtn = el('button', {
         class: 'dsh-rp-btn', type: 'button',
         onClick: () => { finish(false); frame.close(true) },
-      }, options.cancelLabel ?? '取消')
+      }, options.cancelLabel ?? t('cancel'))
       const okBtn = el('button', {
         class: 'dsh-rp-btn', type: 'button', 'data-kind': options.danger === true ? 'danger' : 'primary',
         onClick: () => { finish(true); frame.close(true) },
-      }, options.okLabel ?? '确定')
+      }, options.okLabel ?? t('confirm'))
       frame.foot.append(el('span', { class: 'dsh-rp-spacer' }), cancelBtn, okBtn)
       okBtn.focus()
     })
@@ -2397,11 +2990,11 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
   /** Build the drawer once; later opens reuse it and swap the content in place. */
   function buildDrawer() {
     const glyph = el('span', {
-      class: 'dsh-rp-glyph', 'data-framed': 'true', 'data-tone': 'muted', role: 'img', 'aria-label': '加载中',
+      class: 'dsh-rp-glyph', 'data-framed': 'true', 'data-tone': 'muted', role: 'img', 'aria-label': t('loadingAria'),
     }, '·')
     const title = el('h3', { class: 'dsh-rp-drawer-title', id: 'dsh-rp-drawer-title' })
     const closeBtn = el('button', {
-      class: 'dsh-rp-btn dsh-rp-icon-btn', type: 'button', 'aria-label': '关闭详情',
+      class: 'dsh-rp-btn dsh-rp-icon-btn', type: 'button', 'aria-label': t('closeDetail'),
       onClick: () => closeDrawer(),
     }, '✕')
     const headRest = el('div', {})
@@ -2411,24 +3004,24 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     // Files changed (the diff) and the merge box. All three are out of scope for
     // this plugin, so the drawer carries no tab strip at all.
     const itemBody = el('div', {})
-    const commentsTitle = el('h4', { class: 'dsh-rp-sec-title' }, '评论')
+    const commentsTitle = el('h4', { class: 'dsh-rp-sec-title' }, t('comments'))
     const refreshBtn = el('button', {
-      class: 'dsh-rp-btn', 'data-kind': 'ghost', type: 'button', 'aria-label': '刷新详情与评论',
+      class: 'dsh-rp-btn', 'data-kind': 'ghost', type: 'button', 'aria-label': t('refreshDetail'),
       onClick: () => { void loadDrawerItem(); void loadDrawerComments({ reset: true }) },
-    }, '刷新')
+    }, t('refresh'))
     const commentsHead = el('div', { class: 'dsh-rp-composer-row' },
       commentsTitle, el('span', { class: 'dsh-rp-spacer' }), refreshBtn)
     const commentsList = el('div', { class: 'dsh-rp-comments' })
     const moreBtn = el('button', {
       class: 'dsh-rp-btn', type: 'button',
       onClick: () => { void loadDrawerComments({}) },
-    }, '加载更多')
+    }, t('loadMore'))
     moreBtn.hidden = true
 
-    const composerLabel = el('label', { class: 'dsh-rp-label', for: 'dsh-rp-composer' }, '发表评论')
+    const composerLabel = el('label', { class: 'dsh-rp-label', for: 'dsh-rp-composer' }, t('postComment'))
     const composer = textArea({
       class: 'dsh-rp-input dsh-rp-textarea', rows: '3', id: 'dsh-rp-composer',
-      placeholder: '写评论…（Ctrl/⌘ + Enter 发表）',
+      placeholder: t('composerPlaceholder'),
     })
     composer.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
@@ -2439,7 +3032,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     const sendBtn = el('button', {
       class: 'dsh-rp-btn', 'data-kind': 'primary', type: 'button',
       onClick: () => { void postDrawerComment() },
-    }, '发表评论')
+    }, t('postComment'))
     const composerBox = el('div', { class: 'dsh-rp-composer' }, composerLabel, composer,
       el('div', { class: 'dsh-rp-composer-row' }, el('span', { class: 'dsh-rp-spacer' }), sendBtn))
     const body = el('div', { class: 'dsh-rp-drawer-body' },
@@ -2477,12 +3070,12 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     const provider = model.remote === null ? undefined : model.remote.provider
     const item = drawer.item
     dom.title.textContent = item === null
-      ? (drawer.loadingItem ? '加载中…' : '#' + drawer.number)
-      : String(item.title ?? '（无标题）')
+      ? (drawer.loadingItem ? t('loading') : '#' + drawer.number)
+      : String(item.title ?? t('untitled'))
     if (item === null) {
       dom.glyph.textContent = '·'
       dom.glyph.dataset.tone = 'muted'
-      dom.glyph.setAttribute('aria-label', '加载中')
+      dom.glyph.setAttribute('aria-label', t('loadingAria'))
     } else {
       const glyph = glyphFor(item, provider)
       dom.glyph.textContent = glyph.glyph
@@ -2500,10 +3093,10 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       const updated = fmtRelative(item.updatedAt)
       if (updated !== '') {
         // The absolute time lives in the tooltip: "3 天前" alone is unactionable.
-        meta.append(sep(), el('span', { title: fmtAbsolute(item.updatedAt) }, '更新于 ' + updated))
+        meta.append(sep(), el('span', { title: fmtAbsolute(item.updatedAt) }, t('updatedAgo', updated)))
       }
       if (typeof item.comments === 'number' && item.comments > 0) {
-        meta.append(sep(), el('span', { 'aria-label': item.comments + ' 条评论' }, '💬 ' + item.comments))
+        meta.append(sep(), el('span', { 'aria-label': t('commentCountAria', item.comments) }, '💬 ' + item.comments))
       }
       dom.headRest.append(meta)
       const labels = Array.isArray(item.labels) ? item.labels : []
@@ -2533,12 +3126,12 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     dom.itemBody.textContent = ''
     if (drawer.item === null) {
       dom.itemBody.append(el('div', { class: 'dsh-rp-muted' },
-        drawer.loadingItem ? '加载正文中…' : '读不到这个条目'))
+        drawer.loadingItem ? t('loadingBody') : t('cannotReadItem')))
       return
     }
     const body = String(drawer.item.body ?? '')
     dom.itemBody.append(body.trim() === ''
-      ? el('div', { class: 'dsh-rp-muted' }, '（没有正文）')
+      ? el('div', { class: 'dsh-rp-muted' }, t('noBody'))
       : el('div', { class: 'dsh-rp-pre', style: 'max-height: none' }, body))
   }
 
@@ -2546,40 +3139,40 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     if (drawer === null) return
     const dom = drawer.dom
     const count = drawer.comments.length
-    dom.commentsTitle.textContent = count === 0 ? '评论' : '评论 · ' + count
+    dom.commentsTitle.textContent = count === 0 ? t('comments') : t('commentsWithCount', count)
     dom.commentsList.textContent = ''
     if (drawer.loadingComments && count === 0) {
-      dom.commentsList.append(el('div', { class: 'dsh-rp-muted' }, '加载评论中…'))
+      dom.commentsList.append(el('div', { class: 'dsh-rp-muted' }, t('loadingComments')))
     } else if (count === 0) {
-      dom.commentsList.append(el('div', { class: 'dsh-rp-muted' }, '还没有评论'))
+      dom.commentsList.append(el('div', { class: 'dsh-rp-muted' }, t('noComments')))
     } else {
       for (const comment of drawer.comments) dom.commentsList.append(commentCard(comment))
     }
     dom.moreBtn.hidden = !drawer.commentsHasNext
     dom.moreBtn.disabled = drawer.loadingComments
-    dom.moreBtn.textContent = drawer.loadingComments ? '加载中…' : '加载更多'
+    dom.moreBtn.textContent = drawer.loadingComments ? t('loading') : t('loadMore')
     const username = model.identity === null ? '' : String(model.identity.username ?? '')
-    dom.composerLabel.textContent = username === '' ? '发表评论' : '以 ' + username + ' 的身份评论'
+    dom.composerLabel.textContent = username === '' ? t('postComment') : t('commentAs', username)
     dom.composer.disabled = drawer.posting
     dom.sendBtn.disabled = drawer.posting
-    dom.sendBtn.textContent = drawer.posting ? '发表中…' : '发表评论'
+    dom.sendBtn.textContent = drawer.posting ? t('posting') : t('postComment')
   }
 
   /** One comment. Author and body are forge text, so both are text nodes. */
   function commentCard(comment) {
     const head = el('div', { class: 'dsh-rp-comment-head' },
-      el('span', { class: 'dsh-rp-comment-author' }, String(comment.author ?? '未知')),
+      el('span', { class: 'dsh-rp-comment-author' }, String(comment.author ?? t('unknownAuthor'))),
       el('span', { title: fmtAbsolute(comment.createdAt) }, fmtRelative(comment.createdAt)))
     const created = comment.createdAt
     const updated = comment.updatedAt
     if (updated !== undefined && updated !== null && created !== undefined && String(updated) !== String(created)) {
-      head.append(el('span', { title: '最后编辑于 ' + fmtAbsolute(updated) }, '已编辑'))
+      head.append(el('span', { title: t('lastEditedAt', fmtAbsolute(updated)) }, t('edited')))
     }
     if (typeof comment.htmlUrl === 'string' && comment.htmlUrl !== '') {
       head.append(el('a', {
         href: comment.htmlUrl, target: '_blank', rel: 'noopener noreferrer',
-        'aria-label': '在浏览器中打开这条评论',
-      }, '固定链接'))
+        'aria-label': t('openCommentInBrowser'),
+      }, t('permalink')))
     }
     return el('div', { class: 'dsh-rp-comment' }, head,
       el('div', { class: 'dsh-rp-comment-body' }, String(comment.body ?? '')))
@@ -2595,7 +3188,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     if (href !== undefined) {
       dom.foot.append(el('a', {
         class: 'dsh-rp-btn', href: href, target: '_blank', rel: 'noopener noreferrer',
-      }, '在浏览器中打开'))
+      }, t('openInBrowser')))
     }
     // A merged change gets no close/reopen button: there is nothing to toggle.
     if (!(item.isPr === true && item.state === 'merged')) {
@@ -2604,7 +3197,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
         class: 'dsh-rp-btn', type: 'button', 'data-kind': closing ? 'danger' : undefined,
         disabled: drawer.busy,
         onClick: () => { void toggleItemState(closing) },
-      }, closing ? '关闭' : '重新打开'))
+      }, closing ? t('close') : t('reopen')))
     }
     dom.foot.append(el('span', { class: 'dsh-rp-spacer' }), ...actionCluster(item, 'drawer'))
   }
@@ -2650,7 +3243,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       }
     } catch (error) {
       if (!drawerMatches(kind, number)) return
-      toast('读取详情失败：' + friendlyError(error))
+      toast(t('readDetailFailed', friendlyError(error)))
     } finally {
       if (drawerMatches(kind, number)) {
         drawer.loadingItem = false
@@ -2682,7 +3275,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       drawer.commentsHasNext = data.hasNext === true
     } catch (error) {
       if (!drawerMatches(kind, number)) return
-      toast('读取评论失败：' + friendlyError(error))
+      toast(t('readCommentsFailed', friendlyError(error)))
     } finally {
       if (drawerMatches(kind, number)) {
         drawer.loadingComments = false
@@ -2695,7 +3288,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     if (drawer === null || drawer.posting) return
     const text = drawer.dom.composer.value.trim()
     if (text === '') {
-      toast('先写点评论内容')
+      toast(t('writeSomethingFirst'))
       drawer.dom.composer.focus()
       return
     }
@@ -2714,10 +3307,10 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
         drawer.item = Object.assign({}, drawer.item, { comments: drawer.item.comments + 1 })
         mergeRow(drawer.item)
       }
-      toast('评论已发表', 'success')
+      toast(t('commentPosted'), 'success')
     } catch (error) {
       if (!drawerMatches(kind, number)) return
-      toast('发表评论失败：' + friendlyError(error))
+      toast(t('postCommentFailed', friendlyError(error)))
     } finally {
       if (drawerMatches(kind, number)) {
         drawer.posting = false
@@ -2740,11 +3333,12 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       : 'issue'
     const repo = model.remote === null ? '' : String(model.remote.ownerRepo ?? '')
     const ok = await askConfirm({
-      title: (closing ? '关闭 #' : '重新打开 #') + number,
-      ariaLabel: (closing ? '在远端关闭 #' : '在远端重新打开 #') + number,
-      text: '这会在 ' + (repo === '' ? '远端仓库' : repo) + ' 上' + (closing ? '关闭' : '重新打开') +
-        '这个 ' + noun + ' #' + number + '，不是关掉这个详情面板。',
-      okLabel: closing ? '在远端关闭' : '在远端重新打开',
+      title: closing ? t('closeNumber', number) : t('reopenNumber', number),
+      ariaLabel: closing ? t('closeOnForgeAria', number) : t('reopenOnForgeAria', number),
+      text: t('toggleStateText', {
+        repo: repo === '' ? t('theRemoteRepo') : repo, closing: closing, noun: noun, number: number,
+      }),
+      okLabel: closing ? t('closeOnForge') : t('reopenOnForge'),
       danger: closing,
     })
     if (!ok || !drawerMatches(kind, number)) return
@@ -2760,10 +3354,10 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
         drawer.item = updated
         mergeRow(updated)
       }
-      toast(closing ? '已在远端关闭' : '已在远端重新打开', 'success')
+      toast(closing ? t('closedOnForge') : t('reopenedOnForge'), 'success')
     } catch (error) {
       if (!drawerMatches(kind, number)) return
-      toast((closing ? '关闭失败：' : '重新打开失败：') + friendlyError(error))
+      toast(closing ? t('closeFailed', friendlyError(error)) : t('reopenFailed', friendlyError(error)))
     } finally {
       if (drawerMatches(kind, number)) {
         drawer.busy = false
@@ -2789,15 +3383,18 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     let scenario = initialScenario(kind, settings)
     let writeback = settings.writebackDefault === true
 
-    const frame = openModalFrame('#' + number + ' · ' + String(row.title ?? '（无标题）'))
+    const frame = openModalFrame('#' + number + ' · ' + String(row.title ?? t('untitled')))
     const alert = alertStrip()
     const workspace = wsLabel(model.workspaceId)
     frame.body.append(alert.node, el('div', { class: 'dsh-rp-hint' },
-      '会在' + (workspace === '' ? '当前工作区' : '「' + workspace + '」') + '建一条任务，交给 Agent 处理 ' +
-      (repo === '' ? '这个仓库' : repo) + ' 的 ' + noun + ' #' + number +
-      '。Prompt 由主机拼好：场景模板 + 常驻说明 + 你的补充说明 + 这条内容的快照。'))
+      t('startHint', {
+        scope: workspace === '' ? t('currentWorkspace') : t('quotedScope', workspace),
+        repo: repo === '' ? t('thisRepo') : repo,
+        noun: noun,
+        number: number,
+      })))
 
-    const radios = el('div', { class: 'dsh-rp-radio-group', role: 'radiogroup', 'aria-label': '处理方式' })
+    const radios = el('div', { class: 'dsh-rp-radio-group', role: 'radiogroup', 'aria-label': t('howToHandle') })
     const radioRows = []
     for (const id of scenariosForKind(kind)) {
       const input = el('input', {
@@ -2815,24 +3412,24 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       radioRows.push({ id: id, rowEl: rowEl })
       radios.append(rowEl)
     }
-    frame.body.append(el('div', { class: 'dsh-rp-field' }, el('label', {}, '处理方式'), radios))
-    frame.body.append(switchRow('把结果回帖到该条目', writeback, (next) => { writeback = next }).row)
+    frame.body.append(el('div', { class: 'dsh-rp-field' }, el('label', {}, t('howToHandle')), radios))
+    frame.body.append(switchRow(t('writebackItem'), writeback, (next) => { writeback = next }).row)
     const instruction = textArea({
-      class: 'dsh-rp-input dsh-rp-textarea', rows: '3', 'aria-label': '补充说明',
-      placeholder: '这次特别要注意什么（可选）',
+      class: 'dsh-rp-input dsh-rp-textarea', rows: '3', 'aria-label': t('extraNotes'),
+      placeholder: t('extraNotesPlaceholder'),
     })
-    frame.body.append(el('div', { class: 'dsh-rp-field' }, el('label', {}, '补充说明'), instruction))
+    frame.body.append(el('div', { class: 'dsh-rp-field' }, el('label', {}, t('extraNotes')), instruction))
 
     const snapshot = String(row.body ?? '')
     frame.body.append(el('details', { class: 'dsh-rp-details' },
-      el('summary', {}, '查看会带给 Agent 的内容快照'),
+      el('summary', {}, t('viewSnapshot')),
       snapshot.trim() === ''
-        ? el('div', { class: 'dsh-rp-muted' }, '（没有正文）')
+        ? el('div', { class: 'dsh-rp-muted' }, t('noBody'))
         : el('div', { class: 'dsh-rp-pre' }, snapshot)))
 
     let busy = false
-    let primaryLabel = '交给 Agent'
-    const cancelBtn = el('button', { class: 'dsh-rp-btn', type: 'button', onClick: () => frame.close() }, '取消')
+    let primaryLabel = t('handToAgent')
+    const cancelBtn = el('button', { class: 'dsh-rp-btn', type: 'button', onClick: () => frame.close() }, t('cancel'))
     const submitBtn = el('button', { class: 'dsh-rp-btn', 'data-kind': 'primary', type: 'button' }, primaryLabel)
     let primaryBtn = submitBtn
     submitBtn.addEventListener('click', () => { void submit(false) })
@@ -2842,25 +3439,25 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       busy = next
       frame.setDismissible(!next)
       for (const button of frame.foot.querySelectorAll('button')) button.disabled = next
-      primaryBtn.textContent = next ? '创建中…' : primaryLabel
+      primaryBtn.textContent = next ? t('creating') : primaryLabel
     }
 
     /** `duplicate` is not an error: offer the existing task, or force a new one. */
     function showDuplicate(link) {
-      alert.set('这条已经有任务了。可以去看已有的那条，或者仍然再建一条新的。')
+      alert.set(t('duplicateHint'))
       frame.foot.textContent = ''
       const viewBtn = el('button', {
         class: 'dsh-rp-btn', type: 'button',
         onClick: () => { frame.close(true); revealTaskboard() },
-      }, '查看已有任务')
+      }, t('viewExistingTask'))
       const forceBtn = el('button', {
         class: 'dsh-rp-btn', 'data-kind': 'primary', type: 'button',
         onClick: () => { void submit(true) },
-      }, '仍然创建')
+      }, t('createAnyway'))
       primaryBtn = forceBtn
-      primaryLabel = '仍然创建'
+      primaryLabel = t('createAnyway')
       frame.foot.append(el('span', { class: 'dsh-rp-spacer' }),
-        el('button', { class: 'dsh-rp-btn', type: 'button', onClick: () => frame.close() }, '取消'),
+        el('button', { class: 'dsh-rp-btn', type: 'button', onClick: () => frame.close() }, t('cancel')),
         viewBtn, forceBtn)
     }
 
@@ -2904,11 +3501,11 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
           showDuplicate(data.link)
           return
         }
-        toast('任务已创建，去任务看板看进度', 'success')
+        toast(t('taskCreated'), 'success')
         frame.close(true)
       } catch (error) {
         setBusy(false)
-        alert.set('创建任务失败：' + friendlyError(error))
+        alert.set(t('createTaskFailed', friendlyError(error)))
       }
     }
 
@@ -2926,7 +3523,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
    */
   function openNewIssue() {
     if (!supported()) return
-    const frame = openModalFrame('新建 issue')
+    const frame = openModalFrame(t('newIssue'))
     const alert = alertStrip()
     const selected = []
     let busy = false
@@ -2934,7 +3531,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     // No maxlength on purpose: the counter has to be able to show the invalid
     // state, which a hard cap would hide by silently refusing keystrokes.
     const titleInput = el('input', {
-      class: 'dsh-rp-input', type: 'text', placeholder: '一句话说清要做什么', 'aria-label': '标题',
+      class: 'dsh-rp-input', type: 'text', placeholder: t('titlePlaceholder'), 'aria-label': t('titleLabel'),
     })
     const counter = el('div', { class: 'dsh-rp-counter' })
     counter.hidden = true
@@ -2956,24 +3553,24 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     }
 
     const bodyInput = textArea({
-      class: 'dsh-rp-input dsh-rp-textarea', rows: '6', placeholder: '正文（可选）', 'aria-label': '正文',
+      class: 'dsh-rp-input dsh-rp-textarea', rows: '6', placeholder: t('bodyPlaceholder'), 'aria-label': t('bodyLabel'),
     })
-    const picker = el('div', { class: 'dsh-rp-label-pick', role: 'group', 'aria-label': '标签' })
+    const picker = el('div', { class: 'dsh-rp-label-pick', role: 'group', 'aria-label': t('labels') })
     for (const label of model.labels) {
       picker.append(pickChip(label, selected))
     }
 
     frame.body.append(alert.node,
-      el('div', { class: 'dsh-rp-field' }, el('label', {}, '标题 *'), titleInput, counter),
-      el('div', { class: 'dsh-rp-field' }, el('label', {}, '正文'), bodyInput))
+      el('div', { class: 'dsh-rp-field' }, el('label', {}, t('titleRequired')), titleInput, counter),
+      el('div', { class: 'dsh-rp-field' }, el('label', {}, t('bodyLabel')), bodyInput))
     if (model.labels.length > 0) {
-      frame.body.append(el('div', { class: 'dsh-rp-field' }, el('label', {}, '标签'), picker))
+      frame.body.append(el('div', { class: 'dsh-rp-field' }, el('label', {}, t('labels')), picker))
     }
-    const cancelBtn = el('button', { class: 'dsh-rp-btn', type: 'button', onClick: () => frame.close() }, '取消')
+    const cancelBtn = el('button', { class: 'dsh-rp-btn', type: 'button', onClick: () => frame.close() }, t('cancel'))
     const submitBtn = el('button', {
       class: 'dsh-rp-btn', 'data-kind': 'primary', type: 'button',
       onClick: () => { void submit() },
-    }, '创建')
+    }, t('create'))
     frame.foot.append(el('span', { class: 'dsh-rp-spacer' }), cancelBtn, submitBtn)
     renderCounter()
     titleInput.focus()
@@ -2984,7 +3581,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       frame.setDismissible(!next)
       cancelBtn.disabled = next
       submitBtn.disabled = next
-      submitBtn.textContent = next ? '创建中…' : '创建'
+      submitBtn.textContent = next ? t('creating') : t('create')
       titleInput.disabled = next
       bodyInput.disabled = next
     }
@@ -2993,12 +3590,12 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       if (busy) return
       const title = titleInput.value.trim()
       if (title === '') {
-        alert.set('标题不能为空')
+        alert.set(t('titleEmpty'))
         titleInput.focus()
         return
       }
       if (title.length > MAX_ISSUE_TITLE_CHARS) {
-        alert.set('标题最多 ' + MAX_ISSUE_TITLE_CHARS + ' 个字符，现在有 ' + title.length + ' 个')
+        alert.set(t('titleTooLong', { cap: MAX_ISSUE_TITLE_CHARS, length: title.length }))
         titleInput.focus()
         return
       }
@@ -3014,14 +3611,14 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
         titleInput.value = ''
         bodyInput.value = ''
         frame.close(true)
-        toast('issue 已创建', 'success')
+        toast(t('issueCreated'), 'success')
         if (row !== null && typeof row === 'object' && row.number !== undefined) {
           insertRowLocally(row)
           openDrawer(kindOf(row), row.number, row)
         }
       } catch (error) {
         setBusy(false)
-        alert.set('创建 issue 失败：' + friendlyError(error))
+        alert.set(t('createIssueFailed', friendlyError(error)))
       }
     }
   }
@@ -3069,7 +3666,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
    */
   function openSettings(options) {
     const opts = options === undefined || options === null ? {} : options
-    const frame = openModalFrame('仓库面板设置')
+    const frame = openModalFrame(t('settingsTitle'))
     const alert = alertStrip()
     let scope = model.workspaceId === '' ? GLOBAL_SCOPE : model.workspaceId
     let mode = 'global'
@@ -3078,31 +3675,31 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     let saving = false
 
     const scopeSelect = el('select', {
-      class: 'dsh-rp-select', 'aria-label': '设置范围',
+      class: 'dsh-rp-select', 'aria-label': t('settingsScope'),
       onChange: () => { scope = scopeSelect.value; resetDraft(); renderAll() },
     })
-    const modeStrip = el('div', { class: 'dsh-rp-strip', role: 'tablist', 'aria-label': '这个工作区用哪套设置' })
+    const modeStrip = el('div', { class: 'dsh-rp-strip', role: 'tablist', 'aria-label': t('whichSettings') })
     const modeTabs = {}
     for (const id of ['global', 'custom']) {
       const button = el('button', {
         class: 'dsh-rp-strip-tab', type: 'button', role: 'tab',
         onClick: () => { mode = id; renderAll() },
-      }, id === 'global' ? '全局默认' : '自定义')
+      }, id === 'global' ? t('globalDefaults') : t('custom'))
       modeTabs[id] = button
       modeStrip.append(button)
     }
     const modeHint = el('div', { class: 'dsh-rp-hint' })
     const issueSelect = el('select', {
-      class: 'dsh-rp-select', 'aria-label': 'issue 默认场景',
+      class: 'dsh-rp-select', 'aria-label': t('issueDefaultScenario'),
       onChange: () => { draft.defaultIssueScenario = issueSelect.value },
     }, scenariosForKind('issue').map((id) => el('option', { value: id }, SCENARIOS[id].label)))
     const prSelect = el('select', {
-      class: 'dsh-rp-select', 'aria-label': 'PR 默认场景',
+      class: 'dsh-rp-select', 'aria-label': t('prDefaultScenario'),
       onChange: () => { draft.defaultPrScenario = prSelect.value },
     }, scenariosForKind('pr').map((id) => el('option', { value: id }, SCENARIOS[id].label)))
-    const writeback = switchRow('默认把结果回帖到该条目', false, (next) => { draft.writebackDefault = next })
+    const writeback = switchRow(t('writebackDefault'), false, (next) => { draft.writebackDefault = next })
 
-    const promptStrip = el('div', { class: 'dsh-rp-strip', role: 'tablist', 'aria-label': '常驻说明' })
+    const promptStrip = el('div', { class: 'dsh-rp-strip', role: 'tablist', 'aria-label': t('standingInstructions') })
     const promptTabs = {}
     for (const tab of PROMPT_TABS) {
       const dot = el('span', { class: 'dsh-rp-strip-dot' })
@@ -3115,8 +3712,8 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       promptStrip.append(button)
     }
     const promptArea = textArea({
-      class: 'dsh-rp-input dsh-rp-textarea', rows: '5', 'aria-label': '常驻说明',
-      placeholder: '每次交给 Agent 时都会带上的说明（可选）',
+      class: 'dsh-rp-input dsh-rp-textarea', rows: '5', 'aria-label': t('standingInstructions'),
+      placeholder: t('standingPlaceholder'),
     })
     const promptCounter = el('div', { class: 'dsh-rp-counter' })
     promptArea.addEventListener('input', () => {
@@ -3126,25 +3723,25 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     })
 
     const credBox = el('div', { class: 'dsh-rp-sec' })
-    const scopeSection = section('设置范围')
+    const scopeSection = section(t('settingsScope'))
     scopeSection.append(scopeSelect, modeStrip, modeHint)
-    const defaultsSection = section('默认场景')
+    const defaultsSection = section(t('defaultScenarios'))
     defaultsSection.append(
-      el('div', { class: 'dsh-rp-field' }, el('label', {}, 'issue 默认场景'), issueSelect),
-      el('div', { class: 'dsh-rp-field' }, el('label', {}, 'PR 默认场景'), prSelect),
+      el('div', { class: 'dsh-rp-field' }, el('label', {}, t('issueDefaultScenario')), issueSelect),
+      el('div', { class: 'dsh-rp-field' }, el('label', {}, t('prDefaultScenario')), prSelect),
       writeback.row)
-    const promptSection = section('常驻说明')
+    const promptSection = section(t('standingInstructions'))
     promptSection.append(
-      el('div', { class: 'dsh-rp-hint' }, '「通用」会加在每个场景前面，其余只对该场景生效。'),
+      el('div', { class: 'dsh-rp-hint' }, t('standingHint')),
       promptStrip, promptArea, promptCounter)
-    credBox.append(el('h4', { class: 'dsh-rp-sec-title' }, '访问令牌'))
+    credBox.append(el('h4', { class: 'dsh-rp-sec-title' }, t('accessTokens')))
     frame.body.append(alert.node, scopeSection, defaultsSection, promptSection, credBox)
 
-    const cancelBtn = el('button', { class: 'dsh-rp-btn', type: 'button', onClick: () => frame.close() }, '取消')
+    const cancelBtn = el('button', { class: 'dsh-rp-btn', type: 'button', onClick: () => frame.close() }, t('cancel'))
     const saveBtn = el('button', {
       class: 'dsh-rp-btn', 'data-kind': 'primary', type: 'button',
       onClick: () => { void save() },
-    }, '保存')
+    }, t('save'))
     frame.foot.append(el('span', { class: 'dsh-rp-spacer' }), cancelBtn, saveBtn)
 
     /** Whether the form edits a row of its own (vs. showing the global one). */
@@ -3170,7 +3767,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       if (scopeSelect.dataset.signature !== signature) {
         scopeSelect.dataset.signature = signature
         scopeSelect.textContent = ''
-        scopeSelect.append(el('option', { value: GLOBAL_SCOPE }, '全部工作区（全局默认）'))
+        scopeSelect.append(el('option', { value: GLOBAL_SCOPE }, t('allWorkspaces')))
         for (const workspace of model.workspaces) {
           scopeSelect.append(el('option', { value: String(workspace.id ?? '') },
             String(workspace.title ?? workspace.path ?? workspace.id ?? '')))
@@ -3184,10 +3781,10 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       const isGlobal = scope === GLOBAL_SCOPE
       modeStrip.hidden = isGlobal
       modeHint.textContent = isGlobal
-        ? '这里改的是所有工作区的默认值。'
+        ? t('scopeGlobalHint')
         : (mode === 'global'
-          ? '这个工作区跟着全局默认走。保存后会删掉它自己的那套设置。'
-          : '这个工作区用自己的一整套设置；以后改全局默认不会影响它。')
+          ? t('scopeFollowHint')
+          : t('scopeCustomHint'))
       modeTabs.global.setAttribute('aria-selected', mode === 'global' ? 'true' : 'false')
       modeTabs.custom.setAttribute('aria-selected', mode === 'custom' ? 'true' : 'false')
       const enabled = editing()
@@ -3228,8 +3825,8 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     function renderSaveState() {
       const ready = model.settingsLoaded && !saving
       saveBtn.disabled = !ready
-      saveBtn.textContent = saving ? '保存中…' : '保存'
-      saveBtn.title = model.settingsLoaded ? '' : '正在读取已存的设置…'
+      saveBtn.textContent = saving ? t('saving') : t('save')
+      saveBtn.title = model.settingsLoaded ? '' : t('loadingSettings')
       cancelBtn.disabled = saving
     }
 
@@ -3260,7 +3857,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
      */
     function renderCredentials() {
       credBox.textContent = ''
-      credBox.append(el('h4', { class: 'dsh-rp-sec-title' }, '访问令牌'))
+      credBox.append(el('h4', { class: 'dsh-rp-sec-title' }, t('accessTokens')))
       const envRows = model.credentialEnv
       const fileRows = model.credentialHosts.filter((row) => row.source !== 'env')
       const envHosts = new Set(envRows.map((row) => String(row.host ?? '').toLowerCase()))
@@ -3277,12 +3874,13 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       // otherwise a no_account error would have no cure to click.
       if (current !== '' && !listed.has(current)) credBox.append(fileRow(current, false))
       if (envRows.length === 0 && fileRows.length === 0 && current === '') {
-        credBox.append(el('div', { class: 'dsh-rp-hint' }, '还没有配置任何访问令牌。'))
+        credBox.append(el('div', { class: 'dsh-rp-hint' }, t('noTokensYet')))
       }
       if (current !== '' && envRows.length > 0 && !envHosts.has(current)) {
         credBox.append(el('div', { class: 'dsh-rp-hint' },
-          '环境变量里的令牌只对 ' + envRows.map((row) => String(row.host ?? '')).join('、') +
-          ' 生效，对 ' + current + ' 无效——这个主机要在上面单独存一个令牌。'))
+          t('envTokenScope', {
+            hosts: envRows.map((row) => String(row.host ?? '')).join(t('listSep')), host: current,
+          })))
       }
     }
 
@@ -3294,15 +3892,17 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       box.append(el('div', { class: 'dsh-rp-cred-row' },
         el('span', { class: 'dsh-rp-cred-host' }, host === '' ? String(row.provider ?? '') : host),
         el('span', { class: 'dsh-rp-cred-src' },
-          '来自环境变量 ' + variable + '，仅对 ' + (host === '' ? '该服务的官方主机' : host) + ' 生效，不在这里管理')))
+          t('envTokenSource', {
+            variable: variable, host: host === '' ? t('serviceCanonicalHost') : host,
+          }))))
       const shadowed = fileRows.some((entry2) => String(entry2.host ?? '').toLowerCase() === host.toLowerCase())
       if (shadowed) {
         box.append(el('div', { class: 'dsh-rp-cred-row' },
-          el('span', { class: 'dsh-rp-hint' }, '这个主机也存了一个令牌，但环境变量优先，存的那个当前不生效。'),
+          el('span', { class: 'dsh-rp-hint' }, t('envShadowsStored')),
           el('button', {
             class: 'dsh-rp-btn', 'data-kind': 'danger', type: 'button',
             onClick: () => { void removeCredential(host) },
-          }, '删除存的令牌')))
+          }, t('deleteStoredToken'))))
       }
       return box
     }
@@ -3310,22 +3910,22 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     function fileRow(host, stored) {
       const input = el('input', {
         class: 'dsh-rp-input', type: 'password', autocomplete: 'off',
-        placeholder: stored ? '已存令牌，填新的可替换' : '粘贴访问令牌',
-        'aria-label': host + ' 的访问令牌',
+        placeholder: stored ? t('tokenStoredPlaceholder') : t('pasteTokenPlaceholder'),
+        'aria-label': t('tokenForHostAria', host),
       })
       const row = el('div', { class: 'dsh-rp-cred-row' },
         el('span', { class: 'dsh-rp-cred-host' }, host),
-        el('span', { class: 'dsh-rp-cred-src' }, stored ? '存在本机' : '未配置'),
+        el('span', { class: 'dsh-rp-cred-src' }, stored ? t('storedLocally') : t('notConfigured')),
         input,
         el('button', {
           class: 'dsh-rp-btn', type: 'button',
           onClick: () => { void storeCredential(host, input) },
-        }, '保存'))
+        }, t('save')))
       if (stored) {
         row.append(el('button', {
           class: 'dsh-rp-btn', 'data-kind': 'danger', type: 'button',
           onClick: () => { void removeCredential(host) },
-        }, '删除'))
+        }, t('remove')))
       }
       return row
     }
@@ -3333,7 +3933,7 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     async function storeCredential(host, input) {
       const token = input.value.trim()
       if (token === '') {
-        alert.set('先粘贴一个访问令牌')
+        alert.set(t('pasteTokenFirst'))
         input.focus()
         return
       }
@@ -3341,36 +3941,36 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
       try {
         applyCredentials(await api.saveCredential(host, token))
         input.value = ''
-        toast('令牌已保存', 'success')
+        toast(t('tokenSaved'), 'success')
         renderCredentials()
         // Whatever failed for lack of a token can be retried now.
         refreshAll()
       } catch (error) {
-        alert.set('保存令牌失败：' + friendlyError(error))
+        alert.set(t('saveTokenFailed', friendlyError(error)))
       }
     }
 
     async function removeCredential(host) {
       const ok = await askConfirm({
-        title: '删除 ' + host + ' 的令牌',
-        ariaLabel: '删除 ' + host + ' 的访问令牌',
-        text: '删除后面板就读不到这个主机上的仓库了。',
-        okLabel: '删除', danger: true,
+        title: t('deleteTokenTitle', host),
+        ariaLabel: t('deleteTokenAria', host),
+        text: t('deleteTokenText'),
+        okLabel: t('remove'), danger: true,
       })
       if (!ok) return
       try {
         applyCredentials(await api.deleteCredential(host))
-        toast('令牌已删除', 'success')
+        toast(t('tokenDeleted'), 'success')
         renderCredentials()
       } catch (error) {
-        alert.set('删除令牌失败：' + friendlyError(error))
+        alert.set(t('deleteTokenFailed', friendlyError(error)))
       }
     }
     async function save() {
       if (saving || !model.settingsLoaded) return
       for (const [key, text] of Object.entries(draft.scenarioPrompts)) {
         if (String(text).length > PROMPT_CAP) {
-          alert.set('常驻说明最多 ' + PROMPT_CAP + ' 个字符，「' + promptLabel(key) + '」超了')
+          alert.set(t('standingTooLong', { cap: PROMPT_CAP, label: promptLabel(key) }))
           return
         }
       }
@@ -3387,12 +3987,12 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
           model.settingsLoaded = true
         }
         emit()
-        toast('设置已保存', 'success')
+        toast(t('settingsSaved'), 'success')
         frame.close(true)
       } catch (error) {
         saving = false
         renderSaveState()
-        alert.set('保存设置失败：' + friendlyError(error))
+        alert.set(t('saveSettingsFailed', friendlyError(error)))
       }
     }
 
@@ -3555,13 +4155,20 @@ html[data-dsh-rp-open] .dsh-rp-view { display: flex; flex-direction: column; hei
     }
 
     try {
+      // The dictionary has to be settled BEFORE the first paint, so the sidebar
+      // entry and the header are built once, in one language. The browser's own
+      // guess covers that synchronously; /settings then confirms or corrects it.
+      applyLang(browserLang())
       injectStyles()
       restorePrefs()
       bindModelListener()
       ensureMounted()
       modelListener()
       // Deliberately lazy: the forge calls behind /list and /counts cost rate
-      // budget, so nothing is fetched until the panel is actually opened.
+      // budget, so nothing is fetched until the panel is actually opened. The
+      // exception is /settings — it costs no forge call and carries the host's
+      // language, which the chrome needs before the user opens anything.
+      void loadSettings()
       startSse()
       observer = new MutationObserver(() => { ensureMounted() })
       observer.observe(document.body ?? document.documentElement, { childList: true, subtree: true })

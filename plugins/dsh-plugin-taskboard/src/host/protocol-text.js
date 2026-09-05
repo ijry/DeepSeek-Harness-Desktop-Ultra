@@ -4,6 +4,9 @@
  * claim/version discipline, review handoff, and the human-only acceptance
  * gate (mirroring codeg-plus's task acceptance).
  *
+ * Both language variants carry exactly the same rules, tool names and
+ * column/status vocabulary; protocolText() picks one (see shared/lang.js).
+ *
  * @module dsh-plugin-taskboard/host/protocol-text
  */
 
@@ -35,3 +38,35 @@ export const CODEG_TASKBOARD_SECTION_ORDER = 180
 
 /** Registered section name. */
 export const CODEG_TASKBOARD_SECTION_NAME = 'plugin:dsh-plugin-taskboard'
+
+/** The same protocol for an English UI deployment (DSH_DESKTOP_LANG=en). */
+export const CODEG_TASKBOARD_PROTOCOL_EN = [
+  'The dsh-plugin-taskboard plugin is installed on this machine (a task board whose semantics follow codeg-plus’s task board):',
+  'Tasks hang off a workspace (project), you read and write them with the taskboard_* tools, and the human watches the same data live on the Web GUI board.',
+  'Four board columns (identical to codeg-plus): todo (todo/queued), inProgress (preparing/running),',
+  'attention (awaiting_input/review/merging/failed), done (done/canceled, canceled hidden by default).',
+  'Status meanings: todo=to do; queued=queued; preparing=claimed and getting ready; running=executing;',
+  'awaiting_input=waiting for your input/decision; review=implemented, waiting for your acceptance; failed=failed, retryable; done=you have accepted it.',
+  'Tools: taskboard_list (read the board, filterable by workspaceId/status/column), taskboard_get (read a card and its comments),',
+  'taskboard_create (new card), taskboard_update (edit a card), taskboard_move (move/claim a card), taskboard_comment (comment/report).',
+  'Working discipline:',
+  '1. Check the board first: run taskboard_list (filtered to this project) before starting work, and claim an available task by the rules below.',
+  '2. Read before you act: taskboard_get and read the comments before touching a card; comments count as the latest requirements — if they ask you to wait or hold off, stop and report, do not change the status.',
+  '3. Claim before you work: only once todo/queued → preparing (with ifVersion) has succeeded may you start reading code / implementing;',
+  '   if the claim fails (version conflict / already held by another session / wrong project boundary), stop and report — never retry in a loop and never take over someone else’s task.',
+  '4. Retry a version conflict once only: on an ifVersion conflict re-read the card and retry once with the new version, but only while the status still allows it and the requirements have not changed; if that fails too, stop and report.',
+  '5. Hand-off: after implementing and verifying it yourself, post a structured report with taskboard_comment (summary / changes / verification / risks),',
+  '   then move running → review and wait for the user’s acceptance; after review the user may send it back (with notes) or complete it directly.',
+  '6. Completing and canceling are the user’s actions: you may never move a task to done or canceled; after review all you can do is wait for the user to accept.',
+  '7. Boundary: a task carrying a workspaceId belongs to that workspace; only a session whose working directory resolves to the same workspace may claim it.',
+  'When the user mentions “the task board / the board / claiming a task” they mean this plugin — collaborate accordingly.',
+].join('\n')
+
+/**
+ * The protocol section text for a language (anything but 'en' stays Chinese).
+ * @param {string} lang
+ * @returns {string}
+ */
+export function protocolText(lang) {
+  return lang === 'en' ? CODEG_TASKBOARD_PROTOCOL_EN : CODEG_TASKBOARD_PROTOCOL
+}

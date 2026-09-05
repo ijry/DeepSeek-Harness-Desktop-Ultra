@@ -48,16 +48,36 @@ struct Progress {
 /// 「已是最新」不在这里——那是 `Ok(None)`，不是错误。
 fn explain(error: tauri_plugin_updater::Error) -> String {
     use tauri_plugin_updater::Error;
+    let zh = crate::i18n::is_zh();
     match error {
-        Error::EmptyEndpoints => {
-            "没有配置更新端点（tauri.conf.json 的 plugins.updater.endpoints）".into()
-        }
+        Error::EmptyEndpoints => crate::i18n::pick(
+            "没有配置更新端点（tauri.conf.json 的 plugins.updater.endpoints）",
+            "No update endpoint configured (plugins.updater.endpoints in tauri.conf.json)",
+        )
+        .into(),
         // 单端点的情况下，清单 404 或者清单里没有本平台的条目，都会落到这里
-        Error::ReleaseNotFound => "更新清单取不到，或者里面没有本平台的条目".into(),
+        Error::ReleaseNotFound => crate::i18n::pick(
+            "更新清单取不到，或者里面没有本平台的条目",
+            "The update manifest could not be fetched, or has no entry for this platform",
+        )
+        .into(),
         Error::Minisign(_) | Error::Base64(_) | Error::SignatureUtf8(_) => {
-            format!("更新包签名校验失败：{error}。多半是安装包的签名与内置公钥不成对")
+            if zh {
+                format!("更新包签名校验失败：{error}。多半是安装包的签名与内置公钥不成对")
+            } else {
+                format!(
+                    "Signature check failed for the update package: {error}. \
+                     Most likely the installer's signature and the embedded public key do not match"
+                )
+            }
         }
-        Error::Reqwest(_) | Error::Network(_) => format!("网络请求失败：{error}"),
+        Error::Reqwest(_) | Error::Network(_) => {
+            if zh {
+                format!("网络请求失败：{error}")
+            } else {
+                format!("Network request failed: {error}")
+            }
+        }
         other => other.to_string(),
     }
 }
@@ -119,30 +139,12 @@ pub async fn update_check(app: AppHandle) -> Result<Option<Available>, String> {
 fn announce(app: &AppHandle, found: Option<&Available>) {
     let _ = app.emit("update-available", found);
 
-    let (tooltip, label) = match found {
-        Some(available) => (
-            format!("DSH Desktop Ultra（有新版本 {}）", available.version),
-            format!("设置（有新版本 {}）", available.version),
-        ),
-        None => (
-            "DSH Desktop Ultra（运行中）".to_string(),
-            "设置".to_string(),
-        ),
-    };
-
-    if let Some(tray) = app.tray_by_id("main") {
-        let _ = tray.set_tooltip(Some(&tooltip));
-    }
-    let state = app.state::<AppState>();
-    let item = lock(&state.settings_item);
-    if let Some(item) = item.as_ref() {
-        let _ = item.set_text(&label);
-    }
-    drop(item);
+    apply_labels(app, found.map(|available| available.version.as_str()));
 
     // 每个版本只弹一次窗：后台是 30 分钟一轮，同一个版本反复弹比不弹更糟。
     // 用户手动点「重新检查」时窗口本来就开着，这里只会把它带到前面来。
     let Some(available) = found else { return };
+    let state = app.state::<AppState>();
     let mut popped = lock(&state.popped_version);
     if popped.as_deref() == Some(available.version.as_str()) {
         return;
@@ -150,6 +152,52 @@ fn announce(app: &AppHandle, found: Option<&Available>) {
     *popped = Some(available.version.clone());
     drop(popped);
     crate::open_settings(app);
+}
+
+/// 按当前语言把托盘那两处文字重贴一遍，不弹窗、不发事件。
+///
+/// 切语言时调用：待安装的版本从 `pending` 里读，所以「有新版本」这个状态
+/// 不会因为换了语言就丢掉。
+pub fn relabel(app: &AppHandle) {
+    let version = {
+        let state = app.state::<AppState>();
+        let pending = lock(&state.pending);
+        pending.as_ref().map(|update| update.version.clone())
+    };
+    apply_labels(app, version.as_deref());
+}
+
+/// 托盘 tooltip + 菜单项文字。`version` 为 None 就是「没有新版本」。
+fn apply_labels(app: &AppHandle, version: Option<&str>) {
+    let (tooltip, label) = match version {
+        Some(version) => {
+            if crate::i18n::is_zh() {
+                (
+                    format!("DSH Desktop Ultra（有新版本 {version}）"),
+                    format!("设置（有新版本 {version}）"),
+                )
+            } else {
+                (
+                    format!("DSH Desktop Ultra (update {version} available)"),
+                    format!("Settings (update {version} available)"),
+                )
+            }
+        }
+        None => (
+            crate::i18n::pick("DSH Desktop Ultra（运行中）", "DSH Desktop Ultra (running)")
+                .to_string(),
+            crate::i18n::pick("设置", "Settings").to_string(),
+        ),
+    };
+
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some(&tooltip));
+    }
+    let state = app.state::<AppState>();
+    let items = lock(&state.tray);
+    if let Some(items) = items.as_ref() {
+        let _ = items.settings.set_text(&label);
+    }
 }
 
 /// 起一个后台线程按间隔检查更新。
@@ -181,10 +229,12 @@ pub fn spawn_watcher(app: AppHandle) {
 #[tauri::command]
 pub async fn update_install(app: AppHandle) -> Result<(), String> {
     if cfg!(debug_assertions) {
-        return Err(
-            "开发模式不执行安装：它会升级已安装的正式版并结束当前进程。请用 release 构建验证。"
-                .into(),
-        );
+        return Err(crate::i18n::pick(
+            "开发模式不执行安装：它会升级已安装的正式版并结束当前进程。请用 release 构建验证。",
+            "Installing is disabled in dev builds: it would upgrade the installed release build and \
+             kill this process. Verify with a release build.",
+        )
+        .into());
     }
 
     // guard 必须绑到具名变量：写成块的尾表达式的话，临时的 MutexGuard 会活到
@@ -194,7 +244,13 @@ pub async fn update_install(app: AppHandle) -> Result<(), String> {
         let pending = lock(&state.pending);
         pending.clone()
     }
-    .ok_or_else(|| "没有待安装的更新，先检查一次".to_string())?;
+    .ok_or_else(|| {
+        crate::i18n::pick(
+            "没有待安装的更新，先检查一次",
+            "No update is pending — check for one first",
+        )
+        .to_string()
+    })?;
 
     // Windows 上 install 会直接 exit(0)，退出钩子不会跑——这是收掉 dsh 子进程的唯一机会。
     crate::stop_server(&app);

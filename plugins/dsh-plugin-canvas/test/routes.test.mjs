@@ -91,13 +91,23 @@ async function withRoutes(run) {
   }
 }
 
-test('GET /state 返回 { nodes, revision } 的封套', async () => {
-  await withRoutes(async ({ call }) => {
-    const res = await call('GET', '/state')
-    assert.equal(res.status, 200)
-    assert.equal(res.headers['content-type'], 'application/json; charset=utf-8')
-    assert.deepEqual(res.json, { ok: true, value: { nodes: [], revision: 0 } })
-  })
+test('GET /state 返回 { nodes, revision, language } 的封套', async () => {
+  const before = process.env.DSH_DESKTOP_LANG
+  process.env.DSH_DESKTOP_LANG = 'zh'
+  try {
+    await withRoutes(async ({ call }) => {
+      const res = await call('GET', '/state')
+      assert.equal(res.status, 200)
+      assert.equal(res.headers['content-type'], 'application/json; charset=utf-8')
+      assert.deepEqual(res.json, { ok: true, value: { nodes: [], revision: 0, language: 'zh' } })
+      // 浏览器半边读不到外壳的环境变量，语言只能顺着这个字段过去。
+      process.env.DSH_DESKTOP_LANG = 'en-US'
+      assert.equal((await call('GET', '/state')).json.value.language, 'en')
+    })
+  } finally {
+    if (before === undefined) delete process.env.DSH_DESKTOP_LANG
+    else process.env.DSH_DESKTOP_LANG = before
+  }
 })
 
 test('POST /nodes 建卡：201，响应带这次事件的 revision', async () => {

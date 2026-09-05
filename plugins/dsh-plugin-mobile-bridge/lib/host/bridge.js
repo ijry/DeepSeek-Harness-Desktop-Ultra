@@ -20,6 +20,7 @@
 import { randomUUID } from 'node:crypto'
 
 import { BridgeError, ERR } from '../shared/protocol.js'
+import { pick } from '../shared/lang.js'
 
 /** Mint one RPC correlation id. dsh requires it on every request envelope. */
 function rpcId() {
@@ -34,7 +35,7 @@ function rpcId() {
 function unwrap(response) {
   const result = response?.result
   if (result?.ok === true) return result.value
-  const error = result?.error ?? { code: 'internal', message: 'dsh 未返回结果' }
+  const error = result?.error ?? { code: 'internal', message: pick('dsh 未返回结果', 'dsh returned no result') }
   throw new BridgeError(ERR.dshError, String(error.message ?? error.code), {
     dshCode: String(error.code ?? 'internal'),
     details: error.details ?? {},
@@ -49,7 +50,13 @@ function unwrap(response) {
  */
 export function createBridge(apiProxy) {
   if (apiProxy === undefined || apiProxy === null) {
-    throw new BridgeError(ERR.unavailable, '当前 dsh 组合没有 apiProxy，手机桥无法工作')
+    throw new BridgeError(
+      ERR.unavailable,
+      pick(
+        '当前 dsh 组合没有 apiProxy，手机桥无法工作',
+        'This dsh composition has no apiProxy, so the mobile bridge cannot work',
+      ),
+    )
   }
 
   return {
@@ -136,7 +143,9 @@ export function createBridge(apiProxy) {
       const reason = String(receipt?.reason ?? 'not-pending')
       throw new BridgeError(
         reason === 'bad-response' ? ERR.invalidInput : ERR.notFound,
-        reason === 'bad-response' ? '回答不符合待答请求的格式' : '这个请求已经被回答或已失效',
+        reason === 'bad-response'
+          ? pick('回答不符合待答请求的格式', 'The answer does not match the shape of the pending request')
+          : pick('这个请求已经被回答或已失效', 'This request has already been answered or is no longer pending'),
         { reason },
       )
     },

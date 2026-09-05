@@ -40,6 +40,7 @@ import {
   resolveToken,
   saveToken,
 } from './auth.js'
+import { hostLang } from '../shared/lang.js'
 import { forgeClient } from './forge.js'
 import { resolveRemote } from './remote.js'
 import { indexBoard, taskboardBaseFrom, taskboardClient } from './taskboard.js'
@@ -311,7 +312,10 @@ export function registerRepoPanelRoutes(ctx, options) {
 
     if (pathname === `${ROUTE_PREFIX}/settings`) {
       await store.load()
-      ok(res, store.settings())
+      // `language` rides along here because the browser half cannot read the
+      // environment: this is the first payload the panel fetches on mount, so it
+      // is also how the shell's DSH_DESKTOP_LANG reaches the UI.
+      ok(res, { ...store.settings(), language: hostLang() })
       return
     }
 
@@ -506,6 +510,7 @@ export function registerRepoPanelRoutes(ctx, options) {
       instruction: normalizeOptionalText(body.instruction, 'instruction'),
       item: { ...item, kind },
       remote,
+      lang: hostLang(),
     })
 
     const task = await board.createTask({

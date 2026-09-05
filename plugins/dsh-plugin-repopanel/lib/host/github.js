@@ -28,6 +28,7 @@ import {
   normalizeRepo,
   normalizeTitle,
 } from '../shared/protocol.js'
+import { hostLang } from '../shared/lang.js'
 
 /** Per-request deadline: a hung forge must not pin a route handler forever. */
 export const REQUEST_TIMEOUT_MS = 20_000
@@ -51,8 +52,13 @@ const BASE_HEADERS = {
   'User-Agent': 'dsh-plugin-repopanel',
 }
 
-/** Appended to a body cut at MAX_BODY_CHARS so reader and agent both know. */
-const TRUNCATION_NOTE = `\n\n…（内容过长，已截断，仅保留前 ${MAX_BODY_CHARS} 个字符）`
+/**
+ * Appended to a body cut at MAX_BODY_CHARS so reader and agent both know. The
+ * host's language cannot change while the process lives, so it is resolved once.
+ */
+const TRUNCATION_NOTE = hostLang() === 'en'
+  ? `\n\n… (too long — truncated to the first ${MAX_BODY_CHARS} characters)`
+  : `\n\n…（内容过长，已截断，仅保留前 ${MAX_BODY_CHARS} 个字符）`
 
 /**
  * The REST base for a host: github.com answers on api.github.com, every

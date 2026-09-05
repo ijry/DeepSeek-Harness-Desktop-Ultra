@@ -37,25 +37,250 @@ window.__ModuleLoader__.load({
   const SSE_PATH = '/dsh-plugin-taskboard/events'
   const STYLE_ID = 'dsh-plugin-taskboard-style'
 
-  // ---------------------------------------------------------------- domain
-  const COLUMNS = [
-    { id: 'todo', label: '待办' },
-    { id: 'inProgress', label: '进行中' },
-    { id: 'attention', label: '需关注' },
-    { id: 'done', label: '已完成' },
-  ]
-  const STATUS_LABELS = {
-    todo: '待办',
-    queued: '排队',
-    preparing: '准备中',
-    running: '执行中',
-    awaiting_input: '等待输入',
-    review: '待验收',
-    merging: '合并中',
-    failed: '失败',
-    done: '已完成',
-    canceled: '已取消',
+  // ------------------------------------------------------------------- i18n
+  // This bundle is wrapped into ONE standalone file (scripts/wrap-client.mjs)
+  // and cannot import shared/lang.js, so the normalizer and the whole string
+  // table live here. The language comes from the host (`language` on GET
+  // /state, i.e. the shell's DSH_DESKTOP_LANG); standalone installs (no
+  // shell) fall back to navigator.language and finally to Chinese.
+  const LANGS = ['zh', 'en']
+  const DEFAULT_LANG = 'zh'
+  const lang = { current: DEFAULT_LANG }
+
+  /** Same rules as shared/lang.js: zh / zh-CN / zh_CN.UTF-8 / en / en-US. */
+  function normalizeLang(value) {
+    if (typeof value !== 'string') return null
+    const primary = value.trim().toLowerCase().replace(/_/g, '-').split(/[-.@]/)[0]
+    return LANGS.includes(primary) ? primary : null
   }
+
+  const STRINGS = {
+    zh: {
+      column: { todo: '待办', inProgress: '进行中', attention: '需关注', done: '已完成' },
+      status: {
+        todo: '待办',
+        queued: '排队',
+        preparing: '准备中',
+        running: '执行中',
+        awaiting_input: '等待输入',
+        review: '待验收',
+        merging: '合并中',
+        failed: '失败',
+        done: '已完成',
+        canceled: '已取消',
+      },
+      'actor.you': '你',
+      'time.now': '刚刚',
+      'time.minutes': (n) => n + ' 分钟前',
+      'time.hours': (n) => n + ' 小时前',
+      'board.title': '任务看板',
+      'board.connecting': '连接中…',
+      'board.live': '实时同步中',
+      'board.offline': '连接断开',
+      'board.refresh': '刷新',
+      'board.newTask': '＋ 新建任务',
+      'board.searchPlaceholder': '搜索标题 / 任务 ID',
+      'board.showCanceled': '显示已取消',
+      'board.allProjects': '全部项目',
+      'board.noProject': '无项目',
+      'board.noTasks': '暂无任务',
+      'board.untitled': '（无标题）',
+      'entry.stats': (c) => '待办 ' + c.todo + ' · 需关注 ' + c.attention + ' · 待验收 ' + c.review,
+      'modal.close': '关闭',
+      'toast.syncFailed': (detail) => '同步失败：' + detail,
+      'form.editTitle': '编辑任务',
+      'form.newTitle': '新建任务',
+      'form.titlePlaceholder': '必填：一句话描述要做什么',
+      'form.descPlaceholder': '背景 / 上下文（可选）',
+      'form.promptPlaceholder': '让 Agent 执行的 Prompt（可选）',
+      'form.title': '标题 *',
+      'form.description': '描述',
+      'form.prompt': '执行 Prompt',
+      'form.project': '项目',
+      'form.cancel': '取消',
+      'form.save': '保存',
+      'form.create': '创建',
+      'form.needTitle': '请填写任务标题',
+      'form.submitting': '提交中…',
+      'toast.taskUpdated': '任务已更新',
+      'toast.taskCreated': '任务已创建',
+      'detail.title': '任务详情',
+      'detail.notes': '备注与评论',
+      'detail.notePlaceholder': '写备注 / 补充说明，Ctrl+Enter 发送',
+      'detail.send': '发送',
+      'detail.none': '（无）',
+      'detail.loading': '加载任务详情中…',
+      'detail.kvStatus': '状态',
+      'detail.kvTask': '任务',
+      'detail.kvProject': '项目',
+      'detail.kvClaim': '认领',
+      'detail.kvUpdated': '更新',
+      'detail.kvCreated': '创建',
+      'detail.noNotes': '暂无备注',
+      'detail.edit': '编辑',
+      'detail.accept': '✓ 通过验收',
+      'detail.sendBack': '退回待办',
+      'detail.reopen': '重新打开',
+      'detail.move': '移动',
+      'detail.moveTo': '移到',
+      'detail.refreshFailed': (raw) => '刷新任务详情失败：' + raw,
+      'toast.taskGone': '任务已被删除或不存在',
+      'toast.sentBack': '已退回待办',
+      'toast.taskDeleted': '任务已删除',
+      'toast.noteEmpty': '先写点备注内容',
+      'toast.noteSent': '备注已发送',
+      'confirm.sendBack': '退回待办？确认后任务回到“待办”列并解除认领。',
+      'confirm.delete': '确定删除该任务吗？删除后不可恢复。',
+      'action.accept': '验收',
+      'action.reopenTask': '重新打开任务',
+      'action.moveTask': '移动任务',
+      'action.updateTask': '更新任务',
+      'action.createTask': '创建任务',
+      'action.rejectTask': '退回任务',
+      'action.deleteTask': '删除任务',
+      'action.sendNote': '发送备注',
+      'result.ok': (label) => label + '成功',
+      'result.stale': (label) => label + '未生效：任务刚被更新过，请重试',
+      'result.gone': (label) => label + '未生效：任务已不存在',
+      'result.forbidden': (label) => label + '未生效：任务当前状态不允许该操作',
+      'result.transition': (label) => label + '未生效：当前状态不允许这个操作',
+      'result.invalid': (parts) => parts.label + '未生效：' + parts.detail,
+      'result.failed': (parts) => parts.label + '失败：' + parts.detail,
+    },
+    en: {
+      column: { todo: 'To do', inProgress: 'In progress', attention: 'Attention', done: 'Done' },
+      status: {
+        todo: 'To do',
+        queued: 'Queued',
+        preparing: 'Preparing',
+        running: 'Running',
+        awaiting_input: 'Awaiting input',
+        review: 'Review',
+        merging: 'Merging',
+        failed: 'Failed',
+        done: 'Done',
+        canceled: 'Canceled',
+      },
+      'actor.you': 'you',
+      'time.now': 'just now',
+      'time.minutes': (n) => n + ' min ago',
+      'time.hours': (n) => n + ' hr ago',
+      'board.title': 'Task Board',
+      'board.connecting': 'Connecting…',
+      'board.live': 'Live sync',
+      'board.offline': 'Disconnected',
+      'board.refresh': 'Refresh',
+      'board.newTask': '+ New task',
+      'board.searchPlaceholder': 'Search title / task ID',
+      'board.showCanceled': 'Show canceled',
+      'board.allProjects': 'All projects',
+      'board.noProject': 'No project',
+      'board.noTasks': 'No tasks',
+      'board.untitled': '(untitled)',
+      'entry.stats': (c) => 'To do ' + c.todo + ' · Attention ' + c.attention + ' · Review ' + c.review,
+      'modal.close': 'Close',
+      'toast.syncFailed': (detail) => 'Sync failed: ' + detail,
+      'form.editTitle': 'Edit task',
+      'form.newTitle': 'New task',
+      'form.titlePlaceholder': 'Required: one line on what to do',
+      'form.descPlaceholder': 'Background / context (optional)',
+      'form.promptPlaceholder': 'Prompt for the agent to run (optional)',
+      'form.title': 'Title *',
+      'form.description': 'Description',
+      'form.prompt': 'Prompt',
+      'form.project': 'Project',
+      'form.cancel': 'Cancel',
+      'form.save': 'Save',
+      'form.create': 'Create',
+      'form.needTitle': 'Enter a task title',
+      'form.submitting': 'Submitting…',
+      'toast.taskUpdated': 'Task updated',
+      'toast.taskCreated': 'Task created',
+      'detail.title': 'Task detail',
+      'detail.notes': 'Notes & comments',
+      'detail.notePlaceholder': 'Write a note, Ctrl+Enter to send',
+      'detail.send': 'Send',
+      'detail.none': '(none)',
+      'detail.loading': 'Loading task detail…',
+      'detail.kvStatus': 'Status',
+      'detail.kvTask': 'Task',
+      'detail.kvProject': 'Project',
+      'detail.kvClaim': 'Claim',
+      'detail.kvUpdated': 'Updated',
+      'detail.kvCreated': 'Created',
+      'detail.noNotes': 'No notes yet',
+      'detail.edit': 'Edit',
+      'detail.accept': '✓ Accept',
+      'detail.sendBack': 'Send back to todo',
+      'detail.reopen': 'Reopen',
+      'detail.move': 'Move',
+      'detail.moveTo': 'Move to',
+      'detail.refreshFailed': (raw) => 'Refreshing the task detail failed: ' + raw,
+      'toast.taskGone': 'That task is deleted or does not exist',
+      'toast.sentBack': 'Sent back to todo',
+      'toast.taskDeleted': 'Task deleted',
+      'toast.noteEmpty': 'Write a note first',
+      'toast.noteSent': 'Note sent',
+      'confirm.sendBack': 'Send back to todo? The task returns to the To do column and the claim is released.',
+      'confirm.delete': 'Delete this task? This cannot be undone.',
+      'action.accept': 'Accept',
+      'action.reopenTask': 'Reopen task',
+      'action.moveTask': 'Move task',
+      'action.updateTask': 'Update task',
+      'action.createTask': 'Create task',
+      'action.rejectTask': 'Send task back',
+      'action.deleteTask': 'Delete task',
+      'action.sendNote': 'Send note',
+      'result.ok': (label) => label + ': done',
+      'result.stale': (label) => label + ' did not apply: the task was just updated, please retry',
+      'result.gone': (label) => label + ' did not apply: the task no longer exists',
+      'result.forbidden': (label) => label + ' did not apply: the task’s current status does not allow it',
+      'result.transition': (label) => label + ' did not apply: the current status does not allow this operation',
+      'result.invalid': (parts) => parts.label + ' did not apply: ' + parts.detail,
+      'result.failed': (parts) => parts.label + ' failed: ' + parts.detail,
+    },
+  }
+
+  /** The live dictionary — never captured, so a language switch is visible. */
+  function dict() {
+    return STRINGS[lang.current] ?? STRINGS.zh
+  }
+
+  /** One string from the live dictionary; parameterized entries are functions. */
+  function t(key, arg) {
+    const value = dict()[key]
+    if (typeof value === 'function') return value(arg)
+    return value === undefined ? key : value
+  }
+
+  /** Board column label. */
+  function columnLabel(id) {
+    const labels = dict().column
+    return labels[id] ?? String(id)
+  }
+
+  /** Status label; an unknown status renders raw, as it always did. */
+  function statusLabel(status) {
+    const labels = dict().status
+    return labels[status] ?? String(status)
+  }
+
+  /**
+   * Adopt a language. The board chrome (toolbar, controls, sidebar entry) is
+   * built once, so a real switch has to re-create it; unknown values are
+   * ignored, which is what keeps the fallback chain intact.
+   */
+  function setLang(value) {
+    const next = normalizeLang(value)
+    if (next === null || next === lang.current) return
+    lang.current = next
+    rebuildBoard()
+    emit()
+  }
+
+  // ---------------------------------------------------------------- domain
+  /** The four board columns in order; labels come from the string table. */
+  const COLUMNS = ['todo', 'inProgress', 'attention', 'done']
 
   function columnOf(status) {
     switch (status) {
@@ -90,15 +315,15 @@ window.__ModuleLoader__.load({
     if (actor === undefined || actor === null) return 'unknown'
     return actor.kind === 'agent'
       ? 'agent ' + String(actor.sessionId ?? '').slice(0, 12)
-      : '你'
+      : t('actor.you')
   }
 
   function fmtTime(ms) {
     if (typeof ms !== 'number' || !Number.isFinite(ms)) return ''
     const delta = Date.now() - ms
-    if (delta < 60000) return '刚刚'
-    if (delta < 3600000) return Math.floor(delta / 60000) + ' 分钟前'
-    if (delta < 86400000) return Math.floor(delta / 3600000) + ' 小时前'
+    if (delta < 60000) return t('time.now')
+    if (delta < 3600000) return t('time.minutes', Math.floor(delta / 60000))
+    if (delta < 86400000) return t('time.hours', Math.floor(delta / 3600000))
     const d = new Date(ms)
     const pad = (n) => String(n).padStart(2, '0')
     return (d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes())
@@ -484,11 +709,14 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
 
   async function refresh() {
     try {
-      applyLedger(await api.state())
+      const ledger = await api.state()
+      // The host reports the shell's language; it outranks the boot seed.
+      setLang(ledger.language)
+      applyLedger(ledger)
       model.connected = true
     } catch (error) {
       model.connected = false
-      toast('同步失败：' + String(error?.message ?? error))
+      toast(t('toast.syncFailed', String(error?.message ?? error)))
     }
     emit()
   }
@@ -622,10 +850,10 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     button.type = 'button'
     button.dataset.dshCgtbEntry = ''
     button.className = 'dsh-cgtb-entry'
-    button.setAttribute('aria-label', '任务看板')
+    button.setAttribute('aria-label', t('board.title'))
     button.innerHTML =
       '<span class="dsh-cgtb-entry-icon">📋</span>' +
-      '<span class="dsh-cgtb-entry-label">任务看板</span>' +
+      '<span class="dsh-cgtb-entry-label"></span>' +
       '<span class="dsh-cgtb-entry-stats"></span>'
     button.addEventListener('click', () => setOpen(!model.open))
     return button
@@ -667,16 +895,16 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
   }
 
   function buildBoardDom() {
-    const title = el('h2', { class: 'dsh-cgtb-title' }, '任务看板')
-    liveEl = el('span', { class: 'dsh-cgtb-live', 'data-state': 'down' }, '连接中…')
-    const refreshBtn = el('button', { class: 'dsh-cgtb-btn', type: 'button', onClick: () => { void refresh(); void loadWorkspaces() } }, '刷新')
-    const newTaskBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'primary', type: 'button', onClick: () => openCreate(null) }, '＋ 新建任务')
+    const title = el('h2', { class: 'dsh-cgtb-title' }, t('board.title'))
+    liveEl = el('span', { class: 'dsh-cgtb-live', 'data-state': 'down' }, t('board.connecting'))
+    const refreshBtn = el('button', { class: 'dsh-cgtb-btn', type: 'button', onClick: () => { void refresh(); void loadWorkspaces() } }, t('board.refresh'))
+    const newTaskBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'primary', type: 'button', onClick: () => openCreate(null) }, t('board.newTask'))
     const closeBtn = el('button', { class: 'dsh-cgtb-btn', type: 'button', onClick: () => setOpen(false) }, '✕')
     const toolbar = el('div', { class: 'dsh-cgtb-toolbar' },
       title, liveEl, el('span', { class: 'dsh-cgtb-spacer' }), refreshBtn, newTaskBtn, closeBtn)
 
     searchInput = el('input', {
-      class: 'dsh-cgtb-search', type: 'search', placeholder: '搜索标题 / 任务 ID',
+      class: 'dsh-cgtb-search', type: 'search', placeholder: t('board.searchPlaceholder'),
       onInput: () => { model.search = searchInput.value.trim(); renderColumns() },
     })
     wsSelect = el('select', {
@@ -689,20 +917,38 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     })
     const controls = el('div', { class: 'dsh-cgtb-controls' },
       searchInput, wsSelect,
-      el('label', { class: 'dsh-cgtb-check' }, cancelCheck, '显示已取消'))
+      el('label', { class: 'dsh-cgtb-check' }, cancelCheck, t('board.showCanceled')))
     columnsEl = el('div', { class: 'dsh-cgtb-columns' })
     view.append(el('div', { class: 'dsh-cgtb-board' }, toolbar, controls, columnsEl))
+  }
+
+  /** Re-create the board chrome after a language switch (same DOM shape). */
+  function rebuildBoard() {
+    if (view === null || !view.isConnected) return
+    view.textContent = ''
+    liveEl = null
+    searchInput = null
+    wsSelect = null
+    cancelCheck = null
+    columnsEl = null
+    wsOptionsSignature = null
+    buildBoardDom()
+    searchInput.value = model.search
+    cancelCheck.checked = model.showCanceled
   }
 
   function renderEntry() {
     if (entry === null) return
     if (model.open) entry.dataset.active = 'true'
     else delete entry.dataset.active
+    entry.setAttribute('aria-label', t('board.title'))
+    const label = entry.querySelector('.dsh-cgtb-entry-label')
+    if (label !== null) label.textContent = t('board.title')
     const stats = entry.querySelector('.dsh-cgtb-entry-stats')
     if (stats === null) return
     const counts = boardCounts()
     stats.textContent = counts.todo + ' · ' + counts.attention + (counts.review > 0 ? ' · ' + counts.review : '')
-    stats.title = '待办 ' + counts.todo + ' · 需关注 ' + counts.attention + ' · 待验收 ' + counts.review
+    stats.title = t('entry.stats', counts)
   }
 
   // ------------------------------------------------------------ rendering
@@ -743,7 +989,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
   /** One compact task card button (title, status/ws/claim/comment chips). */
   function cardFor(task) {
     const color = statusColor(task.status)
-    const statusChip = el('span', { class: 'dsh-cgtb-chip', 'data-kind': 'status' }, STATUS_LABELS[task.status] ?? task.status)
+    const statusChip = el('span', { class: 'dsh-cgtb-chip', 'data-kind': 'status' }, statusLabel(task.status))
     statusChip.style.color = color
     statusChip.style.backgroundColor = 'color-mix(in srgb, ' + color + ' 14%, transparent)'
     const meta = el('div', { class: 'dsh-cgtb-card-meta' }, statusChip)
@@ -760,7 +1006,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     return el('button', {
       class: 'dsh-cgtb-card', type: 'button', 'data-status': task.status,
       onClick: () => openDetail(task.id),
-    }, el('div', { class: 'dsh-cgtb-card-title' }, String(task.title ?? '（无标题）')), meta)
+    }, el('div', { class: 'dsh-cgtb-card-title' }, String(task.title ?? t('board.untitled'))), meta)
   }
 
   function renderColumns() {
@@ -769,13 +1015,13 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     for (const task of filteredTasks()) buckets[columnOf(task.status)].push(task)
     columnsEl.textContent = ''
     for (const column of COLUMNS) {
-      const list = buckets[column.id]
+      const list = buckets[column]
       const head = el('div', { class: 'dsh-cgtb-col-head' },
-        el('span', { class: 'dsh-cgtb-col-dot', 'data-column': column.id }),
-        column.label,
+        el('span', { class: 'dsh-cgtb-col-dot', 'data-column': column }),
+        columnLabel(column),
         el('span', { class: 'dsh-cgtb-col-count' }, String(list.length)))
       const cards = el('div', { class: 'dsh-cgtb-cards' })
-      if (list.length === 0) cards.append(el('div', { class: 'dsh-cgtb-empty' }, '暂无任务'))
+      if (list.length === 0) cards.append(el('div', { class: 'dsh-cgtb-empty' }, t('board.noTasks')))
       else for (const task of list) cards.append(cardFor(task))
       columnsEl.append(el('section', { class: 'dsh-cgtb-column' }, head, cards))
     }
@@ -788,8 +1034,8 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     if (signature !== wsOptionsSignature) {
       wsOptionsSignature = signature
       wsSelect.textContent = ''
-      wsSelect.append(el('option', { value: 'ALL' }, '全部项目'))
-      wsSelect.append(el('option', { value: '' }, '无项目'))
+      wsSelect.append(el('option', { value: 'ALL' }, t('board.allProjects')))
+      wsSelect.append(el('option', { value: '' }, t('board.noProject')))
       for (const workspace of model.workspaces) {
         wsSelect.append(el('option', { value: workspace.id }, String(workspace.title ?? workspace.path ?? workspace.id)))
       }
@@ -803,7 +1049,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
   function renderLiveIndicator() {
     if (liveEl === null) return
     liveEl.dataset.state = model.connected ? 'up' : 'down'
-    liveEl.textContent = model.connected ? '实时同步中' : '连接断开'
+    liveEl.textContent = model.connected ? t('board.live') : t('board.offline')
   }
 
   async function refreshAll() {
@@ -819,7 +1065,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     const backdrop = el('div', { class: 'dsh-cgtb-modal-backdrop' })
     const bodyEl = el('div', { class: 'dsh-cgtb-modal-body' })
     const footEl = el('div', { class: 'dsh-cgtb-modal-foot' })
-    const closeBtn = el('button', { class: 'dsh-cgtb-btn dsh-cgtb-modal-close', type: 'button', 'aria-label': '关闭' }, '✕')
+    const closeBtn = el('button', { class: 'dsh-cgtb-btn dsh-cgtb-modal-close', type: 'button', 'aria-label': t('modal.close') }, '✕')
     const modal = el('div', { class: 'dsh-cgtb-modal' },
       el('div', { class: 'dsh-cgtb-modal-head' }, el('h3', { class: 'dsh-cgtb-modal-title' }, String(titleText)), closeBtn),
       bodyEl, footEl)
@@ -859,16 +1105,18 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
 
   function friendlyWriteError(label, error) {
     const raw = String(error?.message ?? error)
-    if (raw.includes('version_conflict')) return label + '未生效：任务刚被更新过，请重试'
-    if (raw.includes('not_found')) return label + '未生效：任务已不存在'
-    if (raw.includes('forbidden')) return label + '未生效：任务当前状态不允许该操作'
-    if (raw.includes('invalid_transition')) return label + '未生效：当前状态不允许这个操作'
-    if (raw.includes('invalid_input')) return label + '未生效：' + raw.replace(/^Error:\s*invalid_input:\s*/i, '')
-    return label + '失败：' + raw
+    if (raw.includes('version_conflict')) return t('result.stale', label)
+    if (raw.includes('not_found')) return t('result.gone', label)
+    if (raw.includes('forbidden')) return t('result.forbidden', label)
+    if (raw.includes('invalid_transition')) return t('result.transition', label)
+    if (raw.includes('invalid_input')) {
+      return t('result.invalid', { label, detail: raw.replace(/^Error:\s*invalid_input:\s*/i, '') })
+    }
+    return t('result.failed', { label, detail: raw })
   }
 
   function workspaceOptions(selectedId) {
-    const options = [el('option', { value: '' }, '无项目')]
+    const options = [el('option', { value: '' }, t('board.noProject'))]
     for (const workspace of model.workspaces) {
       options.push(el('option', { value: workspace.id }, String(workspace.title ?? workspace.path ?? workspace.id)))
     }
@@ -878,31 +1126,31 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
   /** Create (initial === null) or edit an existing full task record. */
   function openCreate(initial, onSaved) {
     const isEdit = initial !== null && initial !== undefined
-    const frame = openModalFrame(isEdit ? '编辑任务' : '新建任务')
+    const frame = openModalFrame(isEdit ? t('form.editTitle') : t('form.newTitle'))
     const titleInput = el('input', {
       class: 'dsh-cgtb-input', type: 'text', maxlength: '200',
-      placeholder: '必填：一句话描述要做什么',
+      placeholder: t('form.titlePlaceholder'),
       value: isEdit ? String(initial.title ?? '') : '',
     })
     const descInput = textArea({
       class: 'dsh-cgtb-input dsh-cgtb-textarea', rows: 3,
-      placeholder: '背景 / 上下文（可选）',
+      placeholder: t('form.descPlaceholder'),
       value: isEdit ? String(initial.description ?? '') : '',
     })
     const promptInput = textArea({
       class: 'dsh-cgtb-input dsh-cgtb-textarea', rows: 4,
-      placeholder: '让 Agent 执行的 Prompt（可选）',
+      placeholder: t('form.promptPlaceholder'),
       value: isEdit ? String(initial.prompt ?? '') : '',
     })
     const wsField = el('select', { class: 'dsh-cgtb-select' }, workspaceOptions(isEdit ? (initial.workspaceId ?? '') : ''))
     frame.body.append(
-      el('div', { class: 'dsh-cgtb-field' }, el('label', {}, '标题 *'), titleInput),
-      el('div', { class: 'dsh-cgtb-field' }, el('label', {}, '描述'), descInput),
-      el('div', { class: 'dsh-cgtb-field' }, el('label', {}, '执行 Prompt'), promptInput),
-      el('div', { class: 'dsh-cgtb-field' }, el('label', {}, '项目'), wsField),
+      el('div', { class: 'dsh-cgtb-field' }, el('label', {}, t('form.title')), titleInput),
+      el('div', { class: 'dsh-cgtb-field' }, el('label', {}, t('form.description')), descInput),
+      el('div', { class: 'dsh-cgtb-field' }, el('label', {}, t('form.prompt')), promptInput),
+      el('div', { class: 'dsh-cgtb-field' }, el('label', {}, t('form.project')), wsField),
     )
-    const cancelBtn = el('button', { class: 'dsh-cgtb-btn', type: 'button' }, '取消')
-    const submitBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'primary', type: 'button' }, isEdit ? '保存' : '创建')
+    const cancelBtn = el('button', { class: 'dsh-cgtb-btn', type: 'button' }, t('form.cancel'))
+    const submitBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'primary', type: 'button' }, isEdit ? t('form.save') : t('form.create'))
     cancelBtn.addEventListener('click', () => frame.close())
     frame.foot.append(cancelBtn, submitBtn)
     titleInput.focus()
@@ -910,7 +1158,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     async function submit() {
       const cleanTitle = titleInput.value.trim()
       if (cleanTitle.length === 0) {
-        toast('请填写任务标题')
+        toast(t('form.needTitle'))
         titleInput.focus()
         return
       }
@@ -922,19 +1170,19 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       }
       if (isEdit) payload.ifVersion = initial.version
       submitBtn.disabled = true
-      submitBtn.textContent = '提交中…'
+      submitBtn.textContent = t('form.submitting')
       try {
         const record = isEdit ? await api.update(initial.id, payload) : await api.create(payload)
         if (record !== undefined && record !== null && typeof record === 'object' && record.id !== undefined) {
           applyTaskFull(record)
         }
-        toast(isEdit ? '任务已更新' : '任务已创建', 'success')
+        toast(isEdit ? t('toast.taskUpdated') : t('toast.taskCreated'), 'success')
         frame.close()
         onSaved?.(record)
       } catch (error) {
-        toast(friendlyWriteError(isEdit ? '更新任务' : '创建任务', error))
+        toast(friendlyWriteError(isEdit ? t('action.updateTask') : t('action.createTask'), error))
         submitBtn.disabled = false
-        submitBtn.textContent = isEdit ? '保存' : '创建'
+        submitBtn.textContent = isEdit ? t('form.save') : t('form.create')
       }
     }
     submitBtn.addEventListener('click', () => { void submit() })
@@ -944,7 +1192,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
   /** Open the full-record detail modal: meta, actions, comments. */
   function openDetail(id, fallback) {
     if (detailFrame !== null) detailFrame.close()
-    const frame = openModalFrame('任务详情')
+    const frame = openModalFrame(t('detail.title'))
     detailFrame = frame
     const closedRef = { current: false }
     const baseClose = frame.close
@@ -961,13 +1209,13 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     let busy = false
 
     const infoEl = el('div', { class: 'dsh-cgtb-detail-info' })
-    const notesTitle = el('h4', { class: 'dsh-cgtb-section-title' }, '备注与评论')
+    const notesTitle = el('h4', { class: 'dsh-cgtb-section-title' }, t('detail.notes'))
     const notesList = el('div', { class: 'dsh-cgtb-comments' })
     const composer = textArea({
       class: 'dsh-cgtb-input dsh-cgtb-textarea', rows: 2,
-      placeholder: '写备注 / 补充说明，Ctrl+Enter 发送',
+      placeholder: t('detail.notePlaceholder'),
     })
-    const sendBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'primary', type: 'button' }, '发送')
+    const sendBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'primary', type: 'button' }, t('detail.send'))
     frame.body.append(
       infoEl,
       notesTitle,
@@ -977,7 +1225,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     )
 
     function statusChip(status) {
-      const chip = el('span', { class: 'dsh-cgtb-chip', 'data-kind': 'status' }, STATUS_LABELS[status] ?? status)
+      const chip = el('span', { class: 'dsh-cgtb-chip', 'data-kind': 'status' }, statusLabel(status))
       const color = statusColor(status)
       chip.style.color = color
       chip.style.backgroundColor = 'color-mix(in srgb, ' + color + ' 14%, transparent)'
@@ -988,7 +1236,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       const box = el('div', {})
       box.append(el('h4', { class: 'dsh-cgtb-section-title' }, title))
       const text = value === undefined || value === null ? '' : String(value)
-      if (text.trim().length === 0) box.append(el('div', { class: 'dsh-cgtb-muted' }, '（无）'))
+      if (text.trim().length === 0) box.append(el('div', { class: 'dsh-cgtb-muted' }, t('detail.none')))
       else box.append(el('pre', { class: 'dsh-cgtb-pre' }, text))
       return box
     }
@@ -996,30 +1244,30 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     function renderAll() {
       infoEl.textContent = ''
       if (record === null) {
-        infoEl.append(el('div', { class: 'dsh-cgtb-muted' }, '加载任务详情中…'))
+        infoEl.append(el('div', { class: 'dsh-cgtb-muted' }, t('detail.loading')))
         renderActions()
         return
       }
       const task = record
-      infoEl.append(el('div', { class: 'dsh-cgtb-detail-title' }, String(task.title ?? '（无标题）')))
+      infoEl.append(el('div', { class: 'dsh-cgtb-detail-title' }, String(task.title ?? t('board.untitled'))))
       const dl = el('dl', { class: 'dsh-cgtb-kv' })
       const addRow = (key, value) => {
         dl.append(el('dt', {}, key))
         if (value instanceof Node) dl.append(el('dd', {}, value))
         else dl.append(el('dd', {}, value === undefined || value === null || value === '' ? '—' : String(value)))
       }
-      addRow('状态', statusChip(task.status))
-      addRow('任务', String(task.id).slice(0, 8))
-      if (typeof task.workspaceId === 'string' && task.workspaceId !== '') addRow('项目', wsLabel(task.workspaceId))
-      if (typeof task.claimedBy === 'string' && task.claimedBy !== '') addRow('认领', task.claimedBy)
-      addRow('更新', fmtTime(task.updatedAt))
-      addRow('创建', fmtTime(task.createdAt))
+      addRow(t('detail.kvStatus'), statusChip(task.status))
+      addRow(t('detail.kvTask'), String(task.id).slice(0, 8))
+      if (typeof task.workspaceId === 'string' && task.workspaceId !== '') addRow(t('detail.kvProject'), wsLabel(task.workspaceId))
+      if (typeof task.claimedBy === 'string' && task.claimedBy !== '') addRow(t('detail.kvClaim'), task.claimedBy)
+      addRow(t('detail.kvUpdated'), fmtTime(task.updatedAt))
+      addRow(t('detail.kvCreated'), fmtTime(task.createdAt))
       infoEl.append(dl)
       if (task.description !== undefined && task.description !== null && String(task.description).trim() !== '') {
-        infoEl.append(textBlock('描述', task.description))
+        infoEl.append(textBlock(t('form.description'), task.description))
       }
       if (task.prompt !== undefined && task.prompt !== null && String(task.prompt).trim() !== '') {
-        infoEl.append(textBlock('执行 Prompt', task.prompt))
+        infoEl.append(textBlock(t('form.prompt'), task.prompt))
       }
       renderComments()
       renderActions()
@@ -1029,10 +1277,10 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       if (record === null) return
       const list = Array.isArray(record.comments) ? record.comments.slice() : []
       list.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
-      notesTitle.textContent = '备注与评论' + (list.length > 0 ? ' · ' + String(list.length) : '')
+      notesTitle.textContent = t('detail.notes') + (list.length > 0 ? ' · ' + String(list.length) : '')
       notesList.textContent = ''
       if (list.length === 0) {
-        notesList.append(el('div', { class: 'dsh-cgtb-muted' }, '暂无备注'))
+        notesList.append(el('div', { class: 'dsh-cgtb-muted' }, t('detail.noNotes')))
         return
       }
       for (const comment of list) {
@@ -1045,15 +1293,6 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       }
     }
 
-    function moveLabelFor(status) {
-      const labels = {
-        todo: '待办', queued: '排队', preparing: '准备中', running: '执行中',
-        awaiting_input: '等待输入', review: '待验收', merging: '合并中', failed: '失败',
-        done: '已完成', canceled: '已取消',
-      }
-      return labels[status] ?? status
-    }
-
     function setButtonsEnabled(enabled) {
       for (const btn of frame.foot.querySelectorAll('button')) btn.disabled = !enabled
       const sel = frame.foot.querySelector('select')
@@ -1064,36 +1303,36 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       frame.foot.textContent = ''
       if (record === null) return
       const current = record.status
-      const editBtn = el('button', { class: 'dsh-cgtb-btn', type: 'button' }, '编辑')
+      const editBtn = el('button', { class: 'dsh-cgtb-btn', type: 'button' }, t('detail.edit'))
       editBtn.addEventListener('click', () => { void editTask() })
       frame.foot.append(editBtn)
       if (current === 'review') {
-        const acceptBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'ok', type: 'button' }, '✓ 通过验收')
+        const acceptBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'ok', type: 'button' }, t('detail.accept'))
         acceptBtn.addEventListener('click', () => {
-          void act('验收', () => api.move(id, { ifVersion: record.version, status: 'done' }))
+          void act(t('action.accept'), () => api.move(id, { ifVersion: record.version, status: 'done' }))
         })
-        const rejectBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'danger', type: 'button' }, '退回待办')
+        const rejectBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'danger', type: 'button' }, t('detail.sendBack'))
         rejectBtn.addEventListener('click', () => { void rejectTask() })
         frame.foot.append(acceptBtn, rejectBtn)
       } else {
         const targets = userMoveTargets(current)
         const select = el('select', { class: 'dsh-cgtb-select' })
-        for (const target of targets) select.append(el('option', { value: target }, moveLabelFor(target)))
+        for (const target of targets) select.append(el('option', { value: target }, statusLabel(target)))
         const reopen = current === 'done' || current === 'canceled'
-        const moveBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'primary', type: 'button' }, reopen ? '重新打开' : '移动')
+        const moveBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'primary', type: 'button' }, reopen ? t('detail.reopen') : t('detail.move'))
         moveBtn.addEventListener('click', () => {
           const target = select.value
-          void act(reopen ? '重新打开任务' : '移动任务',
+          void act(reopen ? t('action.reopenTask') : t('action.moveTask'),
             () => api.move(id, { ifVersion: record.version, status: target }))
         })
-        frame.foot.append(el('label', { class: 'dsh-cgtb-move' }, '移到', select), moveBtn)
+        frame.foot.append(el('label', { class: 'dsh-cgtb-move' }, t('detail.moveTo'), select), moveBtn)
       }
       if (isDeletable(current)) {
-        const delBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'danger', type: 'button' }, '删除任务')
+        const delBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'danger', type: 'button' }, t('action.deleteTask'))
         delBtn.addEventListener('click', () => { void deleteTask() })
         frame.foot.append(delBtn)
       }
-      const refreshBtn = el('button', { class: 'dsh-cgtb-btn', type: 'button' }, '刷新')
+      const refreshBtn = el('button', { class: 'dsh-cgtb-btn', type: 'button' }, t('board.refresh'))
       refreshBtn.addEventListener('click', () => { void syncFull({ silent: false }) })
       frame.foot.append(refreshBtn)
       if (busy) setButtonsEnabled(false)
@@ -1112,10 +1351,10 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
         .catch((error) => {
           const raw = String((error !== null && error !== undefined && error.message !== undefined) ? error.message : error)
           if (/not_found/.test(raw)) {
-            toast('任务已被删除或不存在')
+            toast(t('toast.taskGone'))
             frame.close()
           } else if (!silent) {
-            toast('刷新任务详情失败：' + raw)
+            toast(t('detail.refreshFailed', raw))
           }
           return null
         })
@@ -1136,7 +1375,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
             record = result
             applyTaskFull(result)
           }
-          toast(label + '成功', 'success')
+          toast(t('result.ok', label), 'success')
         })
         .catch((error) => {
           toast(friendlyWriteError(label, error))
@@ -1165,7 +1404,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
 
     async function rejectTask() {
       if (record === null || busy) return
-      const ok = askConfirm('退回待办？确认后任务回到“待办”列并解除认领。')
+      const ok = askConfirm(t('confirm.sendBack'))
       if (!ok) return
       busy = true
       setButtonsEnabled(false)
@@ -1177,9 +1416,9 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
           record = result
           applyTaskFull(result)
         }
-        toast('已退回待办', 'success')
+        toast(t('toast.sentBack'), 'success')
       } catch (error) {
-        toast(friendlyWriteError('退回任务', error))
+        toast(friendlyWriteError(t('action.rejectTask'), error))
         if (isConflictError(error)) await syncFull({ silent: true })
       } finally {
         busy = false
@@ -1190,7 +1429,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
 
     async function deleteTask() {
       if (record === null || busy) return
-      const ok = askConfirm('确定删除该任务吗？删除后不可恢复。')
+      const ok = askConfirm(t('confirm.delete'))
       if (!ok) return
       busy = true
       setButtonsEnabled(false)
@@ -1199,10 +1438,10 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
         await api.remove(id, { ifVersion: record.version })
         model.tasks.delete(id)
         emit()
-        toast('任务已删除', 'success')
+        toast(t('toast.taskDeleted'), 'success')
         frame.close()
       } catch (error) {
-        toast(friendlyWriteError('删除任务', error))
+        toast(friendlyWriteError(t('action.deleteTask'), error))
         if (isConflictError(error)) await syncFull({ silent: true })
       } finally {
         busy = false
@@ -1214,7 +1453,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     async function sendComment() {
       const text = composer.value.trim()
       if (text.length === 0) {
-        toast('先写点备注内容')
+        toast(t('toast.noteEmpty'))
         composer.focus()
         return
       }
@@ -1229,9 +1468,9 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
           record = result
           applyTaskFull(result)
         }
-        toast('备注已发送', 'success')
+        toast(t('toast.noteSent'), 'success')
       } catch (error) {
-        toast(friendlyWriteError('发送备注', error))
+        toast(friendlyWriteError(t('action.sendNote'), error))
       } finally {
         busy = false
         sendBtn.disabled = false
@@ -1314,6 +1553,10 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     }
 
     try {
+      // Pick the dictionary BEFORE the first paint: the board chrome is built
+      // synchronously below. navigator.language is the standalone fallback —
+      // the host's `language` (GET /state) overrides it on the first sync.
+      lang.current = normalizeLang(typeof navigator !== 'undefined' ? navigator.language : null) ?? DEFAULT_LANG
       injectStyles()
       bindModelListener()
       ensureMounted()

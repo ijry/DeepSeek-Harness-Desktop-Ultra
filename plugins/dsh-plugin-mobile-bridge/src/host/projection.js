@@ -11,12 +11,15 @@
  * and hands the phone finished messages and text deltas.
  *
  * Everything in this module is pure: no `ctx`, no I/O, no clock. That is what
- * makes it the testable core — see test/projection.test.mjs.
+ * makes it the testable core — see test/projection.test.mjs. The one ambient read
+ * is the language of the two fallback messages a stream error carries, which no
+ * projection branches on.
  *
  * @module dsh-plugin-mobile-bridge/host/projection
  */
 
 import { FRAME } from '../shared/protocol.js'
+import { pick } from '../shared/lang.js'
 
 /** Concatenated text of every `text` block in a content array. */
 export function textOf(content) {
@@ -284,7 +287,7 @@ export function framesOf(item, memo = {}) {
         {
           type: FRAME.error,
           code: String(frame.error?.code ?? 'internal'),
-          message: String(frame.error?.message ?? '流已断开'),
+          message: String(frame.error?.message ?? pick('流已断开', 'The stream was interrupted')),
         },
       ]
 
@@ -427,7 +430,7 @@ export function hostFramesOf(item) {
         {
           type: FRAME.error,
           code: String(frame.error?.code ?? 'internal'),
-          message: String(frame.error?.message ?? '流已断开'),
+          message: String(frame.error?.message ?? pick('流已断开', 'The stream was interrupted')),
         },
       ]
     default:

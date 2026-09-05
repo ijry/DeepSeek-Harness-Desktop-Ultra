@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { LANGS, type Lang, strings, useLang } from "./i18n";
 
 /** 都是手工镜像 Rust 侧的结构（仓库没有 codegen），字段名是 camelCase。 */
 type AppInfo = {
   shell: string;
   platform: string;
+  language: string;
   node: string;
   dshPinned: string;
   dshInstalled: string;
@@ -50,16 +52,17 @@ export default function Settings() {
   const [pluginError, setPluginError] = useState<string | null>(null);
   const [needsRestart, setNeedsRestart] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [lang, setLang] = useLang();
+  /** 切过语言：dsh 里的插件要重启服务才跟着变，提示一句。 */
+  const [langSwitched, setLangSwitched] = useState(false);
+  const [langError, setLangError] = useState<string | null>(null);
+  const s = strings(lang);
 
   useEffect(() => {
     let active = true;
 
-    invoke<AppInfo>("app_info")
-      .then((value) => active && setInfo(value))
-      .catch(() => {});
-    invoke<PluginStatus[]>("plugin_status")
-      .then((value) => active && setPlugins(value))
-      .catch(() => {});
+    // app_info / plugin_status 不在这里取：它们的文字跟语言有关，交给下面那个
+    // 带 [lang] 依赖的 effect 一并处理（它在挂载时也会跑一次）。
 
     // 下载进度是 Rust 侧 emit_to 单发给这个窗口的
     const unlisten = listen<Progress>("update-progress", (event) => {
@@ -94,6 +97,38 @@ export default function Settings() {
   useEffect(() => {
     void check();
   }, []);
+
+  // 插件的名字和说明、以及 appInfo 里那几个占位文字都是 Rust 按语言渲染的，
+  // 切语言之后要重新取一次。
+  useEffect(() => {
+    let active = true;
+    invoke<AppInfo>("app_info")
+      .then((value) => active && setInfo(value))
+      .catch(() => {});
+    invoke<PluginStatus[]>("plugin_status")
+      .then((value) => active && setPlugins(value))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [lang]);
+
+  // 原生标题栏由 Rust 贴（托盘也要用同一份文字），这里只管 document.title
+  useEffect(() => {
+    document.title = s.titleSettings;
+  }, [s]);
+
+  const changeLanguage = async (next: Lang) => {
+    if (next === lang) return;
+    setLangError(null);
+    try {
+      await setLang(next);
+      setLangSwitched(true);
+    } catch (error) {
+      // 语言本身已经切了（Rust 那边先改界面再落盘），这里只剩「记不住」这一种失败
+      setLangError(String(error));
+    }
+  };
 
   const check = async () => {
     setUpdate({ phase: "checking" });
@@ -144,11 +179,11 @@ export default function Settings() {
 
   return (
     <main className="page">
-      <section className="card" aria-label="更新">
-        <div className="card__title">更新</div>
-        {update.phase === "checking" && <p className="card__note">正在检查…</p>}
+      <section className="card" aria-label={s.sectionUpdate}>
+        <div className="card__title">{s.sectionUpdate}</div>
+        {update.phase === "checking" && <p className="card__note">{s.updateChecking}</p>}
         {update.phase === "latest" && (
-          <p className="card__note">已是最新版本（{info?.shell ?? "…"}）。</p>
+          <p className="card__note">{s.updateLatest(info?.shell ?? "…")}</p>
         )}
         {update.phase === "failed" && (
           <p className="card__note card__note--bad">{update.message}</p>
@@ -156,26 +191,23 @@ export default function Settings() {
         {update.phase === "available" && (
           <>
             <p className="card__note">
-              发现新版本 <strong>{update.update.version}</strong>，当前
-              {update.update.currentVersion}。
+              {s.updateFound(update.update.version, update.update.currentVersion)}
             </p>
             {update.update.notes && <div className="notes">{update.update.notes}</div>}
-            <p className="card__note">
-              安装时应用会关闭；Windows 上安装器会自己把它重新打开，macOS / Linux
-              由外壳自己重启。dsh 服务会先被收掉，不会留下后台进程。
-            </p>
+            <p className="card__note">{s.updateInstallNote}</p>
           </>
         )}
         {update.phase === "installing" && (
           <>
             <p className="card__note">
               {update.progress
-                ? `正在下载 ${megabytes(update.progress.downloaded)}${
-                    update.progress.total
-                      ? ` / ${megabytes(update.progress.total)}`
-                      : ""
-                  }`
-                : "正在开始下载…"}
+                ? s.updateDownloading(
+                    megabytes(update.progress.downloaded),
+                    update.progress.total === null
+                      ? null
+                      : megabytes(update.progress.total),
+                  )
+                : s.updateStartingDownload}
             </p>
             <div className="bar">
               <div
@@ -193,7 +225,7 @@ export default function Settings() {
         <div className="actions">
           {update.phase === "available" && (
             <button type="button" onClick={() => void install()}>
-              下载并安装
+              {s.updateDownloadAndInstall}
             </button>
           )}
           <button
@@ -202,23 +234,55 @@ export default function Settings() {
             onClick={() => void check()}
             disabled={update.phase === "checking" || update.phase === "installing"}
           >
-            重新检查
+            {s.updateRecheck}
           </button>
         </div>
-        <p className="card__note">
-          外壳每 30 分钟自动检查一次；发现新版本会改托盘的提示与菜单文字，不会自动下载。
-        </p>
+        <p className="card__note">{s.updateAutoNote}</p>
       </section>
 
-      <section className="card" aria-label="插件">
-        <div className="card__title">插件</div>
+      <section className="card" aria-label={s.sectionLanguage}>
+        <div className="card__title">{s.sectionLanguage}</div>
+        <div className="actions">
+          {LANGS.map((entry) => (
+            <button
+              key={entry.code}
+              type="button"
+              className={entry.code === lang ? undefined : "button--secondary"}
+              aria-pressed={entry.code === lang}
+              onClick={() => void changeLanguage(entry.code)}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+        <p className="card__note">{s.languageNote}</p>
+        {langError && <p className="card__note card__note--bad">{langError}</p>}
+        {langSwitched && <p className="card__note">{s.languageRestartHint}</p>}
+        {langSwitched && (
+          <div className="actions">
+            <button
+              type="button"
+              className="button--secondary"
+              onClick={() => void invoke("retry_boot")}
+            >
+              {s.restartDsh}
+            </button>
+          </div>
+        )}
+      </section>
+
+      <section className="card" aria-label={s.sectionPlugins}>
+        <div className="card__title">{s.sectionPlugins}</div>
         {plugins ? (
           <>
             {plugins.map((plugin) => (
               <div key={plugin.id}>
                 <p className="card__note">
-                  {plugin.title}（{plugin.id}）：
-                  {plugin.installed ? "已启用" : "未安装"}
+                  {s.pluginStatusLine(
+                    plugin.title,
+                    plugin.id,
+                    plugin.installed ? s.pluginEnabled : s.pluginNotInstalled,
+                  )}
                 </p>
                 <p className="card__note">{plugin.summary}</p>
                 <div className="actions">
@@ -228,66 +292,63 @@ export default function Settings() {
                     disabled={pluginBusy !== null || !plugin.pnpm}
                   >
                     {pluginBusy === plugin.id
-                      ? "处理中…"
+                      ? s.pluginWorking
                       : plugin.installed
-                        ? "移除"
-                        : "安装"}
+                        ? s.pluginRemove
+                        : s.pluginInstall}
                   </button>
                 </div>
                 <p className="card__note">
-                  也可以在命令行里卸：<code>{plugin.removeCommand}</code>
+                  {s.pluginRemoveHint}
+                  <code>{plugin.removeCommand}</code>
                 </p>
               </div>
             ))}
             {plugins.some((plugin) => !plugin.pnpm) && (
-              <p className="card__note card__note--bad">
-                没找到 pnpm，装卸都做不了——dsh 的 plugin 命令是转发给 pnpm 的。
-              </p>
+              <p className="card__note card__note--bad">{s.pluginNoPnpm}</p>
             )}
             {pluginError && (
               <p className="card__note card__note--bad">{pluginError}</p>
             )}
             {needsRestart && (
               <>
-                <p className="card__note">
-                  改动要重启 dsh 服务才生效（profile 的插件清单每次启动只读一次）。
-                </p>
+                <p className="card__note">{s.pluginNeedsRestart}</p>
                 <div className="actions">
                   <button
                     type="button"
                     className="button--secondary"
                     onClick={() => void invoke("retry_boot")}
                   >
-                    重启 dsh 服务
+                    {s.restartDsh}
                   </button>
                 </div>
               </>
             )}
           </>
         ) : (
-          <p className="card__note">正在读取插件状态…</p>
+          <p className="card__note">{s.pluginLoading}</p>
         )}
       </section>
 
-      <section className="card" aria-label="版本信息">
-        <div className="card__title">版本信息</div>
+      <section className="card" aria-label={s.sectionAbout}>
+        <div className="card__title">{s.sectionAbout}</div>
         {info ? (
           <dl className="facts">
-            <dt>外壳</dt>
+            <dt>{s.aboutShell}</dt>
             <dd>{info.shell}</dd>
-            <dt>平台</dt>
+            <dt>{s.aboutPlatform}</dt>
             <dd>{info.platform}</dd>
-            <dt>Node</dt>
+            <dt>{s.aboutNode}</dt>
             <dd>{info.node}</dd>
-            <dt>dsh 锁定</dt>
+            <dt>{s.aboutDshPinned}</dt>
             <dd>{info.dshPinned}</dd>
-            <dt>dsh 已装</dt>
+            <dt>{s.aboutDshInstalled}</dt>
             <dd>{info.dshInstalled}</dd>
-            <dt>运行时目录</dt>
+            <dt>{s.aboutRuntimeDir}</dt>
             <dd>{info.runtimeDir}</dd>
           </dl>
         ) : (
-          <p className="card__note">正在读取…</p>
+          <p className="card__note">{s.loading}</p>
         )}
         <div className="actions">
           <button
@@ -295,7 +356,7 @@ export default function Settings() {
             className="button--secondary"
             onClick={() => void copyDiagnostics()}
           >
-            {copied ? "已复制" : "复制诊断信息"}
+            {copied ? s.copied : s.copyDiagnostics}
           </button>
         </div>
       </section>

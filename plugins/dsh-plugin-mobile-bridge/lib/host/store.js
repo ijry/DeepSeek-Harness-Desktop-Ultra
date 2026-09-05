@@ -18,6 +18,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 import { mintTargetId } from './auth.js'
+import { pick } from '../shared/lang.js'
 
 /** Ledger schema version; bumped only for a shape change readers must notice. */
 export const SCHEMA_VERSION = 1
@@ -46,7 +47,7 @@ function sanitize(raw) {
     )
     .map((row) => ({
       deviceId: row.deviceId,
-      name: typeof row.name === 'string' ? row.name : '未命名设备',
+      name: typeof row.name === 'string' ? row.name : pick('未命名设备', 'Unnamed device'),
       tokenHash: row.tokenHash,
       refreshHash: typeof row.refreshHash === 'string' ? row.refreshHash : '',
       createdAt: Number.isFinite(row.createdAt) ? row.createdAt : 0,

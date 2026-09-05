@@ -16,14 +16,15 @@
  * @module dsh-plugin-taskboard
  */
 import {
-  CODEG_TASKBOARD_PROTOCOL,
   CODEG_TASKBOARD_SECTION_NAME,
   CODEG_TASKBOARD_SECTION_ORDER,
+  protocolText,
 } from './host/protocol-text.js'
 import { dshHomePath } from './host/sdk.js'
 import { TaskStore } from './host/store.js'
 import { registerTaskboardRoutes } from './host/routes.js'
 import { registerTaskboardTools, workspaceFace } from './host/tools.js'
+import { hostLang } from './shared/lang.js'
 
 /** Ledger file name under the DSH home. */
 export const LEDGER_FILE = 'dsh-plugin-taskboard.json'
@@ -47,12 +48,13 @@ export function apply(ctx) {
   void store.load()
   const now = () => Date.now()
 
-  // Agent workflow protocol (columns, claim/version discipline, done-gate).
+  // Agent workflow protocol (columns, claim/version discipline, done-gate),
+  // in the language the desktop shell runs in (DSH_DESKTOP_LANG).
   ctx.effect?.(
     () => ctx.systemPrompt.section({
       name: CODEG_TASKBOARD_SECTION_NAME,
       order: CODEG_TASKBOARD_SECTION_ORDER,
-      text: CODEG_TASKBOARD_PROTOCOL,
+      text: protocolText(hostLang()),
     }),
     'dsh-plugin-taskboard: protocol section',
   )

@@ -11,7 +11,25 @@ DSH Desktop Ultra 安装包内置了三个插件（任务看板、无限画布�
 | [手机遥控](./plugins/dsh-plugin-mobile-bridge) | `dsh-plugin-mobile-bridge` | 手机 App 远程控制 | ✗ 纯接口 | ✓ |
 | [仓库面板](./plugins/dsh-plugin-repopanel) | `dsh-plugin-repopanel` | GitHub/GitLab issue/PR | ✗ 纯 GUI | ✓ |
 
-所有插件都支持暗黑模式，自动跟随系统主题（`prefers-color-scheme`）。
+所有插件都支持暗黑模式，自动跟随系统主题（`prefers-color-scheme`），界面都是中英双语。
+
+## 界面语言
+
+四个插件的界面都支持中文和英文。语言按这个顺序定：
+
+1. **`DSH_DESKTOP_LANG`**（`zh` / `en`）。装了 DSH Desktop Ultra 时由外壳设置：它在拉起 dsh
+   子进程时把用户在设置里选的语言写进去，插件的 host 半边读它，再通过各自的接口发给浏览器半边。
+2. 没有那个变量时看 `LC_ALL` / `LC_MESSAGES` / `LANG`——独立部署（官方 CLI、自建、容器）走这条。
+3. 浏览器半边拿不到语言时退到 `navigator.language`。
+4. 都认不出就用中文。
+
+所以在别的 dsh 上想要英文界面，起服务时带上环境变量即可：
+
+```bash
+DSH_DESKTOP_LANG=en dsh web
+```
+
+语言只在**启动时**读一次。装了外壳的话，在设置里切完语言要按一下「重启 dsh 服务」插件才会跟着变。
 
 ## 从 npm 安装（推荐）
 
@@ -122,6 +140,8 @@ package.json 的 `dsh.compatibility.dshReleases` 字段记录了详细兼容性�
 3. **手机遥控开启网络监听**：默认监听 `0.0.0.0:8790`。如不需要可在首启时取消勾选，或装完后在设置里移除。详见 [mobile-bridge README](./plugins/dsh-plugin-mobile-bridge/README.md#安全边界)。
 
 4. **仓库面板需要令牌**：GitHub 访问需要 `GITHUB_TOKEN` 环境变量或在设置里配置。GitLab 同理需要 `GITLAB_TOKEN`。
+
+5. **语言只在启动时读一次**：改 `DSH_DESKTOP_LANG` 之后要重启 dsh 服务。见上面「界面语言」。
 
 ## 发布到插件市场
 

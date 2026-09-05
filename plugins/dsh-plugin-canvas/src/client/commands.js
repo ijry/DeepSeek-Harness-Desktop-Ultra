@@ -44,7 +44,9 @@ export function notesAtRisk(ids) {
   return ids.filter((id) => noteHoldsProse(model.nodes.get(id))).length
 }
 
-async function run(label, apply, request) {
+/** One optimistic write, rolled back if the host refuses it. `failure` turns the
+ *  host's own message into the toast. */
+async function run(failure, apply, request) {
   const rollback = new Map(model.nodes)
   if (apply !== undefined) {
     const nodes = new Map(model.nodes)
@@ -57,7 +59,7 @@ async function run(label, apply, request) {
   } catch (error) {
     model.nodes = rollback
     emit()
-    toast(`${label}：${error?.message ?? error}`)
+    toast(failure(error?.message ?? error))
     void refetchState()
     return undefined
   }
@@ -81,7 +83,7 @@ export async function patchNode(id, patch) {
     memberIds = [...memberIds, String(patch.memberAdd)]
   }
   const result = await run(
-    '保存失败',
+    L.saveFailed,
     (nodes) => nodes.set(id, { ...before, ...optimistic, memberIds }),
     () => api(`/nodes/${id}/update`, patch)
   )
@@ -93,7 +95,7 @@ export async function patchNode(id, patch) {
 
 /** Create one node and select it. */
 export async function createNode(input) {
-  const result = await run('创建失败', undefined, () => api('/nodes', input))
+  const result = await run(L.createFailed, undefined, () => api('/nodes', input))
   if (result === undefined) return undefined
   applyResponse(result.revision, (nodes) => nodes.set(result.value.id, result.value))
   selectOnly(nodeElementId(result.value.id))
@@ -104,7 +106,7 @@ export async function createNode(input) {
 export async function moveNodesCmd(moves) {
   if (moves.length === 0) return
   const result = await run(
-    '移动失败',
+    L.moveFailed,
     (nodes) => {
       for (const move of moves) {
         const existing = nodes.get(move.id)
@@ -123,7 +125,7 @@ export async function moveNodesCmd(moves) {
 }
 
 export async function deleteNodeCmd(id) {
-  const result = await run('删除失败', (nodes) => nodes.delete(id), () => api(`/nodes/${id}/delete`, {}))
+  const result = await run(L.deleteFailed, (nodes) => nodes.delete(id), () => api(`/nodes/${id}/delete`, {}))
   if (result === undefined) return
   applyResponse(result.revision, (nodes) => nodes.delete(id))
   model.selected.delete(nodeElementId(id))
@@ -133,7 +135,7 @@ export async function deleteNodeCmd(id) {
 export async function deleteNodesCmd(ids) {
   if (ids.length === 0) return
   const result = await run(
-    '删除失败',
+    L.deleteFailed,
     (nodes) => {
       for (const id of ids) nodes.delete(id)
     },
@@ -159,7 +161,7 @@ export function selectOnly(elementId) {
  *  the new pin as a transcript card — a member cannot expand in place, because a
  *  520-wide surface inside a uniform grid would tear the row apart. */
 export async function detachMemberCmd(regionId, sessionId, x, y, options = {}) {
-  const result = await run('移出失败', undefined, () =>
+  const result = await run(L.detachFailed, undefined, () =>
     api(`/nodes/${regionId}/detach`, { sessionId, x, y })
   )
   if (result === undefined) return undefined
@@ -188,7 +190,7 @@ export async function detachMemberCmd(regionId, sessionId, x, y, options = {}) {
 /** Collect sessions into a region: the box-select gesture, a card dropped into a
  *  custom region, and two cards dropped onto each other. */
 export async function groupCmd(input) {
-  const result = await run('收进区域失败', undefined, () => api('/group', input))
+  const result = await run(L.groupFailed, undefined, () => api('/group', input))
   if (result === undefined) return undefined
   const { node, deletedIds } = result.value
   applyResponse(result.revision, (nodes) => {
@@ -284,7 +286,7 @@ export function setCardDetail(nodeId, open) {
  * Load the transcript of every card that is already expanded.
  *
  * Cards restored from device-local storage were never opened in THIS visit, so
- * nothing else would ever ask for their text — they would sit on "载入中…"
+ * nothing else would ever ask for their text — they would sit on `L.loading`
  * forever. Called once the ledger lands, when the rows those ids name exist.
  */
 export function loadOpenTranscripts() {
@@ -330,7 +332,7 @@ export async function loadTranscript(sessionId, force = false) {
 export function openInGui(sessionId) {
   if (sessionId === undefined || sessionId === null) return
   if (model.host?.openSession === undefined) {
-    toast('这个 dsh 版本没有暴露会话导航接口')
+    toast(L.noSessionNav)
     return
   }
   try {
@@ -340,7 +342,7 @@ export function openInGui(sessionId) {
     model.open = false
     emit()
   } catch (error) {
-    toast(`打开会话失败：${error?.message ?? error}`)
+    toast(L.openSessionFailed(error?.message ?? error))
   }
 }
 
@@ -385,7 +387,7 @@ export async function createSession(options) {
     }
     value = result.value
   } catch (error) {
-    toast(`新建会话失败：${error?.message ?? error}`)
+    toast(L.newSessionFailed(error?.message ?? error))
     return undefined
   }
   // The new session has to be in the view before the ledger will accept a card
