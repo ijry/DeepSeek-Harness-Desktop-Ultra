@@ -193,18 +193,41 @@ function resizeHandle(options) {
   return handle
 }
 
-/** Load one same-origin script once, resolving when it has run. */
+/**
+ * Load one same-origin script once, resolving when it has run.
+ *
+ * The deadline is the point of this helper. A script whose request cannot get one of
+ * the browser's six HTTP/1.1 connections per origin fires NEITHER `load` NOR `error`:
+ * it queues, indefinitely, and a promise chained on it never settles. Waiting forever
+ * looks exactly like a hung panel, so the wait ends with a rejection instead.
+ */
 const loadedScripts = new Map()
-function loadScript(url) {
+function loadScript(url, timeoutMs) {
   const existing = loadedScripts.get(url)
   if (existing !== undefined) return existing
   const promise = new Promise((resolvePromise, rejectPromise) => {
     const node = el('script', { src: url, async: false })
-    node.addEventListener('load', () => resolvePromise(true))
+    let timer
+    const settle = (fn, value) => {
+      if (timer !== undefined) clearTimeout(timer)
+      fn(value)
+    }
+    node.addEventListener('load', () => settle(resolvePromise, true))
     node.addEventListener('error', () => {
       loadedScripts.delete(url)
-      rejectPromise(new Error('无法加载 ' + url))
+      settle(rejectPromise, new Error('无法加载 ' + url))
     })
+    if (typeof timeoutMs === 'number' && timeoutMs > 0) {
+      timer = setTimeout(() => {
+        loadedScripts.delete(url)
+        try {
+          node.remove()
+        } catch { /* never appended */ }
+        const stalled = new Error('加载超时 ' + url)
+        stalled.code = 'stalled'
+        rejectPromise(stalled)
+      }, timeoutMs)
+    }
     document.head.append(node)
   })
   loadedScripts.set(url, promise)

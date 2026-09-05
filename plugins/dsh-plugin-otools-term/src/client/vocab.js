@@ -62,6 +62,26 @@ const SFTP_PANEL_MIN_HEIGHT = 220
 /** How long the panel waits before flushing typed bytes to the host. */
 const INPUT_FLUSH_MS = 8
 
+/**
+ * How long the WebSocket gets before the SSE stream is started as well.
+ *
+ * An upgrade on loopback either succeeds or is refused within a few milliseconds; the
+ * wait exists for the third case, an upgrade that is neither — and it is short because
+ * until one of the two channels is up, the panel is deaf.
+ */
+const SOCKET_GRACE_MS = 2_500
+
+/**
+ * Deadline for one JSON request, and for the vendored xterm scripts.
+ *
+ * Both exist because of the same failure: a same-origin request that cannot get one of
+ * the browser's six HTTP/1.1 connections per origin never fails, it waits — silently,
+ * with no `error` event and no timeout of its own. Every wait in this panel has to end
+ * somewhere the user can see it.
+ */
+const API_TIMEOUT_MS = 20_000
+const VENDOR_TIMEOUT_MS = 20_000
+
 /** How much of a session's output the browser keeps for the AI bar's context. */
 const CLIENT_SCROLLBACK_CHARS = 40_000
 

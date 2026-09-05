@@ -11,6 +11,11 @@
  * comma-separated lists of those. No descendant combinators — the bundle does
  * not use any.
  *
+ * `installDom({origin, routePrefix, webSocket})`: with `webSocket: true` the window
+ * gets a driveable `WebSocket`, which changes the channel the panel picks — see
+ * `client-socket.test.mjs`. Without it the panel streams over the (equally driveable)
+ * `EventSource`, as `client-bundle.test.mjs` expects.
+ *
  * @module dsh-plugin-otools-git/test/dom-stub
  */
 
@@ -417,6 +422,9 @@ export function installDom(options) {
     innerWidth: 1440,
     innerHeight: 900,
     listeners: new Map(),
+    // The socket URL is derived from the origin, so the panel needs one to try an
+    // upgrade at all.
+    location: { origin: options.origin, href: options.origin + '/' },
     localStorage: {
       getItem: (key) => (storage.has(key) ? storage.get(key) : null),
       setItem: (key, value) => storage.set(key, String(value)),
@@ -492,6 +500,62 @@ export function installDom(options) {
       const absolute = String(url).startsWith('http') ? String(url) : options.origin + String(url)
       return globalThis.fetch(absolute, init)
     },
+  }
+
+  /**
+   * A driveable WebSocket, present only when a test asks for one.
+   *
+   * Off by default because it changes which channel the panel picks: with a socket to
+   * try, the SSE stream is not opened until the socket has failed. `__open()`,
+   * `__emit()` and `__close()` let a test play the host, and `sent` records what the
+   * panel wrote.
+   */
+  if (options.webSocket === true) {
+    window.WebSocket = class {
+      constructor(url) {
+        this.url = url
+        this.readyState = 0
+        this.sent = []
+        this.handlers = new Map()
+        window.__lastSocket = this
+      }
+
+      addEventListener(type, handler) {
+        if (!this.handlers.has(type)) this.handlers.set(type, new Set())
+        this.handlers.get(type).add(handler)
+      }
+
+      removeEventListener(type, handler) {
+        this.handlers.get(type)?.delete(handler)
+      }
+
+      send(text) {
+        this.sent.push(JSON.parse(String(text)))
+      }
+
+      close() {
+        this.readyState = 3
+      }
+
+      __fire(type, event) {
+        for (const handler of [...(this.handlers.get(type) ?? [])]) handler({ type, ...event })
+      }
+
+      __open() {
+        this.readyState = 1
+        this.__fire('open', {})
+      }
+
+      /** Hand the panel one host frame, in the socket's `{event, data}` envelope. */
+      __emit(event, data) {
+        this.__fire('message', { data: JSON.stringify({ event, data }) })
+      }
+
+      __close() {
+        this.readyState = 3
+        this.__fire('close', {})
+      }
+    }
   }
 
   const previous = {

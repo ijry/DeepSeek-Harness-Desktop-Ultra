@@ -460,6 +460,46 @@ describe('host driver', () => {
     }
   })
 
+  it('carries every event on the socket, and keeps that panel\'s stream quiet', async () => {
+    // The same clientId as the suite's SSE reader on purpose: one panel, two channels,
+    // and the host has to pick one — the socket, because an SSE stream holds one of the
+    // six HTTP/1.1 connections the whole DSH page shares.
+    const socket = new WebSocket(base.replace('http', 'ws') + SOCKET_PATH + '?clientId=test-panel')
+    const frames = []
+    // Before `open`: the host sends its snapshot as soon as the upgrade completes.
+    socket.addEventListener('message', (event) => {
+      try {
+        frames.push(JSON.parse(String(event.data)))
+      } catch { /* not our frame */ }
+    })
+    try {
+      await new Promise((resolvePromise, rejectPromise) => {
+        socket.addEventListener('open', resolvePromise)
+        socket.addEventListener('error', rejectPromise)
+      })
+      // A panel on this channel never has to fetch `/state` — which is the point: when
+      // the page has no connection to spare, that fetch is exactly what hangs.
+      const hello = await until(() => frames.find((frame) => frame.event === 'hello'), 'the hello frame')
+      assert.equal(Array.isArray(hello.data.servers), true)
+      assert.equal(hello.data.local.shell.length > 0, true)
+
+      // A control event that used to be SSE-only now rides the socket...
+      const seen = events.frames.length
+      await ok('/prefs', { prefs: { scrollback: 1234 } })
+      await until(() => frames.some((frame) => frame.event === 'state'), 'the state frame on the socket')
+      // ...and is not written to the same panel's stream as well.
+      assert.equal(events.frames.slice(seen).some((frame) => frame.event === 'state'), false)
+    } finally {
+      socket.close()
+    }
+    // With the socket gone the stream speaks again, so a dropped upgrade only costs
+    // latency.
+    const seen = events.frames.length
+    await ok('/prefs', { prefs: { scrollback: 2000 } })
+    await until(() => events.frames.slice(seen).some((frame) => frame.event === 'state'),
+      'the stream to take the events back')
+  })
+
   it('opens a local terminal (PTY or the pipe fallback)', async () => {
     const sessionId = 'sess-local-1'
     await ok('/terminal/subscribe', { clientId: 'test-panel', sessionIds: [sessionId] })

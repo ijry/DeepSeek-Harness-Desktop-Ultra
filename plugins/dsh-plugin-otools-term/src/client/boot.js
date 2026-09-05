@@ -54,8 +54,7 @@ function apply(ctx) {
     if (unbindModel !== null) unbindModel()
     closeAllOverlays()
     closeMenu()
-    stopSse()
-    stopSocket()
+    stopStreams()
     // Every widget goes; the HOST sessions stay, which is the point of keeping them
     // there — reopening the panel re-attaches to the same shells.
     for (const tabId of [...terminals.keys()]) disposeTerminal(tabId)
@@ -111,10 +110,10 @@ function apply(ctx) {
         if (model.open && !dataBooted) void bootData()
       },
     }
-    startSse(streamHandlers)
-    // The socket is the preferred path for terminal bytes; startSocket() is a no-op on
-    // a build (or a browser) without one, and the SSE stream carries them instead.
-    startSocket(streamHandlers)
+    // One channel for everything the host reports. The WebSocket is tried first and
+    // the SSE stream is the fallback, because an SSE stream would hold one of the six
+    // HTTP/1.1 connections this page shares with every other panel — see api.js.
+    startStreams(streamHandlers)
     // The DSH shell re-renders its own tree; both a mutation observer and a slow
     // interval keep the seats attached across those repaints.
     observer = new MutationObserver(() => ensureMounted())

@@ -1,13 +1,16 @@
 /**
- * The terminal WebSocket: keystrokes up, bytes down, on one socket.
+ * The terminal WebSocket: keystrokes up, every event down, on one socket.
  *
  * DSH's webserver exposes an upgrade hook (`registerUpgrade`, the same one
- * dsh-client-connection and the sibling mobile-bridge plugin use), so a terminal does
- * not have to send one HTTP request per keystroke. What rides here is ONLY terminal
- * traffic; every other event (ledger changes, transfer progress, tunnel state, AI
- * deltas) stays on the SSE stream, which keeps the two concerns separate and means a
- * DSH build without the hook loses nothing but latency — `api.js` falls back to
- * POST-per-batch and SSE output.
+ * dsh-client-connection and the sibling mobile-bridge plugin use), and this panel
+ * prefers it for ALL of its traffic — terminal bytes, ledger changes, transfer
+ * progress, tunnel state, AI deltas, and the `hello` snapshot a fresh panel paints
+ * itself from. Not for latency (though a keystroke being a frame rather than an HTTP
+ * request is nice): a browser allows about six concurrent HTTP/1.1 connections per
+ * ORIGIN, all DSH panel plugins share one origin, and an SSE stream holds one of
+ * those six for as long as the panel is open. Six streaming panels and the page has
+ * nothing left to fetch with — see host/events.js. A WebSocket is exempt from that
+ * pool. `api.js` keeps SSE + POST-per-batch as the fallback for a build with no hook.
  *
  * Framing is `ws`'s job rather than hand-rolled RFC 6455: this package already has
  * runtime dependencies (ssh2, xterm), and a hand-written handshake is exactly the kind
@@ -62,8 +65,10 @@ export function registerTerminalSocket(ctx, options) {
       ws.on('close', drop)
       ws.on('error', drop)
       // A first frame the browser can wait for, so it knows the socket is live before
-      // it stops using the HTTP path.
+      // it stops using the HTTP path — followed by the same snapshot the SSE stream
+      // opens with, so a panel on this channel never has to fetch `/state`.
       subscriber.send('socket-ready', { clientId })
+      void engine.hello().then((hello) => subscriber.send('hello', hello))
     })
   }
 

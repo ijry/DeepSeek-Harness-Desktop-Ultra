@@ -1,17 +1,23 @@
 /**
- * The transport: the `{ok, value}` / `{ok, error}` envelope the host speaks, the SSE
- * stream the panel listens on, the terminal WebSocket, and the batched HTTP fallback
- * for input.
+ * The transport: the `{ok, value}` / `{ok, error}` envelope the host speaks, the one
+ * event channel the panel listens on, and the batched HTTP fallback for input.
  *
- * Terminal bytes prefer the WebSocket — DSH's webserver has an upgrade hook, so a
- * keystroke can be a frame instead of an HTTP request. Everything else (ledger
- * changes, transfer progress, tunnel state, AI deltas) stays on SSE.
+ * The channel is a WebSocket whenever DSH's webserver offers an upgrade hook, and an
+ * SSE stream only when it does not. That preference is about a budget the whole page
+ * shares rather than about latency: a browser allows about six concurrent HTTP/1.1
+ * connections per ORIGIN, every DSH panel plugin lives on the shell's origin, and an
+ * EventSource holds one of those six for as long as the panel is loaded. Once six
+ * panels stream at the same time, every other request on the origin queues forever —
+ * no response, no error, no timeout. This panel used to hang on "正在启动会话…"
+ * exactly there: its `<script src=…/vendor/xterm.js>` never got a connection, so it
+ * fired neither `load` nor `error` and the attach waited for a promise that could
+ * never settle. A WebSocket is exempt from that pool, so the socket carries
+ * everything and the fallback stream is closed the moment the socket is up.
  *
- * The HTTP path is kept as a fallback rather than deleted, because a build without the
- * upgrade hook, or a proxy that eats upgrades, must still give a working terminal:
- * keystrokes are then coalesced into one in-flight POST (`INPUT_FLUSH_MS`), so holding
- * a key is one request per frame rather than one per character, and output arrives on
- * the SSE stream instead.
+ * The HTTP fallback is kept rather than deleted, because a build without the upgrade
+ * hook, or a proxy that eats upgrades, must still give a working terminal: keystrokes
+ * are then coalesced into one in-flight POST (`INPUT_FLUSH_MS`), so holding a key is
+ * one request per frame rather than one per character.
  */
 
 /** A rejected envelope, carrying the host's stable code. */
@@ -44,18 +50,42 @@ async function apiGet(path, params) {
     }
   }
   const suffix = query.toString()
-  return unwrap(await fetch(ROUTE_PREFIX + path + (suffix.length > 0 ? '?' + suffix : ''), {
+  return unwrap(await fetchWithDeadline(ROUTE_PREFIX + path + (suffix.length > 0 ? '?' + suffix : ''), {
     headers: { accept: 'application/json' },
   }))
 }
 
 /** POST one route with a JSON body. */
 async function apiPost(path, body) {
-  return unwrap(await fetch(ROUTE_PREFIX + path, {
+  return unwrap(await fetchWithDeadline(ROUTE_PREFIX + path, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(body ?? {}),
   }))
+}
+
+/**
+ * One JSON request, with a deadline.
+ *
+ * A same-origin request that cannot get a connection does not fail — it waits, with
+ * no event of any kind. Every await in this panel therefore has an end: a spinner
+ * that turns into an error the user can act on beats one that spins for the rest of
+ * the session. Only the JSON routes go through here; uploads (XHR) and downloads (an
+ * anchor) are allowed to take as long as their bytes need.
+ */
+async function fetchWithDeadline(url, init) {
+  const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(API_TIMEOUT_MS)
+    : undefined
+  try {
+    return await fetch(url, signal === undefined ? init : { ...init, signal })
+  } catch (error) {
+    // An aborted fetch and a refused one both land here; the timeout is the only one
+    // worth naming, because its cause (a starved connection pool, a host that stopped
+    // answering) is not obvious from "failed to fetch".
+    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+    throw new ApiError(timedOut ? 'timeout' : 'internal', timedOut ? t('err.stalled') : messageOf(error))
+  }
 }
 
 /** Unwrap one envelope, throwing an ApiError on failure. */
@@ -87,18 +117,158 @@ async function withBusy(run) {
   }
 }
 
-// --------------------------------------------------------------------- SSE
+// ----------------------------------------------------------------- streams
 let sse = null
 
+/** Every frame kind the host sends. Both channels carry all of them. */
+const STREAM_EVENTS = [
+  'hello', 'state', 'session', 'session-removed', 'connection', 'output', 'overflow',
+  'task', 'tasks', 'tunnels', 'job', 'job-delta',
+]
+
+/** The channel manager: which one is up, and whether a fallback is armed. */
+const streamState = { handlers: null, started: false, fallbackTimer: null }
+
 /**
- * Subscribe to the host's event stream.
+ * Open the panel's event channel: the WebSocket first, the SSE stream only if the
+ * socket has not come up in `SOCKET_GRACE_MS`.
  *
- * Frame kinds: `hello` (a whole `/state`), `state` (the ledger changed — refetch),
- * `session`, `session-removed`, `connection`, `output`, `overflow`, `task`, `tasks`,
- * `tunnels`, `job`, `job-delta`.
+ * Both are started in that order rather than at once so the common case costs the page
+ * no HTTP connection at all (see the file header); a build with no upgrade hook waits
+ * the grace period once and then streams over SSE for the rest of the session.
+ */
+function startStreams(handlers) {
+  streamState.handlers = handlers
+  streamState.started = true
+  startSocket(handlers)
+  if (socketState.socket === null) {
+    // No WebSocket to try: stream now rather than after a pointless wait.
+    startSse(handlers)
+    return
+  }
+  armSseFallback()
+}
+
+/** Arm the SSE fallback, unless the socket beats it. */
+function armSseFallback() {
+  if (streamState.fallbackTimer !== null || sse !== null) return
+  streamState.fallbackTimer = setTimeout(() => {
+    streamState.fallbackTimer = null
+    if (!streamState.started || socketOpen()) return
+    startSse(streamState.handlers ?? {})
+  }, SOCKET_GRACE_MS)
+}
+
+/** Disarm the fallback (the socket made it). */
+function disarmSseFallback() {
+  if (streamState.fallbackTimer === null) return
+  clearTimeout(streamState.fallbackTimer)
+  streamState.fallbackTimer = null
+}
+
+/** Close both channels (panel teardown). */
+function stopStreams() {
+  streamState.started = false
+  streamState.handlers = null
+  disarmSseFallback()
+  stopSse()
+  stopSocket()
+}
+
+/**
+ * Apply one frame, whichever channel it arrived on.
+ *
+ * The socket wraps a frame as `{event, data}` and SSE as a named event with a JSON
+ * body, so this is the one place that knows what each kind means. An unknown kind is
+ * ignored: the host may be newer than this bundle.
+ */
+function applyFrame(event, data, handlers) {
+  if (data === undefined) return
+  if (event === 'hello') {
+    model.connected = true
+    applyState(data)
+    emit()
+    void pushSubscriptions()
+    if (handlers.onHello !== undefined) handlers.onHello(data)
+    return
+  }
+  if (event === 'state') {
+    // A revision the panel already has needs no refetch.
+    if (typeof data.revision === 'number' && data.revision === model.revision) return
+    void loadState()
+    return
+  }
+  if (event === 'session') {
+    if (typeof data.sessionId !== 'string') return
+    mergeSession(data)
+    if (handlers.onSession !== undefined) handlers.onSession(data)
+    emit()
+    return
+  }
+  if (event === 'session-removed') {
+    if (typeof data.sessionId !== 'string') return
+    model.sessions = model.sessions.filter((row) => row.sessionId !== data.sessionId)
+    if (handlers.onSessionRemoved !== undefined) handlers.onSessionRemoved(data.sessionId)
+    emit()
+    return
+  }
+  if (event === 'connection') {
+    if (typeof data.serverId !== 'string') return
+    const next = { ...model.connections }
+    next[data.serverId] = { ...(next[data.serverId] ?? {}), status: data.status, error: data.error }
+    model.connections = next
+    emit()
+    return
+  }
+  if (event === 'output') {
+    if (typeof data.sessionId !== 'string' || typeof data.data !== 'string') return
+    // The whole frame is handed over, not just the bytes: it carries the byte offset
+    // the replay splice needs, and dropping it here would make a re-attach print the
+    // last screenful twice.
+    if (handlers.onOutput !== undefined) handlers.onOutput(data.sessionId, data.data, data)
+    return
+  }
+  if (event === 'overflow') {
+    if (handlers.onOverflow !== undefined) handlers.onOverflow(data.sessionId)
+    return
+  }
+  if (event === 'task') {
+    if (typeof data.id !== 'string') return
+    mergeTask(data)
+    emit()
+    return
+  }
+  if (event === 'tasks') {
+    if (Array.isArray(data.tasks)) model.tasks = data.tasks
+    emit()
+    return
+  }
+  if (event === 'tunnels') {
+    if (data.tunnels !== undefined) model.tunnels = data.tunnels
+    emit()
+    return
+  }
+  if (event === 'job') {
+    if (typeof data.id !== 'string') return
+    mergeJob(data)
+    emit()
+    return
+  }
+  if (event === 'job-delta') {
+    if (typeof data.id !== 'string' || typeof data.delta !== 'string') return
+    const job = model.jobs.find((row) => row.id === data.id)
+    if (job === undefined) return
+    job.text = (job.text ?? '') + data.delta
+    emit()
+  }
+}
+
+/**
+ * Subscribe over SSE. Idempotent: a stream that is already open is left alone, so the
+ * socket's retry loop cannot churn through EventSources.
  */
 function startSse(handlers) {
-  stopSse()
+  if (sse !== null) return
   if (typeof window.EventSource !== 'function') return
   let source
   try {
@@ -120,83 +290,9 @@ function startSse(handlers) {
     model.connected = false
     emit()
   })
-  source.addEventListener('hello', (event) => {
-    model.connected = true
-    const data = parseEvent(event)
-    if (data !== undefined) applyState(data)
-    emit()
-    void pushSubscriptions()
-    if (handlers.onHello !== undefined) handlers.onHello(data)
-  })
-  source.addEventListener('state', (event) => {
-    const data = parseEvent(event)
-    if (data !== undefined && typeof data.revision === 'number' && data.revision === model.revision) return
-    void loadState()
-  })
-  source.addEventListener('session', (event) => {
-    const data = parseEvent(event)
-    if (data === undefined || typeof data.sessionId !== 'string') return
-    mergeSession(data)
-    if (handlers.onSession !== undefined) handlers.onSession(data)
-    emit()
-  })
-  source.addEventListener('session-removed', (event) => {
-    const data = parseEvent(event)
-    if (data === undefined || typeof data.sessionId !== 'string') return
-    model.sessions = model.sessions.filter((row) => row.sessionId !== data.sessionId)
-    if (handlers.onSessionRemoved !== undefined) handlers.onSessionRemoved(data.sessionId)
-    emit()
-  })
-  source.addEventListener('connection', (event) => {
-    const data = parseEvent(event)
-    if (data === undefined || typeof data.serverId !== 'string') return
-    const next = { ...model.connections }
-    next[data.serverId] = { ...(next[data.serverId] ?? {}), status: data.status, error: data.error }
-    model.connections = next
-    emit()
-  })
-  source.addEventListener('output', (event) => {
-    const data = parseEvent(event)
-    if (data === undefined || typeof data.sessionId !== 'string' || typeof data.data !== 'string') return
-    // The whole frame is handed over, not just the bytes: it carries the byte offset
-    // the replay splice needs, and dropping it here would make a re-attach over the
-    // SSE fallback print the last screenful twice.
-    if (handlers.onOutput !== undefined) handlers.onOutput(data.sessionId, data.data, data)
-  })
-  source.addEventListener('overflow', (event) => {
-    const data = parseEvent(event)
-    if (data !== undefined && handlers.onOverflow !== undefined) handlers.onOverflow(data.sessionId)
-  })
-  source.addEventListener('task', (event) => {
-    const data = parseEvent(event)
-    if (data === undefined || typeof data.id !== 'string') return
-    mergeTask(data)
-    emit()
-  })
-  source.addEventListener('tasks', (event) => {
-    const data = parseEvent(event)
-    if (data !== undefined && Array.isArray(data.tasks)) model.tasks = data.tasks
-    emit()
-  })
-  source.addEventListener('tunnels', (event) => {
-    const data = parseEvent(event)
-    if (data !== undefined && data.tunnels !== undefined) model.tunnels = data.tunnels
-    emit()
-  })
-  source.addEventListener('job', (event) => {
-    const data = parseEvent(event)
-    if (data === undefined || typeof data.id !== 'string') return
-    mergeJob(data)
-    emit()
-  })
-  source.addEventListener('job-delta', (event) => {
-    const data = parseEvent(event)
-    if (data === undefined || typeof data.id !== 'string' || typeof data.delta !== 'string') return
-    const job = model.jobs.find((row) => row.id === data.id)
-    if (job === undefined) return
-    job.text = (job.text ?? '') + data.delta
-    emit()
-  })
+  for (const name of STREAM_EVENTS) {
+    source.addEventListener(name, (event) => applyFrame(name, parseEvent(event), handlers))
+  }
 }
 
 /** Parse one SSE payload, tolerating a truncated frame. */
@@ -254,8 +350,8 @@ function socketSend(message) {
  * Open the terminal socket, retrying a few times before settling for HTTP.
  *
  * A missing `WebSocket` (an old browser, or the test's synthetic DOM) and a refused
- * upgrade land in the same place: `socketOpen()` stays false and every caller takes
- * the HTTP path.
+ * upgrade land in the same place: `socketOpen()` stays false, the SSE stream takes
+ * over the events, and every input takes the HTTP path.
  */
 function startSocket(handlers) {
   socketState.handlers = handlers
@@ -275,6 +371,12 @@ function startSocket(handlers) {
   socket.addEventListener('open', () => {
     socketState.ready = true
     socketState.attempts = 0
+    model.connected = true
+    // The socket carries every frame now, so the fallback stream — and the HTTP
+    // connection it was holding on the shared origin — is handed back to the page.
+    disarmSseFallback()
+    stopSse()
+    emit()
     void pushSubscriptions()
   })
   socket.addEventListener('message', (event) => {
@@ -285,22 +387,25 @@ function startSocket(handlers) {
       return
     }
     if (frame === null || typeof frame !== 'object') return
-    const data = frame.data
-    if (frame.event === 'output' && data !== null && typeof data === 'object') {
-      if (handlers.onOutput !== undefined) handlers.onOutput(data.sessionId, data.data, data)
+    if (frame.event === 'socket-error') {
+      console.warn(LOG + ' socket rejected a frame:', frame.data?.message)
       return
     }
-    if (frame.event === 'overflow' && data !== null && typeof data === 'object') {
-      if (handlers.onOverflow !== undefined) handlers.onOverflow(data.sessionId)
-      return
-    }
-    if (frame.event === 'socket-error' && data !== null && typeof data === 'object') {
-      console.warn(LOG + ' socket rejected a frame:', data.message)
-    }
+    if (frame.event === 'socket-ready') return
+    applyFrame(frame.event, frame.data === null || typeof frame.data !== 'object' ? undefined : frame.data, handlers)
   })
   const closed = () => {
     socketState.ready = false
     socketState.socket = null
+    model.connected = false
+    // Nothing to fall back to or retry once the panel is gone: a socket closed by
+    // teardown must not resurrect the stream it was replacing.
+    if (!streamState.started) return
+    // Degrade at once rather than after the retries: missing a session's exit code
+    // costs more than the connection an SSE stream holds. It is closed again if a
+    // retry gets the socket back.
+    startSse(streamState.handlers ?? handlers)
+    emit()
     // Three tries, then the HTTP path stands: a panel that cannot upgrade should stop
     // hammering the server about it.
     if (socketState.attempts >= 3 || socketState.timer !== null) return

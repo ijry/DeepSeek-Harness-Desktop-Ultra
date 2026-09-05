@@ -183,6 +183,20 @@ export class TermEngine {
     }
   }
 
+  /**
+   * The snapshot both event channels open with, and the reason a socket-first panel
+   * needs no HTTP request to paint itself: when the page's connection pool is starved
+   * (six SSE streams from six panel plugins is enough), a `/state` fetch is exactly
+   * the request that never answers. Never throws — a panel gets a reason instead.
+   */
+  async hello() {
+    try {
+      return await this.state()
+    } catch (error) {
+      return { error: error?.message ?? String(error) }
+    }
+  }
+
   /** Tear everything down (plugin unload). */
   dispose() {
     this.unsubscribeStore()

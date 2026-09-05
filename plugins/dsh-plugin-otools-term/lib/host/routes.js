@@ -278,7 +278,14 @@ export function registerTermRoutes(ctx, options) {
     }
   }
 
-  /** The one SSE stream a panel opens. */
+  /**
+   * The SSE stream, for a DSH build whose webserver has no upgrade hook.
+   *
+   * A panel prefers the WebSocket, and not for latency: an SSE stream holds one of the
+   * six HTTP/1.1 connections a browser allows per origin for as long as the panel is
+   * open, and every DSH panel plugin shares this origin with the shell. See
+   * host/events.js for what running out of them looks like.
+   */
   const sse = async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const clientId = url.searchParams.get('clientId')
@@ -287,22 +294,16 @@ export function registerTermRoutes(ctx, options) {
       res.end('clientId is required')
       return
     }
-    let hello
-    try {
-      hello = await engine.state()
-    } catch (error) {
-      hello = { error: error?.message ?? String(error) }
-    }
-    engine.hub.add(clientId, res, hello)
+    engine.hub.add(clientId, res, await engine.hello())
   }
 
   const disposers = [
     ctx.webServer.register({ kind: 'exact', path: SSE_PATH, handler: sse }),
     ctx.webServer.register({ kind: 'prefix', path: ROUTE_PREFIX, handler }),
   ]
-  // The terminal socket is an optimisation, not a requirement: a DSH build without an
-  // upgrade hook keeps the POST + SSE path, which is why this is the only place that
-  // has to know whether the hook exists.
+  // The terminal socket is the PREFERRED channel, not an optimisation: it carries
+  // every event this panel receives and costs the page none of its six HTTP/1.1
+  // connections. A DSH build without an upgrade hook keeps the POST + SSE path.
   const disposeSocket = registerTerminalSocket(ctx, { engine })
   if (disposeSocket !== undefined) disposers.push(disposeSocket)
   return () => {

@@ -1,13 +1,23 @@
 /**
- * The event hub: one Server-Sent-Events stream per open panel, carrying
- * everything that changes on the host — terminal bytes, connection status,
- * transfer progress, tunnel state, AI job deltas and ledger revisions.
+ * The event hub: one stream per open panel, carrying everything that changes on the
+ * host — terminal bytes, connection status, transfer progress, tunnel state, AI job
+ * deltas and ledger revisions.
  *
- * Why one multiplexed stream instead of one stream per terminal: a browser allows
- * about six concurrent HTTP/1.1 connections per origin, and DSH's own page needs
- * some of them. Five open terminals on five streams would starve the panel's own
- * fetches, so every session rides the same stream, tagged with its `sessionId`,
- * and the browser subscribes to the ones it has on screen.
+ * A panel gets ONE channel, and a WebSocket is the first choice; the SSE stream is
+ * the fallback for a DSH build whose webserver has no upgrade hook. That preference
+ * is not about latency, it is about a budget the whole page shares: a browser allows
+ * about six concurrent HTTP/1.1 connections per ORIGIN, and every DSH panel plugin
+ * lives on the same origin as the shell. Six panels each holding an SSE stream open
+ * spends the entire budget, and from then on every other request on that origin —
+ * the shell's own API calls, this plugin's `/vendor/xterm.js`, any fetch at all —
+ * queues forever behind them: no response, no error, just silence. (That is exactly
+ * how this plugin used to hang on "正在启动会话…": the xterm script tag never fired
+ * `load` OR `error` because it never got a socket.) A WebSocket is exempt from that
+ * pool, so a panel that streams over one costs the page nothing.
+ *
+ * Why one multiplexed stream instead of one per terminal, for the same reason: every
+ * session rides the same channel, tagged with its `sessionId`, and the browser
+ * subscribes to the ones it has on screen.
  *
  * Terminal output is base64 in a JSON frame. That costs a third more bytes than
  * raw, and it is still the right trade: SSE is a text protocol, terminal output is
@@ -45,9 +55,11 @@ class Subscriber {
     this.sessions = new Set()
     this.dropped = 0
     this.closed = false
-    // Set while the same panel also has a WebSocket: terminal bytes go there
-    // instead, so they are not written twice.
-    this.outputMuted = false
+    // Set while the same panel also has a WebSocket: the socket carries every event
+    // then, and this stream is a standby that stops receiving rather than delivering
+    // each frame twice. `hello` is still answered — a panel booting over either
+    // channel needs the snapshot.
+    this.muted = false
   }
 
   /** Write one frame; returns false when the frame was dropped. */
@@ -74,10 +86,11 @@ class Subscriber {
 /**
  * One connected browser panel, over a WebSocket.
  *
- * The panel opens one when DSH's webserver offers an upgrade hook, and terminal
- * bytes then travel both ways on it — which is what a terminal wants: a keystroke is
- * a frame rather than an HTTP request. Control events keep going over SSE, so this
- * carries output (and accepts input) and nothing else.
+ * The panel opens one whenever DSH's webserver offers an upgrade hook, and then
+ * EVERYTHING travels here: terminal bytes both ways (a keystroke is a frame rather
+ * than an HTTP request) and every control event the SSE stream would otherwise
+ * carry. A socket costs the page none of its six HTTP/1.1 connections, which is why
+ * it is the preferred channel rather than merely the faster one.
  */
 class SocketSubscriber {
   constructor(id, socket) {
@@ -87,7 +100,7 @@ class SocketSubscriber {
     this.sessions = new Set()
     this.dropped = 0
     this.closed = false
-    this.outputMuted = false
+    this.muted = false
   }
 
   send(event, payload) {
@@ -125,9 +138,9 @@ export class EventHub {
   /**
    * Attach one browser's WebSocket.
    *
-   * The socket takes over terminal output for that panel (its SSE stream is muted for
-   * output only), and its session set starts from whatever the SSE stream already had
-   * — a reload that opens both must not lose the subscription in between.
+   * The socket takes over the whole event feed for that panel (its SSE stream, if it
+   * has one, goes quiet), and its session set starts from whatever the SSE stream
+   * already had — a reload that opens both must not lose the subscription in between.
    */
   addSocket(clientId, socket) {
     const existing = this.sockets.get(clientId)
@@ -136,7 +149,7 @@ export class EventHub {
     const stream = this.subscribers.get(clientId)
     if (stream !== undefined) {
       subscriber.sessions = new Set(stream.sessions)
-      stream.outputMuted = true
+      stream.muted = true
     }
     this.sockets.set(clientId, subscriber)
     return subscriber
@@ -150,9 +163,9 @@ export class EventHub {
     this.sockets.delete(clientId)
     const stream = this.subscribers.get(clientId)
     if (stream !== undefined) {
-      // The SSE stream takes output back, so a dropped socket degrades instead of
+      // The SSE stream takes the feed back, so a dropped socket degrades instead of
       // going quiet.
-      stream.outputMuted = false
+      stream.muted = false
       stream.sessions = new Set(subscriber.sessions)
     }
   }
@@ -182,6 +195,8 @@ export class EventHub {
     // before the first real frame.
     res.write(': ok\n\n')
     const subscriber = new Subscriber(clientId, res)
+    // A panel that already has a socket keeps using it; this stream is its standby.
+    if (this.sockets.has(clientId)) subscriber.muted = true
     this.subscribers.set(clientId, subscriber)
     subscriber.send('hello', hello ?? {})
     if (this.keepalive === null) {
@@ -227,18 +242,37 @@ export class EventHub {
     return false
   }
 
-  /** Broadcast one non-output event to every client. */
-  broadcast(event, payload) {
-    for (const subscriber of [...this.subscribers.values()]) {
-      if (!subscriber.send(event, payload)) this.remove(subscriber.id)
+  /**
+   * Every sink that should receive the next frame: each panel's socket, plus the SSE
+   * streams of panels that have no socket. A snapshot, so dropping a dead sink while
+   * writing cannot disturb the walk.
+   */
+  liveSinks() {
+    const rows = [...this.sockets.values()]
+    for (const subscriber of this.subscribers.values()) {
+      if (!subscriber.muted) rows.push(subscriber)
     }
+    return rows
   }
 
-  /** Send one event only to the clients showing `sessionId`. */
+  /** Write one frame, dropping the sink it could not be written to. */
+  deliver(subscriber, event, payload) {
+    if (subscriber.send(event, payload)) return true
+    if (subscriber.kind === 'socket') this.removeSocket(subscriber.id)
+    else this.remove(subscriber.id)
+    return false
+  }
+
+  /** Broadcast one non-output event to every panel. */
+  broadcast(event, payload) {
+    for (const subscriber of this.liveSinks()) this.deliver(subscriber, event, payload)
+  }
+
+  /** Send one event only to the panels showing `sessionId`. */
   toSession(sessionId, event, payload) {
-    for (const subscriber of [...this.subscribers.values()]) {
+    for (const subscriber of this.liveSinks()) {
       if (!subscriber.sessions.has(sessionId)) continue
-      if (!subscriber.send(event, payload)) this.remove(subscriber.id)
+      this.deliver(subscriber, event, payload)
     }
   }
 
@@ -288,8 +322,7 @@ export class EventHub {
       const data = Buffer.concat(queued.chunks).toString('base64')
       this.seq += 1
       const frame = { sessionId, seq: this.seq, offset: queued.offset, bytes: queued.bytes, data }
-      for (const subscriber of [...this.sockets.values(), ...this.subscribers.values()]) {
-        if (subscriber.outputMuted) continue
+      for (const subscriber of this.liveSinks()) {
         if (!subscriber.sessions.has(sessionId)) continue
         if (subscriber.congested) {
           subscriber.dropped += queued.bytes
@@ -298,10 +331,7 @@ export class EventHub {
           continue
         }
         subscriber.dropped = 0
-        if (!subscriber.send('output', frame)) {
-          if (subscriber.kind === 'socket') this.removeSocket(subscriber.id)
-          else this.remove(subscriber.id)
-        }
+        this.deliver(subscriber, 'output', frame)
       }
     }
   }

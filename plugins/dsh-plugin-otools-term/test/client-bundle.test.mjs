@@ -155,6 +155,9 @@ describe('client bundle', () => {
       return found !== null && found.textContent.includes('xterm') ? found : false
     }, 'the vendor-missing overlay')
     assert.equal(overlay.textContent.includes('npm install'), true)
+    // And a way out: every failure to attach offers a retry, because the pane must
+    // never be left saying "starting…" with nothing the user can press.
+    assert.equal(overlay.querySelectorAll('.dsh-ot-btn').length, 1)
   })
 
   it('opens the connection dialog with the reference fields', async () => {

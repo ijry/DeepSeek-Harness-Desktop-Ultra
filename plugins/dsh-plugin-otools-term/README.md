@@ -30,10 +30,10 @@ DSH Web GUI 里的 SSH / SFTP / 远程桌面工作台，界面复刻 otools-term
 | `ssh2` crate：连接、认证、SFTP、direct-tcpip | **`ssh2` npm**（纯 JS）。**每台服务器一条共享连接**，终端、SFTP、转发都是它上面的 channel |
 | `forkpty` / 管道喂 `cmd.exe` | **`node-pty`**（可选依赖）；装不上时退化成管道模式，界面明说 |
 | xterm 5 由 vite 打包进前端 | 同一个 **xterm.js**，由 host 从本包 `node_modules` 通过 `/vendor` 路由发给浏览器 |
-| Tauri command + event | **JSON 路由 + 一条多路复用的 SSE 流 + 一条终端 WebSocket**（DSH 的 webserver 有 upgrade 钩子；没有它时退回 POST + SSE，只慢不坏） |
+| Tauri command + event | **JSON 路由 + 一条多路复用的 WebSocket**（DSH 的 webserver 有 upgrade 钩子；没有它时退回 POST + SSE，只慢不坏。为什么不默认走 SSE，见下面第 6 条） |
 | 原生文件对话框选上传/下载路径 | 浏览器自己的文件选择与下载；递归传输限定在 **DSH 已打开的工作区** 内 |
 
-## 五件跟参考实现不一样的事
+## 六件跟参考实现不一样的事
 
 **1. 终端活在 host 里，刷新页面不掉。** 参考实现的终端跟着 Vue 组件的生命周期，刷新一次全断。这里会话是 host 侧对象，带一圈 256 KB 的输出环形缓冲；关掉面板、刷新 DSH、甚至另开一个浏览器窗口，都是**重新贴上去**并补回最后一屏。补屏是精确的：replay 会说自己停在第几个字节，每个输出帧也带偏移，重叠的部分裁掉而不是重画。
 
@@ -44,6 +44,8 @@ DSH Web GUI 里的 SSH / SFTP / 远程桌面工作台，界面复刻 otools-term
 **4. 密码不进大 JSON、不进命令行。** 参考实现把密码明文放在插件状态里（还发给前端），启动 Windows 远程桌面时用 `cmdkey /pass:<密码>`，进程列表可见。这里密码/口令/私钥内容单独存 0600 文件，浏览器只知道「有没有」；远程桌面默认**不**把密码交给客户端（让客户端自己弹窗），要交也得逐次勾选，并告诉你代价。
 
 **5. 转发默认只听 127.0.0.1。** 参考实现照抄输入框里的地址，于是上一条规则留下的 `0.0.0.0` 会静悄悄把远端服务暴露给整个局域网。这里非回环地址必须勾「允许非本机访问」。
+
+**6. 事件走 WebSocket，不占页面的 HTTP 连接。** 浏览器对**每个源**只给大约 6 条并发 HTTP/1.1 连接，而 DSH 外壳和所有面板插件共用同一个源；一条 SSE 流会把其中一条按住不放，直到面板卸载。于是「六个插件各开一条事件流」就把整页的额度用光了，此后这个源上任何请求都只是**排队**——没有响应，也没有 `error`、没有超时。本插件的终端就这样卡过一次：`<script src=…/vendor/xterm.js>` 既不触发 `load` 也不触发 `error`，面板永远停在「正在启动会话...」。所以这里的顺序是**先开 WebSocket**（不占那 6 条额度），只有 upgrade 钩子不存在时才退回 SSE，而且 socket 一连上就把退路那条流关掉。同一个道理，所有 JSON 请求和 xterm 那几个 script 都带**期限**：等不到就报错给你看，而不是一直等。
 
 ## 功能
 
@@ -97,7 +99,7 @@ src/host/tar.js         目录下载用的 ustar/pax 打包器
 src/host/tunnel.js      端口转发与手写 SOCKS5
 src/host/desktop.js     RDP/VNC 客户端探测与启动
 src/host/ai.js          ctx.llm.stream 的两个任务 + 危险命令清单
-src/host/{events,socket,http,routes,actions,engine}.js   SSE/WebSocket 中枢与 JSON 路由（读在 routes，写在 actions）
+src/host/{events,socket,http,routes,actions,engine}.js   WebSocket/SSE 中枢与 JSON 路由（读在 routes，写在 actions）
 src/host/{store,secrets,workspaces,vendor,sshconfig,sdk}.js
 src/shared/{protocol,lang}.js  错误码、全部入参校验、中英双语判定
 src/client/*.js         浏览器侧，21 个片段拼成一个 IIFE（scripts/wrap-client.mjs）

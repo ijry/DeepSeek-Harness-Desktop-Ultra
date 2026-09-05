@@ -90,17 +90,40 @@ function setOverlay(entry, ...children) {
   fill(entry.overlay, ...children)
 }
 
-/** Bring one terminal up: mount xterm, open the session, splice the replay. */
+/**
+ * Bring one terminal up: mount xterm, open the session, splice the replay.
+ *
+ * Every exit from here paints something. The pane starts out saying "starting…", and
+ * an await that never settles (or a throw nobody catches) would leave that sentence on
+ * screen for the rest of the session with no way back — which is precisely what a
+ * stalled vendor request used to do.
+ */
 async function attachTerminal(entry, tab) {
   let vendor
   try {
     vendor = await ensureXterm()
   } catch (error) {
-    setOverlay(entry, el('div', {}, t('term.vendorMissing')), el('div', { class: 'dsh-ot-mono' }, messageOf(error)))
+    setOverlay(entry,
+      el('div', {}, vendorFailure(error)),
+      el('div', { class: 'dsh-ot-mono' }, messageOf(error)),
+      button({ label: t('term.reconnect'), variant: 'primary', onClick: () => void attachTerminal(entry, tab) }))
     return
   }
   if (entry.disposed) return
+  try {
+    mountTerminal(entry, vendor)
+  } catch (error) {
+    discardWidget(entry)
+    setOverlay(entry,
+      el('div', {}, t('term.attachFailed', { message: messageOf(error) })),
+      button({ label: t('term.reconnect'), variant: 'primary', onClick: () => void attachTerminal(entry, tab) }))
+    return
+  }
+  await openSessionFor(entry, tab)
+}
 
+/** Build the xterm widget for one pane and wire its events. */
+function mountTerminal(entry, vendor) {
   const term = new vendor.Terminal(termOptions())
   entry.term = term
   if (vendor.FitAddon !== undefined) {
@@ -144,8 +167,25 @@ async function attachTerminal(entry, tab) {
     entry.observer = new ResizeObserver(() => fitTerminal(entry))
     entry.observer.observe(entry.host)
   }
+}
 
-  await openSessionFor(entry, tab)
+/** Throw away a half-built widget, so the retry button starts from a clean pane. */
+function discardWidget(entry) {
+  if (entry.observer !== undefined) {
+    try {
+      entry.observer.disconnect()
+    } catch { /* never observed */ }
+    entry.observer = undefined
+  }
+  if (entry.term !== undefined) {
+    try {
+      entry.term.dispose()
+    } catch { /* never opened */ }
+  }
+  entry.term = undefined
+  entry.fit = undefined
+  entry.search = undefined
+  fill(entry.host)
 }
 
 /**

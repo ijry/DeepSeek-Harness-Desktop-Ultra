@@ -392,6 +392,11 @@ const TEXT = {
     'xterm.js 没有安装好，终端无法显示。请在插件目录里执行 npm install。',
     'xterm.js is missing, so the terminal cannot render. Run npm install in the plugin directory.',
   ],
+  'term.vendorStalled': [
+    'xterm.js 一直没下载完：这一页的同源 HTTP 连接被占满了（浏览器每个源只有 6 条，其他面板的事件流会占用它们）。可以关掉几个别的面板再重试。',
+    'xterm.js never finished downloading: this page has run out of same-origin HTTP connections (a browser allows six, and other panels’ event streams hold them). Close a few other panels and retry.',
+  ],
+  'term.attachFailed': ['终端没能起来：{message}', 'The terminal could not start: {message}'],
   'term.noSession': ['会话不在了，请重新打开', 'The session is gone; open a new one'],
 
   // ------------------------------------------------------------- error codes
@@ -410,6 +415,10 @@ const TEXT = {
   'err.pty_unavailable': ['本地终端不可用', 'Local terminal unavailable'],
   'err.too_large': ['内容过大', 'Too large'],
   'err.timeout': ['操作超时', 'Timed out'],
+  'err.stalled': [
+    '请求一直没有回应（浏览器与 DSH 之间的同源连接可能被占满了）',
+    'The request never answered (the page may have run out of same-origin connections)',
+  ],
   'err.ai_unavailable': ['AI 不可用', 'AI unavailable'],
   'err.internal': ['内部错误', 'Internal error'],
 }
