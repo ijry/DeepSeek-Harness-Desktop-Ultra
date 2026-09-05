@@ -13,7 +13,7 @@
 - [ ] `dsh.compatibility.dshReleases` 包含当前锁定的 dsh 版本
 - [ ] 暗黑模式支持已实现（所有插件已支持）
 
-## 四个插件的发布命令
+## 各插件的发布命令
 
 所有插件都已配置 `prepack` 脚本，执行 `npm publish` 前会自动构建。
 
@@ -48,6 +48,33 @@ npm publish
 
 ```bash
 cd plugins/dsh-plugin-repopanel
+npm run build
+npm test
+npm publish
+```
+
+### 5. 章鱼Git
+
+```bash
+cd plugins/dsh-plugin-otools-git
+npm run build
+npm test
+npm publish
+```
+
+### 6. 自动化
+
+```bash
+cd plugins/dsh-plugin-automation
+npm run build
+npm test
+npm publish
+```
+
+### 7. 长文阅读
+
+```bash
+cd plugins/dsh-plugin-longread
 npm run build
 npm test
 npm publish
@@ -92,6 +119,9 @@ npm info dsh-plugin-taskboard
 npm info dsh-plugin-canvas
 npm info dsh-plugin-mobile-bridge
 npm info dsh-plugin-repopanel
+npm info dsh-plugin-otools-git
+npm info dsh-plugin-automation
+npm info dsh-plugin-longread
 ```
 
 ## 提交到插件市场
@@ -176,11 +206,11 @@ npm publish --tag beta
 dsh plugin --profile web add dsh-plugin-taskboard@beta
 ```
 
-### Q: 如何同步发布四个插件？
+### Q: 如何同步发布所有插件？
 
 ```bash
 # 脚本示例（需要在项目根目录）
-for plugin in taskboard canvas mobile-bridge repopanel; do
+for plugin in taskboard canvas mobile-bridge repopanel otools-git automation longread; do
   cd plugins/dsh-plugin-$plugin
   npm version patch
   npm publish

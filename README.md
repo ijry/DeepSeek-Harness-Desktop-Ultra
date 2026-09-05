@@ -46,29 +46,32 @@
 
 代价也写明：升级 `DSH_VERSION` 时要顺手回归这三个插件。`cargo test` 里有一条守卫盯着这件事 —— 任一插件 `package.json` 的 `dsh.compatibility.dshReleases` 里没把锁定版本标成 `compatible`，测试就红。
 
-### 仓库里还有三个插件，但它们不进安装包
+### 仓库里还有四个插件，但它们不进安装包
 
 [`plugins/dsh-plugin-repopanel`](./plugins/dsh-plugin-repopanel)（仓库面板：看 issue / PR，
 把其中一条交给 agent 变成任务）、
 [`plugins/dsh-plugin-otools-git`](./plugins/dsh-plugin-otools-git)（章鱼Git：完整的本地
-Git 客户端，暂存、提交、历史与分支图、diff、分支标签贮藏远端子模块工作树、推送拉取）和
+Git 客户端，暂存、提交、历史与分支图、diff、分支标签贮藏远端子模块工作树、推送拉取）、
 [`plugins/dsh-plugin-automation`](./plugins/dsh-plugin-automation)（自动化：存一段提示词加一张
-时间表，到点自己跑一次 agent）也放在这个仓库里维护，但它们**不是**上面那个例外的延伸：
+时间表，到点自己跑一次 agent）和
+[`plugins/dsh-plugin-longread`](./plugins/dsh-plugin-longread)（长文阅读：把一本小说读成
+一场会话的样子）也放在这个仓库里维护，但它们**不是**上面那个例外的延伸：
 
 - **不打进安装包、不在首启询问、默认不装。** `tauri.conf.json` 的 `resources` 里没有它们，
   外壳的 Rust 代码也不认识它们 —— 装它们只有一条路：`dsh plugin --profile web add ...`。
   也就是说，不动手的用户拿到的 dsh 行为与不装外壳时完全一致。
 - 它们在这里只是**源码与发布出口**：走 npm 发布到插件市场，和任何第三方 dsh 插件一样。
 - CI 会检查它们能构建、测试通过、`lib/` 与 `src/` 同步，这样它们不会烂在仓库里。
-- 同样支持暗黑模式，自动跟随系统主题。仓库面板是中英双语的；章鱼Git 与自动化目前只有中文，
-  见「界面语言」。
+- 同样支持暗黑模式，自动跟随系统主题。仓库面板是中英双语的；章鱼Git、自动化与长文阅读
+  目前只有中文，见「界面语言」。
 
 要不要把它们也变成内置插件（进安装包 + 首启询问 + 设置页装卸），是一个需要单独决定的
 边界问题 —— 但**不再是工程量问题**：外壳的插件管道已经从「只有一个内置插件」改成了一份
 列表（`plugins.rs` 的 `BUNDLED`、按 id 收发的 IPC 命令、设置页按插件逐个装卸），加一行
 就能把它带进安装包。留在外面是有意的选择：仓库面板要连 GitHub、要存令牌；章鱼Git 会在
 用户的仓库上执行写操作（提交、重置、推送）；自动化会在**没人看着的时候启动 agent**
-（它自己的 README 写清了护栏与边界）。这三件事默认装进每台机器都不合适。
+（它自己的 README 写清了护栏与边界）；长文阅读是个摸鱼工具。这四件事默认装进每台机器
+都不合适。
 
 ## 职责划分
 
@@ -121,8 +124,8 @@ Git 客户端，暂存、提交、历史与分支图、diff、分支标签贮藏
 
 单独安装（不经外壳）的插件也能用：环境变量不存在时它们退化到 `navigator.language`，认不出再退到中文。
 
-**章鱼Git 与自动化还只有中文。** 它们是双语化那一轮之后并行加进来的，没跟上；两个都不打进
-安装包，所以不影响外壳的双语体验。补齐是一件独立的事。
+**章鱼Git、自动化与长文阅读还只有中文。** 它们是双语化那一轮之后并行加进来的，没跟上；
+三个都不打进安装包，所以不影响外壳的双语体验。补齐是一件独立的事。
 
 ## 打包层面的两个取舍
 
@@ -240,7 +243,7 @@ npm run tauri:build
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) —— 上游，MIT
 - [Cordis](https://cordisjs.org/) —— harness 的插件内核
 - [awesome-deepseek-harness](https://github.com/0xsline/awesome-deepseek-harness) —— 插件生态
-- [内置插件安装指南](./PLUGINS.md) —— 在其他 DSH 版本上安装本仓库的四个插件
+- [内置插件安装指南](./PLUGINS.md) —— 在其他 DSH 版本上安装本仓库的七个插件
 - [Tauri](https://tauri.app/)
 
 ## 许可证
