@@ -12,6 +12,8 @@
 - [ ] `README.md` 完整且准确
 - [ ] `dsh.compatibility.dshReleases` 包含当前锁定的 dsh 版本
 - [ ] 暗黑模式支持已实现（所有插件已支持）
+- [ ] 有运行时依赖的插件（目前只有墨鱼终端）：`npm ci` 干净、`package-lock.json` 已提交，
+      且 `optionalDependencies` 装不上时功能会降级而不是崩
 
 ## 各插件的发布命令
 
@@ -62,7 +64,17 @@ npm test
 npm publish
 ```
 
-### 6. 自动化
+### 6. 墨鱼终端
+
+```bash
+cd plugins/dsh-plugin-otools-term
+npm install
+npm run build
+npm test
+npm publish
+```
+
+### 7. 自动化
 
 ```bash
 cd plugins/dsh-plugin-automation
@@ -71,7 +83,7 @@ npm test
 npm publish
 ```
 
-### 7. 长文阅读
+### 8. 长文阅读
 
 ```bash
 cd plugins/dsh-plugin-longread
@@ -120,6 +132,7 @@ npm info dsh-plugin-canvas
 npm info dsh-plugin-mobile-bridge
 npm info dsh-plugin-repopanel
 npm info dsh-plugin-otools-git
+npm info dsh-plugin-otools-term
 npm info dsh-plugin-automation
 npm info dsh-plugin-longread
 ```

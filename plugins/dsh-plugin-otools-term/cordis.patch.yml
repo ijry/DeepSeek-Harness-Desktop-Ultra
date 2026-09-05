@@ -1,0 +1,15 @@
+# dsh-plugin-otools-term bundle patch: inserts the plugin row into the web
+# profile roster. Applied as a profile bundle layer (the `dsh.bundle.patch`
+# manifest field) over dsh-base; activate with
+#   dsh plugin --profile <name> add link:<path-to-this-package>
+# or install the published npm package with
+#   dsh plugin --profile <name> add dsh-plugin-otools-term
+#
+# The row is a bare plugin by package name: the node half (exports ".") runs in
+# the host process (every SSH connection, SFTP transfer, PTY and listening
+# socket lives there), and the `dsh.client` declaration in package.json makes
+# the browser half (exports "./client", served at /plugins/<id>/client.js) load
+# in the web GUI.
+- insert:
+    - id: dsh-plugin-otools-term
+      name: dsh-plugin-otools-term
