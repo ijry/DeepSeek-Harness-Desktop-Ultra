@@ -60,13 +60,19 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       # 鲨鱼数据库同理：驱动（mysql2/pg/ioredis/…）与写文件用的 exceljs、docx 都是运行时
-      # 依赖，测试真的会调用它们。`--omit=optional` 跳过 oracledb 与 snowflake-sdk —— 它们
-      # 按设计就是可选的，装不上时插件会报「驱动未安装」，CI 没必要为它们等编译。代价是
-      # 连 rollup 的平台原生包一起跳过，所以这一步之后不能跑 vite build——check.mjs 与
-      # pack-plugins.mjs 都跳过面板构建（DBM_SKIP_WEBVIEW），lib/webview 随提交入库。
+      # 依赖，测试真的会调用它们（都是懒 import，所以缺一个不会在加载期就炸，而是在测里炸）。
+      #
+      # 两个 omit 都是必需的，不是省时间：
+      # - `--omit=dev` 跳过面板那套构建时依赖（vite/vue/codemirror/…）。CI 不构建面板 ——
+      #   check.mjs 与 pack-plugins.mjs 都跳过 vite（DBM_SKIP_WEBVIEW），lib/webview 随提交
+      #   入库。更要紧的是 vite 拖来的 esbuild：它的 postinstall 要校验平台二进制的版本，
+      #   缺了 @esbuild/<platform> 就会拿 PATH 上别的 esbuild 去比，然后以
+      #   `Expected "0.25.12" but got "0.21.5"` 把整个 npm ci 弄挂（v0.1.5 那次真挂了）。
+      # - `--omit=optional` 跳过 oracledb 与 snowflake-sdk。它们按设计就是可选的，装不上时
+      #   插件会报「驱动未安装」，CI 没必要为它们等编译。
       - name: 鲨鱼数据库插件依赖
         working-directory: plugins/dsh-plugin-otools-dbm
-        run: npm ci --omit=optional --no-audit --no-fund
+        run: npm ci --omit=dev --omit=optional --no-audit --no-fund
 
       # 九个插件全部进安装包，所以每一个都必须能构建、测试通过、且 lib/ 与 src/ 同步。
       # check.mjs 会重建 lib/，紧接着的 diff 就是「产物忘记提交」的守卫；
