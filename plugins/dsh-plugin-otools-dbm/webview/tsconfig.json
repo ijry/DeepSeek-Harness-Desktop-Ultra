@@ -1,0 +1,41 @@
+{
+  // The panel under `src/` is a VERBATIM copy of the reference plugin's Vue app
+  // (otools-dbm), kept byte-identical on purpose so the interface is a faithful
+  // reproduction and so a future upstream change can be re-copied rather than
+  // re-merged. Its own code does not pass `strict` — implicit `any` in template
+  // callbacks, string-indexed lookup tables, a `status: string` where a union was
+  // meant — and "fixing" 30 vendored components would trade the thing this port
+  // exists for against a compiler setting.
+  //
+  // So: `strict` off for the vendored UI, and the port's own code (`shims/`,
+  // `platform/`, `utils/hostFs.ts`) is written to type-check anyway. Vite builds
+  // with esbuild, which never type-checks, so this file only affects `npm run
+  // typecheck`.
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "noEmit": true,
+    "jsx": "preserve",
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "otools-plugin-sdk/runtime": ["src/shims/tauri-core.ts"],
+      "@tauri-apps/api/core": ["src/shims/tauri-core.ts"],
+      "@tauri-apps/api/event": ["src/shims/tauri-event.ts"],
+      "@tauri-apps/plugin-dialog": ["src/shims/tauri-dialog.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"]
+}

@@ -8,6 +8,9 @@ release-assets
 # 内置插件的 tarball，由 scripts/pack-plugins.mjs 在每次 dev/build 前重新生成
 plugins/.pack
 
+# 鲨鱼数据库插件在 `check` 时临时保存已构建的面板产物，构建结束即删
+plugins/dsh-plugin-otools-dbm/.webview-cache
+
 # tauri-build 在每次构建时重新生成
 src-tauri/gen/schemas
 

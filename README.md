@@ -46,7 +46,7 @@
 
 代价也写明：升级 `DSH_VERSION` 时要顺手回归这三个插件。`cargo test` 里有一条守卫盯着这件事 —— 任一插件 `package.json` 的 `dsh.compatibility.dshReleases` 里没把锁定版本标成 `compatible`，测试就红。
 
-### 仓库里还有五个插件，但它们不进安装包
+### 仓库里还有六个插件，但它们不进安装包
 
 [`plugins/dsh-plugin-repopanel`](./plugins/dsh-plugin-repopanel)（仓库面板：看 issue / PR，
 把其中一条交给 agent 变成任务）、
@@ -54,6 +54,8 @@
 Git 客户端，暂存、提交、历史与分支图、diff、分支标签贮藏远端子模块工作树、推送拉取）、
 [`plugins/dsh-plugin-otools-term`](./plugins/dsh-plugin-otools-term)（墨鱼终端：SSH 终端、
 SFTP 文件管理、端口转发与 SOCKS5、远程桌面启动，AI 命令栏直接用你在 DSH 里选好的模型）、
+[`plugins/dsh-plugin-otools-dbm`](./plugins/dsh-plugin-otools-dbm)（鲨鱼数据库：十四种数据库的
+客户端，连接树、数据网格直接改行、表设计器、SQL 工作台、导入导出、备份与同步、AI 大屏）、
 [`plugins/dsh-plugin-automation`](./plugins/dsh-plugin-automation)（自动化：存一段提示词加一张
 时间表，到点自己跑一次 agent）和
 [`plugins/dsh-plugin-longread`](./plugins/dsh-plugin-longread)（长文阅读：把一本小说读成
@@ -64,20 +66,25 @@ SFTP 文件管理、端口转发与 SOCKS5、远程桌面启动，AI 命令栏�
   也就是说，不动手的用户拿到的 dsh 行为与不装外壳时完全一致。
 - 它们在这里只是**源码与发布出口**：走 npm 发布到插件市场，和任何第三方 dsh 插件一样。
 - CI 会检查它们能构建、测试通过、`lib/` 与 `src/` 同步，这样它们不会烂在仓库里。
-- 同样支持暗黑模式，自动跟随系统主题。仓库面板与墨鱼终端是中英双语的；章鱼Git、自动化与
-  长文阅读目前只有中文，见「界面语言」。
-- **墨鱼终端是唯一有运行时依赖的插件**（`ssh2`、`ws`、`@xterm/*`，以及可选的 `node-pty`）。
-  SSH 协议与终端模拟器都不该手搓；PTY 是可选依赖，装不上时本地终端退化成管道模式并明说。
-  它也是唯一会拿着你的服务器口令的面板 —— 口令存在 DSH 家目录下单独的 0600 文件里，浏览器
-  只知道「有没有」，细节见它的 [README](./plugins/dsh-plugin-otools-term/README.md)。
+- 同样支持暗黑模式，自动跟随系统主题。仓库面板与墨鱼终端是中英双语的；鲨鱼数据库自带八种
+  语言（复用了参考实现的词表）；章鱼Git、自动化与长文阅读目前只有中文，见「界面语言」。
+- **墨鱼终端与鲨鱼数据库是唯二有运行时依赖的插件。** 墨鱼终端要 `ssh2`、`ws`、`@xterm/*`
+  以及可选的 `node-pty` —— SSH 协议与终端模拟器都不该手搓；PTY 是可选依赖，装不上时本地
+  终端退化成管道模式并明说。鲨鱼数据库要一整套数据库驱动（`mysql2`、`pg`、`ioredis`、
+  `mongodb`、`tedious`…，全是纯 JS，SQLite 用 Node 内置的 `node:sqlite`），Oracle 与
+  Snowflake 是可选依赖，缺了在界面上说明。
+- 它们也是唯二会拿着你口令的面板：墨鱼终端存服务器口令，鲨鱼数据库存数据库账号密码 ——
+  都在 DSH 家目录下单独的 0600 文件里，浏览器只知道「有没有」，细节见各自的 README
+  （[墨鱼终端](./plugins/dsh-plugin-otools-term/README.md)、
+  [鲨鱼数据库](./plugins/dsh-plugin-otools-dbm/README.md#安全边界)）。
 
 要不要把它们也变成内置插件（进安装包 + 首启询问 + 设置页装卸），是一个需要单独决定的
 边界问题 —— 但**不再是工程量问题**：外壳的插件管道已经从「只有一个内置插件」改成了一份
 列表（`plugins.rs` 的 `BUNDLED`、按 id 收发的 IPC 命令、设置页按插件逐个装卸），加一行
 就能把它带进安装包。留在外面是有意的选择：仓库面板要连 GitHub、要存令牌；章鱼Git 会在
-用户的仓库上执行写操作（提交、重置、推送）；墨鱼终端会拿着你所有服务器的口令；自动化会在
-**没人看着的时候启动 agent**（它自己的 README 写清了护栏与边界）；长文阅读是个摸鱼工具。
-这五件事默认装进每台机器都不合适。
+用户的仓库上执行写操作（提交、重置、推送）；墨鱼终端会拿着你所有服务器的口令；鲨鱼数据库
+会存数据库账号密码，并且能对生产库执行写操作与 DDL；自动化会在**没人看着的时候启动 agent**
+（它自己的 README 写清了护栏与边界）；长文阅读是个摸鱼工具。这六件事默认装进每台机器都不合适。
 
 ## 职责划分
 

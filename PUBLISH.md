@@ -12,8 +12,9 @@
 - [ ] `README.md` 完整且准确
 - [ ] `dsh.compatibility.dshReleases` 包含当前锁定的 dsh 版本
 - [ ] 暗黑模式支持已实现（所有插件已支持）
-- [ ] 有运行时依赖的插件（目前只有墨鱼终端）：`npm ci` 干净、`package-lock.json` 已提交，
+- [ ] 有运行时依赖的插件（墨鱼终端、鲨鱼数据库）：`npm ci` 干净、`package-lock.json` 已提交，
       且 `optionalDependencies` 装不上时功能会降级而不是崩
+- [ ] 鲨鱼数据库额外确认：`npm install` 装过、`lib/webview` 已构建并在 `npm pack` 清单里
 
 ## 各插件的发布命令
 
@@ -89,6 +90,20 @@ npm publish
 cd plugins/dsh-plugin-longread
 npm run build
 npm test
+npm publish
+```
+
+### 9. 鲨鱼数据库
+
+驱动是运行时依赖，Vue + Vite 是构建时依赖，所以发布前要先装依赖。`files` 里带着
+`lib/webview`（Vite 打出来的面板，约 3.7 MB），确认它在包里，否则装上以后面板是空白页。
+
+```bash
+cd plugins/dsh-plugin-otools-dbm
+npm install
+npm run build          # 含 vite 打包面板 → lib/webview
+npm test
+npm pack --dry-run     # 确认 lib/webview/assets/*.js 在文件清单里
 npm publish
 ```
 
