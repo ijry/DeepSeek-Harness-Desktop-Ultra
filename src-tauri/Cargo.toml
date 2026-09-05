@@ -1,6 +1,6 @@
 [package]
 name = "dsh-desktop-ultra"
-version = "0.1.2"
+version = "0.1.3"
 description = "DSH Desktop Ultra - DeepSeek Harness 桌面外壳"
 authors = ["xyito"]
 edition = "2021"
