@@ -39,6 +39,21 @@
 
 代价也写明：升级 `DSH_VERSION` 时要顺手回归这个插件。`cargo test` 里有一条守卫盯着这件事 —— 插件 `package.json` 的 `dsh.compatibility.dshReleases` 里没把锁定版本标成 `compatible`，测试就红。
 
+### 仓库里还有第二个插件，但它不进安装包
+
+[`plugins/dsh-plugin-repopanel`](./plugins/dsh-plugin-repopanel)（仓库面板：看 issue / PR，
+把其中一条交给 agent 变成任务）也放在这个仓库里维护，但它**不是**上面那个例外的延伸：
+
+- **不打进安装包、不在首启询问、默认不装。** `tauri.conf.json` 的 `resources` 里没有它，
+  外壳的 Rust 代码也不认识它 —— 装它只有一条路：`dsh plugin --profile web add ...`。
+  也就是说，不动手的用户拿到的 dsh 行为与不装外壳时完全一致。
+- 它在这里只是**源码与发布出口**：走 npm 发布到插件市场，和任何第三方 dsh 插件一样。
+- CI 会检查它能构建、测试通过、`lib/` 与 `src/` 同步，这样它不会烂在仓库里。
+
+要不要把它也变成内置插件（进安装包 + 首启询问 + 设置页装卸），是一个需要单独决定的
+边界问题：现在外壳的插件管道是按「只有一个内置插件」写的（`plugins.rs` 的 `TASKBOARD`
+常量、三个不带 id 的 IPC 命令、设置页的单插件状态），扩成列表是一次不小的改动。
+
 ## 职责划分
 
 | 外壳负责 | 交给 dsh（外壳完全不介入） |

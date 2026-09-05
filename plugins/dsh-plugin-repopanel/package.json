@@ -1,0 +1,64 @@
+{
+  "name": "dsh-plugin-repopanel",
+  "description": "Repository panel for the DeepSeek Harness web GUI, modeled on codeg-plus's 仓库面板 (forge): browse the issues and pull/merge requests of the repository a workspace's origin remote points at, filter and page through them, read and post comments, close/reopen, and hand one to an agent as a task. 参考 codeg-plus 仓库面板的 dsh 插件，可发布到 dsh 插件市场。",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.1.1-rc.2": "compatible"
+      }
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "author": "ijry (DSH Desktop Ultra contributors)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/issues"
+  },
+  "homepage": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/tree/main/plugins/dsh-plugin-repopanel#readme",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "repopanel",
+    "forge",
+    "github",
+    "gitlab",
+    "codeg-plus",
+    "issues",
+    "pull-requests"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "npm run build && node --test",
+    "prepack": "npm run build"
+  }
+}
