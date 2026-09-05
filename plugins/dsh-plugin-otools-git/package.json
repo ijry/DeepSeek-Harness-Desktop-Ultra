@@ -1,0 +1,64 @@
+{
+  "name": "dsh-plugin-otools-git",
+  "description": "Full Git client for the DeepSeek Harness web GUI, a faithful re-implementation of otools-git's 章鱼Git panel: repository tree fed straight from the DSH workspace registry, staging/commit with AI-written commit messages, history with a branch graph, diff viewer, branches, tags, stashes, remotes, submodules, worktrees, push/pull with credential prompts. 复刻 otools-git 界面的 dsh 插件，可发布到 dsh 插件市场。",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.1.1-rc.2": "compatible",
+        "0.1.2-alpha.2": "compatible"
+      }
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "author": "ijry (DSH Desktop Ultra contributors)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/issues"
+  },
+  "homepage": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/tree/main/plugins/dsh-plugin-otools-git#readme",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "git",
+    "otools-git",
+    "git-gui",
+    "commit",
+    "diff",
+    "branch"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "npm run build && node --test",
+    "prepack": "npm run build"
+  }
+}

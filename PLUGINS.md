@@ -1,8 +1,8 @@
 # 内置插件安装指南
 
-DSH Desktop Ultra 安装包内置了三个插件（任务看板、无限画布、手机遥控），另有一个插件（仓库面板）发布到 npm。本指南说明如何在其他 DSH 版本（官方 CLI、自建）上安装这些插件。
+DSH Desktop Ultra 安装包内置了三个插件（任务看板、无限画布、手机遥控），另有两个插件（仓库面板、章鱼Git）发布到 npm。本指南说明如何在其他 DSH 版本（官方 CLI、自建）上安装这些插件。
 
-## 四个插件概览
+## 五个插件概览
 
 | 插件 | 包名 | 功能 | 改变 Agent 行为 | 暗黑模式 |
 | --- | --- | --- | --- | --- |
@@ -10,12 +10,13 @@ DSH Desktop Ultra 安装包内置了三个插件（任务看板、无限画布�
 | [无限画布](./plugins/dsh-plugin-canvas) | `dsh-plugin-canvas` | 会话空间布局 | ✗ 纯 GUI | ✓ |
 | [手机遥控](./plugins/dsh-plugin-mobile-bridge) | `dsh-plugin-mobile-bridge` | 手机 App 远程控制 | ✗ 纯接口 | ✓ |
 | [仓库面板](./plugins/dsh-plugin-repopanel) | `dsh-plugin-repopanel` | GitHub/GitLab issue/PR | ✗ 纯 GUI | ✓ |
+| [章鱼Git](./plugins/dsh-plugin-otools-git) | `dsh-plugin-otools-git` | 完整本地 Git 客户端 | ✗ 纯 GUI | ✓ |
 
-所有插件都支持暗黑模式，自动跟随系统主题（`prefers-color-scheme`），界面都是中英双语。
+所有插件都支持暗黑模式，自动跟随系统主题（`prefers-color-scheme`）。前四个插件的界面是中英双语；章鱼Git 目前只有中文，见下面「界面语言」。
 
 ## 界面语言
 
-四个插件的界面都支持中文和英文。语言按这个顺序定：
+任务看板、无限画布、手机遥控、仓库面板这四个插件的界面都支持中文和英文（章鱼Git 还没跟上，它是双语化之后并行加进来的）。语言按这个顺序定：
 
 1. **`DSH_DESKTOP_LANG`**（`zh` / `en`）。装了 DSH Desktop Ultra 时由外壳设置：它在拉起 dsh
    子进程时把用户在设置里选的语言写进去，插件的 host 半边读它，再通过各自的接口发给浏览器半边。
@@ -47,6 +48,9 @@ dsh plugin --profile web add dsh-plugin-mobile-bridge
 
 # 仓库面板
 dsh plugin --profile web add dsh-plugin-repopanel
+
+# 章鱼Git
+dsh plugin --profile web add dsh-plugin-otools-git
 ```
 
 安装后重启 dsh 服务生效：
@@ -85,11 +89,16 @@ cd plugins/dsh-plugin-repopanel
 npm run build
 cd ../..
 
+cd plugins/dsh-plugin-otools-git
+npm run build
+cd ../..
+
 # 安装（指向本地目录）
 dsh plugin --profile web add link:plugins/dsh-plugin-taskboard
 dsh plugin --profile web add link:plugins/dsh-plugin-canvas
 dsh plugin --profile web add link:plugins/dsh-plugin-mobile-bridge
 dsh plugin --profile web add link:plugins/dsh-plugin-repopanel
+dsh plugin --profile web add link:plugins/dsh-plugin-otools-git
 ```
 
 ## 卸载插件
@@ -99,6 +108,7 @@ dsh plugin --profile web remove dsh-plugin-taskboard
 dsh plugin --profile web remove dsh-plugin-canvas
 dsh plugin --profile web remove dsh-plugin-mobile-bridge
 dsh plugin --profile web remove dsh-plugin-repopanel
+dsh plugin --profile web remove dsh-plugin-otools-git
 ```
 
 ## 验证安装
@@ -118,6 +128,7 @@ cat ~/.dsh/profiles/web/package.json
 - **无限画布** 图标（🎨）
 - **手机遥控** 图标（📱）
 - **仓库面板** 图标（🗂）
+- **章鱼Git** 图标（Git 标志）
 
 ## 兼容性
 
@@ -143,6 +154,10 @@ package.json 的 `dsh.compatibility.dshReleases` 字段记录了详细兼容性�
 
 5. **语言只在启动时读一次**：改 `DSH_DESKTOP_LANG` 之后要重启 dsh 服务。见上面「界面语言」。
 
+6. **章鱼Git 需要 git 可执行程序**：面板会检测，缺失时在界面上直接说明。建议 git 2.31 以上 —— 合并提交的差异需要 `--diff-merges`。仓库列表来自 DSH 的工作区，不需要手动添加；AI 写提交信息用的是 DSH 里已选好的默认模型，不用另配 key。
+
+7. **章鱼Git 目前只有中文界面**：双语化那一轮做的是外壳与前四个插件，章鱼Git 是之后并行加进来的，还没跟上，见上面「界面语言」的说明。
+
 ## 发布到插件市场
 
 这些插件已发布到 npm：
@@ -151,6 +166,7 @@ package.json 的 `dsh.compatibility.dshReleases` 字段记录了详细兼容性�
 - https://www.npmjs.com/package/dsh-plugin-canvas
 - https://www.npmjs.com/package/dsh-plugin-mobile-bridge
 - https://www.npmjs.com/package/dsh-plugin-repopanel
+- https://www.npmjs.com/package/dsh-plugin-otools-git
 
 要让它们出现在 dsh 内置插件市场，需要在 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 提交 registry 条目。
 

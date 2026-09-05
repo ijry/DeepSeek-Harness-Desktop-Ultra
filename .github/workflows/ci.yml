@@ -79,8 +79,8 @@ jobs:
         if: runner.os == 'Linux'
         run: git diff --exit-code -- plugins/dsh-plugin-canvas/lib
 
-      # 仓库面板插件不进安装包（只走 `dsh plugin add` 安装），但它的 lib/ 同样是
-      # 发布产物 —— package.json 的 files 带着它，所以同一条守卫照用。
+      # 仓库面板与章鱼Git 都不进安装包（只走 `dsh plugin add` 安装），但它们的 lib/
+      # 同样是发布产物 —— package.json 的 files 带着它，所以同一条守卫照用。
       - name: 仓库面板插件检查
         working-directory: plugins/dsh-plugin-repopanel
         run: |
@@ -90,6 +90,16 @@ jobs:
       - name: 仓库面板插件产物必须已提交
         if: runner.os == 'Linux'
         run: git diff --exit-code -- plugins/dsh-plugin-repopanel/lib
+
+      - name: 章鱼Git 插件检查
+        working-directory: plugins/dsh-plugin-otools-git
+        run: |
+          node scripts/check.mjs
+          node --test
+
+      - name: 章鱼Git 插件产物必须已提交
+        if: runner.os == 'Linux'
+        run: git diff --exit-code -- plugins/dsh-plugin-otools-git/lib
 
       - name: 前端构建
         run: npm run build
