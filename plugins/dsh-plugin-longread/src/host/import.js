@@ -184,7 +184,7 @@ function readNcxTitles(files, ncxPath) {
 /** Parse the OPF package document. */
 function readPackage(files, opfPath) {
   const raw = getEntry(files, opfPath)
-  if (raw === undefined) throw new ImportError('invalid_input', `epub package missing: ${opfPath}`)
+  if (raw === undefined) throw new ImportError('invalid_input', `epub 少了 package 文件：${opfPath}`)
   const xml = raw.toString('utf8')
   const base = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/')) : ''
   const title = decodeEntities(/<dc:title[^>]*>([\s\S]*?)<\/dc:title>/i.exec(xml)?.[1] ?? '')
@@ -226,7 +226,7 @@ function findOpfPath(files) {
   for (const key of files.keys()) {
     if (key.toLowerCase().endsWith('.opf')) return key
   }
-  throw new ImportError('invalid_input', 'not an epub (no container.xml and no .opf)')
+  throw new ImportError('invalid_input', '这不像 epub：既没有 META-INF/container.xml，也找不到 .opf')
 }
 
 /** Assemble chapters and text from already-extracted `{ title, body }` parts. */
@@ -248,9 +248,9 @@ function assemble(parts) {
 export function importTxt(buffer, filename) {
   const { text: decoded, encoding } = decodeText(buffer)
   const text = normalizeText(decoded)
-  if (text.length === 0) throw new ImportError('invalid_input', 'the file decoded to an empty text')
+  if (text.length === 0) throw new ImportError('invalid_input', '这个文件解码出来是空的')
   if (text.length > LIMITS.bookChars) {
-    throw new ImportError('invalid_input', `text is too long (${text.length} chars, cap ${LIMITS.bookChars})`)
+    throw new ImportError('invalid_input', `正文太长了（${text.length} 字，上限 ${LIMITS.bookChars} 字）`)
   }
   const chapters = splitChapters(text)
   return {
@@ -286,11 +286,11 @@ export function importEpub(buffer, filename) {
     parts.push({ title, body: withoutDuplicate })
     if (parts.length >= LIMITS.chapters) break
   }
-  if (parts.length === 0) throw new ImportError('invalid_input', 'the epub spine yielded no readable text')
+  if (parts.length === 0) throw new ImportError('invalid_input', 'epub 的 spine 里一个字都没读出来')
 
   let { text, chapters } = assemble(parts)
   if (text.length > LIMITS.bookChars) {
-    throw new ImportError('invalid_input', `text is too long (${text.length} chars, cap ${LIMITS.bookChars})`)
+    throw new ImportError('invalid_input', `正文太长了（${text.length} 字，上限 ${LIMITS.bookChars} 字）`)
   }
   // A single-document epub is a common bad conversion: fall back to headings.
   if (chapters.length < 3) {
@@ -309,7 +309,7 @@ export function importEpub(buffer, filename) {
 
 /** Import by filename extension (or by sniffing the ZIP magic). */
 export function importBook(buffer, filename) {
-  if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new ImportError('invalid_input', 'empty upload')
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new ImportError('invalid_input', '上传的内容是空的')
   const name = String(filename ?? '')
   const isZip = buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4b
   if (/\.epub$/i.test(name) || isZip) {
@@ -317,7 +317,7 @@ export function importBook(buffer, filename) {
       return importEpub(buffer, name)
     } catch (error) {
       if (error instanceof ImportError) throw error
-      throw new ImportError('invalid_input', `epub could not be read: ${error?.message ?? error}`)
+      throw new ImportError('invalid_input', `epub 读不出来：${error?.message ?? error}`)
     }
   }
   return importTxt(buffer, name)

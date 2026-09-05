@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-longread",
-  "description": "Long-form reader for the DeepSeek Harness web GUI that renders a book as a fake agent session: a prompt, a few tool calls, a streamed reply. Imports .txt and .epub, ships with an original wuxia sample (九阴真经), and keeps the reading position per book. 把小说读成一场会话的 dsh 插件：远看像在 vibe coding，近看在看书。纯 GUI 插件，不注册工具、不改系统提示。",
+  "description": "Long-form reader for the DeepSeek Harness web GUI that renders a book as a fake agent session: a prompt, a few tool calls, a streamed reply. Imports .txt and .epub, ships with an original wuxia sample (九阴真经), and keeps the reading position per book. 摸鱼大咖：把小说读成一场会话的 dsh 插件，远看像在 vibe coding，近看在看书。纯 GUI 插件，不注册工具、不改系统提示。",
   "version": "0.1.0",
   "type": "module",
   "main": "./lib/index.js",

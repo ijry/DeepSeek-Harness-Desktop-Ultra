@@ -1,6 +1,6 @@
 # 内置插件安装指南
 
-DSH Desktop Ultra 的安装包从 v0.1.5 起内置了全部九个插件（任务看板、无限画布、手机遥控、仓库面板、章鱼Git、自动化、长文阅读、墨鱼终端、鲨鱼数据库），首启时逐个问一次，默认全部勾选。本指南说明如何在其他 DSH 版本（官方 CLI、自建）上安装这些插件 —— 仓库面板与章鱼Git 已发布到 npm，其余的暂时只能从源码装。
+DSH Desktop Ultra 的安装包从 v0.1.5 起内置了全部九个插件（任务看板、无限画布、手机遥控、仓库面板、章鱼Git、自动化、摸鱼大咖、墨鱼终端、鲨鱼数据库），首启时逐个问一次，默认全部勾选。本指南说明如何在其他 DSH 版本（官方 CLI、自建）上安装这些插件 —— 仓库面板与章鱼Git 已发布到 npm，其余的暂时只能从源码装。
 
 ## 九个插件概览
 
@@ -14,13 +14,13 @@ DSH Desktop Ultra 的安装包从 v0.1.5 起内置了全部九个插件（任务
 | [墨鱼终端](./plugins/dsh-plugin-otools-term) | `dsh-plugin-otools-term` | SSH / SFTP / 转发 / 远程桌面 | ✗ 纯 GUI | ✓ |
 | [鲨鱼数据库](./plugins/dsh-plugin-otools-dbm) | `dsh-plugin-otools-dbm` | 十四种数据库的客户端 | ✗ 纯 GUI（AI 用 DSH 的模型） | ✓ |
 | [自动化](./plugins/dsh-plugin-automation) | `dsh-plugin-automation` | 定时跑 agent + 运行历史 | ✗ 不加工具，但会无人值守执行 | ✓ |
-| [长文阅读](./plugins/dsh-plugin-longread) | `dsh-plugin-longread` | txt/epub 小说阅读器，界面伪装成会话 | ✗ 纯 GUI | ✓ |
+| [摸鱼大咖](./plugins/dsh-plugin-longread) | `dsh-plugin-longread` | txt/epub 小说阅读器，界面伪装成会话 | ✗ 纯 GUI | ✓ |
 
-所有插件都支持暗黑模式，自动跟随系统主题（`prefers-color-scheme`）。任务看板、无限画布、手机遥控、仓库面板、墨鱼终端的界面是中英双语；鲨鱼数据库自带八种语言（复用参考实现的词表）；章鱼Git、自动化与长文阅读目前只有中文，见下面「界面语言」。
+所有插件都支持暗黑模式，自动跟随系统主题（`prefers-color-scheme`）。任务看板、无限画布、手机遥控、仓库面板、墨鱼终端的界面是中英双语；鲨鱼数据库自带八种语言（复用参考实现的词表）；章鱼Git、自动化与摸鱼大咖目前只有中文，见下面「界面语言」。
 
 ## 界面语言
 
-任务看板、无限画布、手机遥控、仓库面板、墨鱼终端这五个插件的界面都支持中文和英文（章鱼Git、自动化与长文阅读还没跟上，它们是双语化之后并行加进来的）。语言按这个顺序定：
+任务看板、无限画布、手机遥控、仓库面板、墨鱼终端这五个插件的界面都支持中文和英文（章鱼Git、自动化与摸鱼大咖还没跟上，它们是双语化之后并行加进来的）。语言按这个顺序定：
 
 1. **`DSH_DESKTOP_LANG`**（`zh` / `en`）。装了 DSH Desktop Ultra 时由外壳设置：它在拉起 dsh
    子进程时把用户在设置里选的语言写进去，插件的 host 半边读它，再通过各自的接口发给浏览器半边。
@@ -65,11 +65,11 @@ dsh plugin --profile web add dsh-plugin-automation
 # 鲨鱼数据库
 dsh plugin --profile web add dsh-plugin-otools-dbm
 
-# 长文阅读
+# 摸鱼大咖
 dsh plugin --profile web add dsh-plugin-longread
 ```
 
-> 墨鱼终端、鲨鱼数据库、自动化与长文阅读还没发布到 npm，上面这四条现在会失败；从源码装见下一节。
+> 墨鱼终端、鲨鱼数据库、自动化与摸鱼大咖还没发布到 npm，上面这四条现在会失败；从源码装见下一节。
 
 安装后重启 dsh 服务生效：
 
@@ -178,7 +178,7 @@ cat ~/.dsh/profiles/web/package.json
 - **墨鱼终端** 图标（终端标志）
 - **自动化** 图标（⏱）
 - **数据库** 图标（🗄）
-- **长文阅读** 图标（📄）
+- **摸鱼大咖** 图标（📄，侧栏上写的是「长文」）
 
 ## 兼容性
 
@@ -208,13 +208,13 @@ package.json 的 `dsh.compatibility.dshReleases` 字段记录了详细兼容性�
 
 7. **章鱼Git 需要 git 可执行程序**：面板会检测，缺失时在界面上直接说明。建议 git 2.31 以上 —— 合并提交的差异需要 `--diff-merges`。仓库列表来自 DSH 的工作区，不需要手动添加；AI 写提交信息用的是 DSH 里已选好的默认模型，不用另配 key。
 
-8. **章鱼Git、自动化与长文阅读目前只有中文界面**：双语化那一轮做的是外壳与前四个插件，这三个是之后并行加进来的，还没跟上（墨鱼终端自带双语，鲨鱼数据库自带八种），见上面「界面语言」的说明。
+8. **章鱼Git、自动化与摸鱼大咖目前只有中文界面**：双语化那一轮做的是外壳与前四个插件，这三个是之后并行加进来的，还没跟上（墨鱼终端自带双语，鲨鱼数据库自带八种），见上面「界面语言」的说明。
 
 9. **墨鱼终端会拿着服务器口令，也是有运行时依赖的插件之一**：口令、私钥口令、粘贴的私钥内容存在 `~/.dsh/dsh-plugin-otools-term-secrets.json`（0600），浏览器只知道「有没有」；已接受的主机密钥存在同目录的 known-hosts 文件里，指纹变了是硬失败。依赖是 `ssh2` / `ws` / `@xterm/*`，加可选的 `node-pty`，所以从源码装要先 `npm install`。详见 [otools-term README](./plugins/dsh-plugin-otools-term/README.md)。
 
 10. **鲨鱼数据库需要 Node 22.5 以上，会存数据库密码，也有运行时依赖**：SQLite 走 Node 内置的 `node:sqlite`，所以最低版本比其他插件高。连接账号密码明文存在 `<DSH 家目录>/dsh-plugin-otools-dbm/connections.json`（0600），密码不会回传给浏览器。它能对连上的库执行写操作与 DDL —— 所以首启卡片上写明了这一点，不想要就别勾。驱动（`mysql2`/`pg`/`ioredis`/`mongodb`/`tedious`…）是运行时依赖，Oracle 与 Snowflake 是可选依赖，缺了会在界面上说明；从源码装要先 `npm install`。详见它的 [README](./plugins/dsh-plugin-otools-dbm/README.md#安全边界)。
 
-11. **长文阅读会写家目录**：导入的书明文存在 `~/.dsh/dsh-plugin-longread-books/`，不加密；同一台机器上能读你家目录的人就能读这些书。
+11. **摸鱼大咖会写家目录**：导入的书明文存在 `~/.dsh/dsh-plugin-longread-books/`，不加密；同一台机器上能读你家目录的人就能读这些书。
 
 ## 发布到插件市场
 

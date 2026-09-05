@@ -375,8 +375,7 @@ test('书架里点一本就切过去，点导入不炸（没有文件选择器�
   assert.ok(asked.some((path) => path.startsWith(PREFIX + '/books/bk1/plan')))
 })
 
-test('章节跳转与上一章：第一章时按上一章只提示，不去要不存在的第 0 章', async () => {
-  const env = await boot()
+test('章节跳转与上一章：第一章时按上一章只提示，不去要不存在的第 0 章', async () => {  const env = await boot()
   await open(env)
   env.dom.html.dispatch('keydown', { key: '[' })
   // 不能 pump：替身的 setTimeout 在 flush 时就跑，一 flush 提示就被自己撤掉了。
@@ -403,3 +402,123 @@ test('dispose 收干净：入口、面板、样式全撤，之后不再有 DOM �
   await pump(env.dom, 10)
   assert.equal(env.dom.html.descendants().length, snapshot, 'dispose 之后不该再有异步写入')
 })
+
+// ---------------------------------------------------------------------- 导入
+// 「导入 epub 之后书架还是空的」是这个插件收到的第一个真实反馈，而当时这条链上
+// 一个测试都没有：上传要用 FileReader，替身里没有，于是整段代码从没被跑过。
+// 下面四个测试盯的就是那条链。
+
+/** 一本真实 epub 的样子：前几章是封面、版权页这种门面文字。 */
+const IMPORTED = {
+  id: 'bk2',
+  title: '文明之光（全三册）',
+  author: '吴军',
+  format: 'epub',
+  chars: 743842,
+  builtin: false,
+  addedAt: 5,
+  updatedAt: 5,
+  chapters: [
+    { index: 0, title: 'Cover', chars: 53 },
+    { index: 1, title: '版权', chars: 129 },
+    { index: 2, title: '序一 跨界写作的勇气', chars: 2439 },
+  ],
+}
+
+const PLAN2 = { ...PLAN, bookId: 'bk2', bookTitle: IMPORTED.title, chapterIndex: 2, chapterTitle: '序一 跨界写作的勇气', chapterCount: 3 }
+
+/** 一个只有名字和大小的假文件：client 只碰这两样，其余原样交给 fetch。 */
+function fakeFile(name, size) {
+  return { name, size, __file: true }
+}
+
+/** 打开书架弹层。 */
+async function openShelf(env) {
+  env.dom.html.querySelectorAll('.dsh-lr-btn').find((node) => node.textContent === '书架').dispatch('click')
+  await pump(env.dom, 6)
+  return env.dom.html.querySelector('[data-dsh-lr-modal]')
+}
+
+/** 往书架的拖放区丢一个文件。 */
+async function dropFile(env, file) {
+  const drop = env.dom.html.querySelector('.dsh-lr-drop')
+  assert.ok(drop !== null, '书架里应该有拖放区')
+  drop.dispatch('drop', { dataTransfer: { files: [file] }, preventDefault() {} })
+  await pump(env.dom, 20)
+}
+
+test('导入：上传的是文件本身的字节，导完书架里真的多一行', async () => {
+  let imported = false
+  const env = await boot({
+    [PREFIX + '/state']: () => (imported
+      ? { ...structuredClone(STATE), books: [IMPORTED, ...structuredClone(STATE).books] }
+      : structuredClone(STATE)),
+    [PREFIX + '/import']: () => { imported = true; return structuredClone(IMPORTED) },
+    [PREFIX + '/books/bk2/plan']: structuredClone(PLAN2),
+  })
+  await open(env)
+  await openShelf(env)
+  const file = fakeFile('文明之光（全三册）.epub', 8562297)
+  await dropFile(env, file)
+
+  const upload = env.dom.calls.find((call) => String(call.path).startsWith(PREFIX + '/import'))
+  assert.ok(upload !== undefined, '应该真的发出一次导入请求')
+  assert.equal(upload.options.method, 'POST')
+  assert.equal(upload.options.body, file, '上传的是文件本身，不是 base64 字符串')
+  assert.equal(upload.options.headers['content-type'], 'application/octet-stream')
+  assert.ok(upload.path.includes('name=' + encodeURIComponent(file.name)), '文件名走查询串：' + upload.path)
+
+  // 落在第一段真正的正文上：封面（53 字）和版权页（129 字）不是「读到了」。
+  const plans = env.dom.calls.filter((call) => String(call.path).includes('/books/bk2/plan'))
+  assert.ok(plans.length > 0, '导完要打开这本书')
+  assert.ok(plans.some((call) => call.path.endsWith('chapter=2')), '应该跳过门面章节：' + plans.map((c) => c.path).join(','))
+
+  const modal = await openShelf(env)
+  assert.ok(modal.textContent.includes('文明之光'), '书架里必须看得见刚导入的书')
+  assert.ok(modal.textContent.includes('EPUB · 74.4 万字 · 3 章'), '元信息也要在：' + modal.textContent)
+})
+
+test('导入失败：书架里留下一行说清为什么，弹层不关、列表不变空', async () => {
+  const env = await boot({
+    [PREFIX + '/import']: { __error: { code: 'too_large', message: '文件太大了（超过 128 MB）', status: 413 } },
+  })
+  await open(env)
+  await openShelf(env)
+  await dropFile(env, fakeFile('项目管理.epub', 39529885))
+
+  const note = env.dom.html.querySelector('.dsh-lr-note')
+  assert.ok(note !== null, '失败要留下一行字')
+  assert.ok(note.textContent.includes('文件太大了'), '写的是宿主给的原因：' + note.textContent)
+  assert.equal(note.dataset.kind, 'error')
+  assert.ok(env.dom.html.querySelector('[data-dsh-lr-modal]') !== null, '失败不该把书架关掉')
+  assert.ok(env.dom.html.querySelector('.dsh-lr-row') !== null, '原来的书还得在列表里')
+})
+
+test('太大的文件不白传一遍：本地就拦下来，并说清多大、上限多少', async () => {
+  const env = await boot()
+  await open(env)
+  await openShelf(env)
+  await dropFile(env, fakeFile('巨无霸.epub', 200 * 1024 * 1024))
+  assert.equal(env.dom.calls.some((call) => String(call.path).startsWith(PREFIX + '/import')), false,
+    '超限的文件不该发出请求')
+  const note = env.dom.html.querySelector('.dsh-lr-note')
+  assert.ok(note.textContent.includes('200 MB'), '要说这文件多大：' + note.textContent)
+  assert.ok(note.textContent.includes('128 MB'), '也要说上限多少：' + note.textContent)
+})
+
+test('书架每次打开都重新拉一次状态 —— 面板刚开、书架先开的那一下不会永远空着', async () => {
+  let hits = 0
+  const env = await boot({
+    // 第一次（面板打开时）书架是空的，第二次（书架打开时）才有书：真实里这就是
+    // 「/state 还没回来就点了书架」，以前那一下画出的空列表再也不会变。
+    [PREFIX + '/state']: () => (hits++ === 0
+      ? { ...structuredClone(STATE), books: [] }
+      : structuredClone(STATE)),
+  })
+  await open(env)
+  assert.ok(env.dom.html.querySelector('.dsh-lr-empty') !== null, '空书架先给一句提示')
+  const modal = await openShelf(env)
+  assert.ok(hits >= 2, '书架打开时要再拉一次状态，实际拉了 ' + hits + ' 次')
+  assert.ok(modal.textContent.includes('九阴真经'), '重新拉到的书要画出来：' + modal.textContent)
+})
+

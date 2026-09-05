@@ -21,7 +21,16 @@ import { addBook, deleteBook, seedSample, setProgress, updateSettings } from './
 export const ROUTE_PREFIX = '/dsh-plugin-longread'
 
 /** Max accepted JSON body bytes — an unbounded local HTTP buffer is an OOM vector. */
-const MAX_BODY_BYTES = 24 * 1024 * 1024
+const MAX_JSON_BYTES = 1024 * 1024
+
+/**
+ * Max accepted upload bytes. Real EPUBs carry cover art and scanned figures, so
+ * a 40 MB textbook is ordinary — and the panel used to base64 the file into a
+ * JSON body first, which inflated it by a third and pushed exactly those books
+ * past the cap before anyone saw a chapter. The bytes arrive as themselves now
+ * and this is the limit on them.
+ */
+export const MAX_UPLOAD_BYTES = 128 * 1024 * 1024
 
 /** Route shapes, compiled once at module load. */
 const PLAN_RE = new RegExp(`^${ROUTE_PREFIX}/books/([^/]+)/plan$`)
@@ -31,6 +40,7 @@ const DELETE_RE = new RegExp(`^${ROUTE_PREFIX}/books/([^/]+)/delete$`)
 export const ERR = {
   invalidInput: 'invalid_input',
   notFound: 'not_found',
+  tooLarge: 'too_large',
   internal: 'internal',
 }
 
@@ -49,7 +59,14 @@ function ok(res, value, status = 200) {
 function statusOf(code) {
   return code === ERR.invalidInput ? 400
     : code === ERR.notFound ? 404
-      : 500
+      : code === ERR.tooLarge ? 413
+        : 500
+}
+
+/** Bytes as megabytes, for a message the reader can act on. */
+function mib(bytes) {
+  const mb = bytes / (1024 * 1024)
+  return `${mb >= 10 ? Math.round(mb) : Math.round(mb * 10) / 10} MB`
 }
 
 /** `{ ok: false }` writer. */
@@ -67,33 +84,70 @@ function envelopeOfError(error) {
   return { code: ERR.internal, message, status: 500 }
 }
 
-/** Read one JSON body (`{}` when empty; null on parse failure). */
-async function readBody(req) {
+/** Read one request body into a Buffer, refusing anything past the cap. */
+async function readBuffer(req, cap) {
   const chunks = []
   let total = 0
   for await (const chunk of req) {
     total += chunk.length
-    if (total > MAX_BODY_BYTES) throw new ImportError(ERR.invalidInput, 'body too large')
+    if (total > cap) throw new ImportError(ERR.tooLarge, `文件太大了（超过 ${mib(cap)}）`)
     chunks.push(chunk)
   }
-  if (chunks.length === 0) return {}
+  return chunks.length === 0 ? Buffer.alloc(0) : Buffer.concat(chunks)
+}
+
+/** Read one JSON body (`{}` when empty; null on parse failure). */
+async function readBody(req, cap) {
+  const raw = await readBuffer(req, cap ?? MAX_JSON_BYTES)
+  return parseJson(raw)
+}
+
+/** Parse one buffer as a JSON object (`{}` when empty; null when it is not one). */
+function parseJson(raw) {
+  if (raw.length === 0) return {}
   try {
-    const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    const parsed = JSON.parse(raw.toString('utf8'))
     return typeof parsed === 'object' && parsed !== null ? parsed : null
   } catch {
     return null
   }
 }
 
-/** Decode the base64 payload of an import request. */
+/** Decode the base64 payload of a JSON import request. */
 function decodeUpload(body) {
   const data = body.data
   if (typeof data !== 'string' || data.length === 0) {
     throw new ImportError(ERR.invalidInput, 'data must be a base64 string')
   }
   const buffer = Buffer.from(data, 'base64')
-  if (buffer.length === 0) throw new ImportError(ERR.invalidInput, 'data decoded to zero bytes')
+  if (buffer.length === 0) throw new ImportError(ERR.invalidInput, '上传的内容是空的')
   return buffer
+}
+
+/**
+ * Read one import request into `{ buffer, filename }`.
+ *
+ * The panel posts the file's own bytes with the name in the query string. The
+ * JSON+base64 envelope is still accepted — it is the shape every other route
+ * speaks and callers may already have scripted it — under the same byte cap. A
+ * body with no content-type is sniffed: it is only read as the envelope when it
+ * actually parses into one, so a file that happens to start with `{` still
+ * imports as a file.
+ */
+async function readUpload(req, url) {
+  const type = String(req.headers?.['content-type'] ?? '')
+  const declaresJson = type.includes('json')
+  const raw = await readBuffer(req, MAX_UPLOAD_BYTES)
+  if (raw.length === 0) throw new ImportError(ERR.invalidInput, '上传的内容是空的')
+  if (declaresJson || raw[0] === 0x7b /* { */) {
+    const body = parseJson(raw)
+    const envelope = body !== null && typeof body.data === 'string'
+    if (envelope) return { buffer: decodeUpload(body), filename: body.name }
+    if (declaresJson) {
+      throw new ImportError(ERR.invalidInput, body === null ? 'body must be a JSON object' : 'data must be a base64 string')
+    }
+  }
+  return { buffer: raw, filename: url.searchParams.get('name') ?? '' }
 }
 
 /**
@@ -134,7 +188,7 @@ export function registerLongreadRoutes(ctx, options) {
           await store.load()
           const book = store.get(planMatch[1])
           if (book === undefined) {
-            sendFail(res, ERR.notFound, `no book ${planMatch[1]}`)
+            sendFail(res, ERR.notFound, `书架上没有这本书（${planMatch[1]}）`)
             return
           }
           const requested = Number.parseInt(url.searchParams.get('chapter') ?? '0', 10)
@@ -143,7 +197,7 @@ export function registerLongreadRoutes(ctx, options) {
             : 0
           const text = await store.chapterText(book.id, chapterIndex)
           if (text === undefined) {
-            sendFail(res, ERR.notFound, 'the book text is missing on disk')
+            sendFail(res, ERR.notFound, '这本书的正文文件在磁盘上不见了')
             return
           }
           const chapter = book.chapters[chapterIndex]
@@ -175,18 +229,21 @@ export function registerLongreadRoutes(ctx, options) {
         return
       }
 
+      // Read the upload straight off the stream: an epub is megabytes, and
+      // buffering it as JSON first is what used to refuse the big ones.
+      if (pathname === `${ROUTE_PREFIX}/import`) {
+        const upload = await readUpload(req, url)
+        const summary = await addBook(store, { buffer: upload.buffer, filename: upload.filename, now })
+        ok(res, summary, 201)
+        return
+      }
+
       const body = await readBody(req)
       if (body === null) {
         sendFail(res, ERR.invalidInput, 'body must be a JSON object')
         return
       }
 
-      if (pathname === `${ROUTE_PREFIX}/import`) {
-        const buffer = decodeUpload(body)
-        const summary = await addBook(store, { buffer, filename: body.name, now })
-        ok(res, summary, 201)
-        return
-      }
       if (pathname === `${ROUTE_PREFIX}/settings`) {
         ok(res, await updateSettings(store, body))
         return
@@ -203,7 +260,7 @@ export function registerLongreadRoutes(ctx, options) {
           now,
         })
         if (saved === undefined) {
-          sendFail(res, ERR.notFound, `no book ${body.bookId}`)
+          sendFail(res, ERR.notFound, `书架上没有这本书（${body.bookId}）`)
           return
         }
         ok(res, saved)
@@ -213,7 +270,7 @@ export function registerLongreadRoutes(ctx, options) {
       if (deleteMatch !== null) {
         const removed = await deleteBook(store, deleteMatch[1])
         if (!removed) {
-          sendFail(res, ERR.notFound, `no book ${deleteMatch[1]}`)
+          sendFail(res, ERR.notFound, `书架上没有这本书（${deleteMatch[1]}）`)
           return
         }
         ok(res, { id: deleteMatch[1], removed: true })

@@ -134,13 +134,13 @@ pub const AUTOMATION: Bundled = Bundled {
     heavy: false,
 };
 
-/// 长文阅读：把一本书渲染成一场会话。
+/// 摸鱼大咖：把一本书渲染成一场会话。
 pub const LONGREAD: Bundled = Bundled {
     id: "dsh-plugin-longread",
-    title_zh: "长文阅读",
-    title_en: "Long-form reader",
-    summary_zh: "在 dsh 侧栏加一个长文阅读器：把一本书渲染成一场假的 agent 会话——一句提问、几次工具调用、一段流式回复。可导入 .txt 与 .epub，自带一篇原创武侠样章，按书记住阅读位置。纯 GUI 插件，不注册工具、不改系统提示。",
-    summary_en: "Adds a long-form reader to the dsh sidebar: it renders a book as a fake agent session — a prompt, a few tool calls, a streamed reply. It imports .txt and .epub, ships with an original wuxia sample chapter, and remembers the reading position per book. A GUI-only plugin: it registers no tools and touches no system prompt.",
+    title_zh: "摸鱼大咖",
+    title_en: "Slacker pro",
+    summary_zh: "在 dsh 侧栏加一个长文阅读器：把一本书渲染成一场假的 agent 会话——一句提问、几次工具调用、一段流式回复。可导入 .txt 与 .epub（单本上限 128 MB），自带一篇原创武侠样章，按书记住阅读位置。侧栏上那个入口故意只写「长文」——伪装是它的全部意义。纯 GUI 插件，不注册工具、不改系统提示。",
+    summary_en: "Adds a long-form reader to the dsh sidebar: it renders a book as a fake agent session — a prompt, a few tool calls, a streamed reply. It imports .txt and .epub (128 MB per book), ships with an original wuxia sample chapter, and remembers the reading position per book. The sidebar entry is deliberately labelled just \"长文\" — the disguise is the whole point. A GUI-only plugin: it registers no tools and touches no system prompt.",
     heavy: false,
 };
 

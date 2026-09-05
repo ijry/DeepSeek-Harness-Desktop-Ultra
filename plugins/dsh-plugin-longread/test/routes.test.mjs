@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { LibraryStore } from '../src/host/store.js'
-import { ROUTE_PREFIX, registerLongreadRoutes } from '../src/host/routes.js'
+import { MAX_UPLOAD_BYTES, ROUTE_PREFIX, registerLongreadRoutes } from '../src/host/routes.js'
 
 const TXT = '第一章 甲\n\n' + '甲的正文。'.repeat(60) + '\n\n第二章 乙\n\n' + '乙的正文。'.repeat(60) + '\n'
 
@@ -36,13 +36,15 @@ function fakeRes() {
   return res
 }
 
-function fakeReq(method, path, body) {
-  const chunks = body === undefined
-    ? []
-    : [Buffer.from(typeof body === 'string' ? body : JSON.stringify(body), 'utf8')]
+function fakeReq(method, path, body, headers) {
+  const raw = body === undefined
+    ? undefined
+    : (Buffer.isBuffer(body) ? body : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body), 'utf8'))
+  const chunks = raw === undefined ? [] : [raw]
   return {
     method,
     url: path,
+    headers: headers ?? {},
     async* [Symbol.asyncIterator]() {
       for (const chunk of chunks) yield chunk
     },
@@ -66,17 +68,19 @@ async function mount(options) {
   }
   const filePool = { paths: async () => options?.files ?? [] }
   const dispose = registerLongreadRoutes(ctx, { store, filePool, now: () => 1234 })
-  const call = async (method, path, body) => {
+  const call = async (method, path, body, headers) => {
     const res = fakeRes()
-    await handler(fakeReq(method, ROUTE_PREFIX + path, body), res)
+    await handler(fakeReq(method, ROUTE_PREFIX + path, body, headers), res)
     return res
   }
   return { store, call, dispose, dir }
 }
 
-/** Import one book through the route and return its summary. */
+/** Import one book the way the panel does: the file's own bytes, name in the query. */
 async function importBookVia(call, name) {
-  const res = await call('POST', '/import', { name: name ?? 'a.txt', data: Buffer.from(TXT, 'utf8').toString('base64') })
+  const filename = name ?? 'a.txt'
+  const res = await call('POST', '/import?name=' + encodeURIComponent(filename), Buffer.from(TXT, 'utf8'),
+    { 'content-type': 'application/octet-stream' })
   assert.equal(res.status, 201)
   return res.json.value
 }
@@ -156,13 +160,55 @@ test('删书之后计划就打不开了', async () => {
 
 test('坏上传被挡在 400：空 data、不是 JSON 的 body', async () => {
   const { call } = await mount()
-  const empty = await call('POST', '/import', { name: 'a.txt' })
+  const json = { 'content-type': 'application/json' }
+  const empty = await call('POST', '/import', { name: 'a.txt' }, json)
   assert.equal(empty.status, 400)
   assert.equal(empty.json.error.code, 'invalid_input')
-  const garbage = await call('POST', '/import', '{not json')
+  const garbage = await call('POST', '/import', '{not json', json)
   assert.equal(garbage.status, 400)
-  const notABook = await call('POST', '/import', { name: 'a.txt', data: Buffer.from('   ', 'utf8').toString('base64') })
+  const notABook = await call('POST', '/import', { name: 'a.txt', data: Buffer.from('   ', 'utf8').toString('base64') }, json)
   assert.equal(notABook.status, 400)
+  const nothing = await call('POST', '/import?name=a.txt', undefined, { 'content-type': 'application/octet-stream' })
+  assert.equal(nothing.status, 400)
+})
+
+test('导入收的是文件本身的字节：epub 不必先 base64（那是 40MB 的书进不来的原因）', async () => {
+  const { call, store } = await mount()
+  const bytes = Buffer.from(TXT, 'utf8')
+  const res = await call('POST', '/import?name=' + encodeURIComponent('【某站】九阴真经.txt'), bytes,
+    { 'content-type': 'application/octet-stream' })
+  assert.equal(res.status, 201)
+  assert.equal(res.json.value.title, '九阴真经', '文件名从查询串里取')
+  assert.equal(res.json.value.chapters.length, 2)
+  // 字节原样落盘：raw 上传不该在中间被解码一次。
+  assert.equal(await store.chapterText(res.json.value.id, 0), (await store.text(res.json.value.id)).slice(0, res.json.value.chapters[0].chars))
+
+  // JSON+base64 仍然收：老脚本不该因为面板换了形状就断。
+  const legacy = await call('POST', '/import', { name: 'b.txt', data: bytes.toString('base64') },
+    { 'content-type': 'application/json' })
+  assert.equal(legacy.status, 201)
+  assert.equal(legacy.json.value.title, 'b')
+  // 没带 content-type 的 JSON 信封也认（旧客户端就是这么发的）。
+  const sniffed = await call('POST', '/import', { name: 'c.txt', data: bytes.toString('base64') })
+  assert.equal(sniffed.status, 201)
+  assert.equal(sniffed.json.value.title, 'c')
+})
+
+test('超过上限的上传是 413，且说清上限是多少 —— 不是静默失败', async () => {
+  const { call } = await mount()
+  const tooBig = Buffer.alloc(MAX_UPLOAD_BYTES + 1024, 0x41)
+  const res = await call('POST', '/import?name=big.txt', tooBig, { 'content-type': 'application/octet-stream' })
+  assert.equal(res.status, 413)
+  assert.equal(res.json.error.code, 'too_large')
+  assert.match(res.json.error.message, /128 MB/)
+})
+
+test('控制路由的 JSON body 有独立的小上限：settings 不该收得下一本书', async () => {
+  const { call } = await mount()
+  const fat = JSON.stringify({ speed: 40, pad: 'x'.repeat(2 * 1024 * 1024) })
+  const res = await call('POST', '/settings', fat, { 'content-type': 'application/json' })
+  assert.equal(res.status, 413)
+  assert.equal(res.json.error.code, 'too_large')
 })
 
 test('未知路径 404、不认识的方法 405 且带 allow 头', async () => {

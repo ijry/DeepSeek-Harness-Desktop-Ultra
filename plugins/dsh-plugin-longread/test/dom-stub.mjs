@@ -312,8 +312,8 @@ export function createStubDom(routes = {}) {
     innerHeight: 800,
   }
 
-  const fetch = async (path) => {
-    calls.push({ kind: 'fetch', path })
+  const fetch = async (path, options) => {
+    calls.push({ kind: 'fetch', path, options })
     // Longest prefix wins, like the real dsh webserver's route table — otherwise
     // `/sessions` would swallow `/sessions/<id>/transcript`.
     let best
@@ -322,7 +322,14 @@ export function createStubDom(routes = {}) {
       if (best === undefined || prefix.length > best.prefix.length) best = { prefix, value }
     }
     if (best !== undefined) {
-      return { status: 200, json: async () => ({ ok: true, value: best.value }) }
+      // A function route answers per call (so a second GET can differ from the
+      // first); an `__error` value answers with the failure envelope.
+      const value = typeof best.value === 'function' ? best.value(path, options) : best.value
+      if (value !== null && typeof value === 'object' && value.__error !== undefined) {
+        const error = value.__error
+        return { status: error.status ?? 400, json: async () => ({ ok: false, error }) }
+      }
+      return { status: 200, json: async () => ({ ok: true, value }) }
     }
     return { status: 404, json: async () => ({ ok: false, error: { code: 'not_found', message: path } }) }
   }

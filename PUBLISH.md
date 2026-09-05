@@ -84,7 +84,7 @@ npm test
 npm publish
 ```
 
-### 8. 长文阅读
+### 8. 摸鱼大咖
 
 ```bash
 cd plugins/dsh-plugin-longread

@@ -40,7 +40,7 @@ function findEndOfCentralDirectory(buffer) {
   for (let at = buffer.length - EOCD_MIN; at >= floor; at--) {
     if (buffer.readUInt32LE(at) === SIG_EOCD) return at
   }
-  throw new ZipError('not a zip archive (no end-of-central-directory record)')
+  throw new ZipError('不是 zip 包（找不到中央目录结尾记录）')
 }
 
 /**
@@ -48,19 +48,19 @@ function findEndOfCentralDirectory(buffer) {
  * Directory entries (trailing "/") are skipped.
  */
 export function readZip(buffer) {
-  if (!Buffer.isBuffer(buffer) || buffer.length < EOCD_MIN) throw new ZipError('empty or truncated archive')
+  if (!Buffer.isBuffer(buffer) || buffer.length < EOCD_MIN) throw new ZipError('包是空的，或者只下载了一半')
   const eocd = findEndOfCentralDirectory(buffer)
   const entryCount = buffer.readUInt16LE(eocd + 10)
   const centralOffset = buffer.readUInt32LE(eocd + 16)
-  if (centralOffset === ZIP64_MARKER || entryCount === 0xffff) throw new ZipError('ZIP64 archives are not supported')
-  if (centralOffset >= buffer.length) throw new ZipError('central directory offset out of range')
+  if (centralOffset === ZIP64_MARKER || entryCount === 0xffff) throw new ZipError('不支持 ZIP64 的包')
+  if (centralOffset >= buffer.length) throw new ZipError('中央目录的偏移越界了')
 
   const files = new Map()
   let cursor = centralOffset
   let total = 0
   for (let index = 0; index < Math.min(entryCount, MAX_ENTRIES); index++) {
-    if (cursor + 46 > buffer.length) throw new ZipError('truncated central directory')
-    if (buffer.readUInt32LE(cursor) !== SIG_CENTRAL) throw new ZipError('bad central directory signature')
+    if (cursor + 46 > buffer.length) throw new ZipError('中央目录被截断了')
+    if (buffer.readUInt32LE(cursor) !== SIG_CENTRAL) throw new ZipError('中央目录的签名不对')
     const method = buffer.readUInt16LE(cursor + 10)
     const compressedSize = buffer.readUInt32LE(cursor + 20)
     const uncompressedSize = buffer.readUInt32LE(cursor + 24)
@@ -73,30 +73,30 @@ export function readZip(buffer) {
 
     if (name.endsWith('/')) continue
     if (compressedSize === ZIP64_MARKER || uncompressedSize === ZIP64_MARKER) {
-      throw new ZipError(`ZIP64 entry is not supported: ${name}`)
+      throw new ZipError(`不支持 ZIP64 的条目：${name}`)
     }
     total += uncompressedSize
-    if (total > MAX_TOTAL_BYTES) throw new ZipError('archive expands beyond the size cap')
+    if (total > MAX_TOTAL_BYTES) throw new ZipError('解开之后超过体积上限')
 
     if (localOffset + 30 > buffer.length || buffer.readUInt32LE(localOffset) !== SIG_LOCAL) {
-      throw new ZipError(`bad local header for ${name}`)
+      throw new ZipError(`${name} 的本地头不对`)
     }
     const localNameLength = buffer.readUInt16LE(localOffset + 26)
     const localExtraLength = buffer.readUInt16LE(localOffset + 28)
     const dataStart = localOffset + 30 + localNameLength + localExtraLength
     const dataEnd = dataStart + compressedSize
-    if (dataEnd > buffer.length) throw new ZipError(`truncated entry data for ${name}`)
+    if (dataEnd > buffer.length) throw new ZipError(`${name} 的数据被截断了`)
     const raw = buffer.subarray(dataStart, dataEnd)
 
     let content
     if (method === 0) content = Buffer.from(raw)
     else if (method === 8) content = inflateRawSync(raw)
-    else throw new ZipError(`unsupported compression method ${method} for ${name}`)
+    else throw new ZipError(`不支持的压缩方式 ${method}（${name}）—— 加密或 DRM 的 epub 读不了`)
     if (uncompressedSize > 0 && content.length !== uncompressedSize) {
-      throw new ZipError(`size mismatch for ${name} (declared ${uncompressedSize}, got ${content.length})`)
+      throw new ZipError(`${name} 的大小对不上（声明 ${uncompressedSize}，实际 ${content.length}）`)
     }
     files.set(name, content)
   }
-  if (files.size === 0) throw new ZipError('archive contains no files')
+  if (files.size === 0) throw new ZipError('包里一个文件都没有')
   return files
 }

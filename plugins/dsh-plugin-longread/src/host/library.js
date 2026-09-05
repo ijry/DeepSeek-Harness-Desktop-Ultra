@@ -16,10 +16,10 @@ export async function addBook(store, options) {
   const now = options.now ?? (() => Date.now())
   await store.load()
   if (store.snapshot().books.length >= LIMITS.books) {
-    throw new ImportError('invalid_input', `library is full (${LIMITS.books} books)`)
+    throw new ImportError('invalid_input', `书架满了（上限 ${LIMITS.books} 本）`)
   }
   const imported = importBook(buffer, filename)
-  if (imported.chapters.length === 0) throw new ImportError('invalid_input', 'no chapters were detected')
+  if (imported.chapters.length === 0) throw new ImportError('invalid_input', '这个文件里没切出任何章节')
 
   const stamp = now()
   const id = newBookId(Math.random, stamp)

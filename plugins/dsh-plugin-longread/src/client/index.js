@@ -48,6 +48,16 @@
   /** Pause between an assistant reply and the next auto-played turn. */
   const AUTO_GAP_MS = 620
 
+  /** Mirrors host/routes.js MAX_UPLOAD_BYTES — refuse locally instead of uploading for nothing. */
+  const MAX_UPLOAD_BYTES = 128 * 1024 * 1024
+
+  /**
+   * A chapter with less prose than this is front matter, not reading: real EPUBs
+   * open on a cover page and a copyright notice, and landing there is what makes
+   * a freshly imported 700k-character book look like an empty panel.
+   */
+  const FRONT_MATTER_CHARS = 300
+
   // ---------------------------------------------------------------- helpers
   /**
    * Build an element. Text children are set through textContent (or wrapped in a
@@ -146,7 +156,18 @@
     settings(patch) { return api.post(ROUTE_PREFIX + '/settings', patch) },
     progress(payload) { return api.post(ROUTE_PREFIX + '/progress', payload) },
     remove(bookId) { return api.post(ROUTE_PREFIX + '/books/' + encodeURIComponent(bookId) + '/delete', {}) },
-    upload(name, data) { return api.post(ROUTE_PREFIX + '/import', { name, data }) },
+    /**
+     * Upload the file's own bytes. Base64 in a JSON body was the first shape and
+     * it is why a 40 MB epub could not be imported at all: the encoding inflates
+     * the file by a third, and the whole thing had to survive one JSON parse.
+     */
+    upload(name, file) {
+      return api.request(ROUTE_PREFIX + '/import?name=' + encodeURIComponent(String(name ?? '')), {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: file,
+      })
+    },
   }
 
   // ---------------------------------------------------------------- styles
@@ -322,6 +343,13 @@ html[data-dsh-lr-open] .dsh-lr-view {
 .dsh-lr-row-main { flex: 1 1 auto; min-width: 0; }
 .dsh-lr-row-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dsh-lr-row-meta { font-size: 11px; color: var(--lr-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The shelf's one status line: loading, or why an import did not land. */
+.dsh-lr-note {
+  margin: 0 0 8px; padding: 8px 10px; border-radius: 9px; background: var(--lr-surface-2);
+  color: var(--lr-text-2); font-size: 12px; line-height: 19px; word-break: break-word;
+}
+.dsh-lr-note:empty { display: none; }
+.dsh-lr-note[data-kind="error"] { color: var(--lr-err); }
 .dsh-lr-field { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 13px; }
 .dsh-lr-field-label { flex: none; width: 92px; color: var(--lr-text-2); }
 .dsh-lr-field-hint { font-size: 11px; color: var(--lr-text-3); }
@@ -960,6 +988,25 @@ html[data-dsh-lr-open] .dsh-lr-view {
     streamEl.append(el('div', { class: 'dsh-lr-empty', text: message }))
   }
 
+  /**
+   * Read the ledger into the model. The panel's first open and every shelf open
+   * both go through here, so no view can keep showing a library older than the
+   * one the host has.
+   */
+  async function refreshLibrary() {
+    const state = await api.state()
+    model.hydrated = true
+    model.books = Array.isArray(state.books) ? state.books : []
+    // Copy, don't alias: progress is written back on every finished turn, and
+    // mutating a decoded response body is how a cached fixture ends up shared.
+    model.progress = { ...(state.progress ?? {}) }
+    model.settings = { ...model.settings, ...(state.settings ?? {}) }
+    model.error = null
+    renderHead()
+    renderEntry()
+    return state
+  }
+
   /** Load the library once per open, then restore the last position. */
   async function hydrate() {
     if (model.hydrated) {
@@ -967,15 +1014,7 @@ html[data-dsh-lr-open] .dsh-lr-view {
       return
     }
     try {
-      const state = await api.state()
-      model.hydrated = true
-      model.books = Array.isArray(state.books) ? state.books : []
-      // Copy, don't alias: progress is written back on every finished turn, and
-      // mutating a decoded response body is how a cached fixture ends up shared.
-      model.progress = { ...(state.progress ?? {}) }
-      model.settings = { ...model.settings, ...(state.settings ?? {}) }
-      renderHead()
-      renderEntry()
+      await refreshLibrary()
       if (model.books.length === 0) {
         renderEmpty('书架是空的。把 .txt 或 .epub 拖到这里，或者点右上角「书架」导入。')
         return
@@ -1099,11 +1138,19 @@ html[data-dsh-lr-open] .dsh-lr-view {
   // ------------------------------------------------------------------ modal
   let modal = null
 
+  /**
+   * The open shelf, so an import can redraw its list and leave its error where
+   * the reader is actually looking. A toast that has already faded is why a
+   * failed import used to look like nothing happened at all.
+   */
+  let shelf = null
+
   function closeModal() {
     if (modal !== null) {
       try { modal.remove() } catch { /* noop */ }
       modal = null
     }
+    shelf = null
   }
 
   /** Open a modal frame; returns its body and footer for the caller to fill. */
@@ -1131,9 +1178,32 @@ html[data-dsh-lr-open] .dsh-lr-view {
     return chars >= 10000 ? (chars / 10000).toFixed(1) + ' 万字' : chars + ' 字'
   }
 
-  function openLibrary() {
+  /** Human-readable size of a file. */
+  function fmtBytes(bytes) {
+    const mb = bytes / (1024 * 1024)
+    if (mb >= 10) return Math.round(mb) + ' MB'
+    if (mb >= 0.1) return (Math.round(mb * 10) / 10) + ' MB'
+    return Math.max(1, Math.round(bytes / 1024)) + ' KB'
+  }
+
+  function openLibrary(options) {
     const frame = openModal('书架')
+    const note = el('div', { class: 'dsh-lr-note' })
     const list = el('div', {})
+    /** A note an import left behind: it outlives the reload that follows. */
+    let sticky = options !== undefined && options !== null ? options.note ?? null : null
+
+    /** Draw one note (or clear it). */
+    const paint = (entry) => {
+      note.textContent = entry === null || entry === undefined ? '' : String(entry.text)
+      if (entry === null || entry === undefined || entry.kind === undefined) delete note.dataset.kind
+      else note.dataset.kind = entry.kind
+    }
+    /** Set the note an import left behind — it survives the reload below. */
+    const setNote = (text, kind) => {
+      sticky = text === undefined || text === null ? null : { text, kind }
+      paint(sticky)
+    }
 
     const redraw = () => {
       clear(list)
@@ -1174,15 +1244,38 @@ html[data-dsh-lr-open] .dsh-lr-view {
     }
     redraw()
 
+    /**
+     * Always re-read the ledger when the shelf opens. The panel loads it once in
+     * the background, so a shelf opened a moment too early used to render one
+     * empty list and keep it forever — indistinguishable from an import that
+     * silently did nothing.
+     */
+    const reload = async () => {
+      if (sticky === null) paint({ text: '正在读取书架…' })
+      try {
+        await refreshLibrary()
+        paint(sticky)
+      } catch (error) {
+        paint({ text: '读不到书架：' + messageOf(error), kind: 'error' })
+      }
+      redraw()
+    }
+
     const drop = el('div', { class: 'dsh-lr-drop', text: '把 .txt / .epub 拖到这里，或点下面的按钮选文件' })
     bindDropTarget(drop, drop)
-    frame.body.append(list, drop)
+    frame.body.append(note, list, drop)
     const importBtn = el('button', {
       class: 'dsh-lr-btn', 'data-kind': 'primary', type: 'button', text: '导入文件…',
       onClick: () => pickFile(),
     })
     frame.foot.append(importBtn, el('div', { class: 'dsh-lr-spacer' }),
-      el('div', { class: 'dsh-lr-field-hint', text: 'txt 支持 UTF-8 / GB18030；epub 取 spine 顺序' }))
+      el('div', {
+        class: 'dsh-lr-field-hint',
+        text: 'txt 支持 UTF-8 / GB18030；epub 取 spine 顺序 · 单本上限 ' + fmtBytes(MAX_UPLOAD_BYTES),
+      }))
+    shelf = { redraw, setNote }
+    if (sticky !== null) paint(sticky)
+    void reload()
   }
 
   async function removeBook(book, redraw) {
@@ -1208,47 +1301,64 @@ html[data-dsh-lr-open] .dsh-lr-view {
   // ----------------------------------------------------------------- import
   /** Open the OS file picker. */
   function pickFile() {
-    const input = el('input', { type: 'file', accept: '.txt,.epub' })
+    const input = el('input', { type: 'file', accept: '.txt,.epub', style: 'display:none' })
     input.addEventListener('change', () => {
       const files = input.files
       const file = files !== undefined && files !== null ? files[0] : undefined
+      try { input.remove() } catch { /* noop */ }
       if (file !== undefined) void uploadFile(file)
     })
+    // Attach before clicking: a detached input opens no dialog in some engines.
+    const root = document.body ?? document.documentElement
+    root.append(input)
     if (typeof input.click === 'function') input.click()
   }
 
   /**
-   * Upload one file as base64. FileReader's data URL is used rather than btoa so
-   * a GB18030 .txt survives the trip: the bytes are never decoded in the browser,
-   * only on the host, which knows how to sniff the encoding.
+   * Upload one file. The bytes go up as themselves (see api.upload) and the name
+   * rides in the query string, so a 40 MB epub full of scanned figures imports
+   * like any other file instead of being refused by a JSON body cap.
    */
   async function uploadFile(file) {
-    const Reader = window.FileReader
-    if (typeof Reader !== 'function') {
-      toast('这个环境读不了本地文件', 'error')
+    const size = typeof file.size === 'number' ? file.size : 0
+    if (size > MAX_UPLOAD_BYTES) {
+      reportImportFailure('这个文件 ' + fmtBytes(size) + '，超过单本上限 ' + fmtBytes(MAX_UPLOAD_BYTES))
       return
     }
     toast('正在导入 ' + String(file.name ?? '文件') + '…')
     try {
-      const data = await new Promise((resolve, reject) => {
-        const reader = new Reader()
-        reader.onload = () => {
-          const result = String(reader.result ?? '')
-          const comma = result.indexOf(',')
-          resolve(comma >= 0 ? result.slice(comma + 1) : '')
-        }
-        reader.onerror = () => reject(new Error('读文件失败'))
-        reader.readAsDataURL(file)
-      })
-      const summary = await api.upload(file.name, data)
+      const summary = await api.upload(file.name, file)
       model.books = [summary, ...model.books.filter((book) => book.id !== summary.id)]
       closeModal()
       renderEntry()
-      await openBook(summary.id, { chapterIndex: 0 })
+      await openBook(summary.id, { chapterIndex: firstReadableChapter(summary) })
       toast('已导入《' + summary.title + '》· ' + summary.chapters.length + ' 章')
     } catch (error) {
-      toast('导入失败：' + messageOf(error), 'error')
+      reportImportFailure(messageOf(error))
     }
+  }
+
+  /**
+   * Say why an import failed where the reader can still read it. The shelf keeps
+   * the line until the next attempt; a toast alone is how a failed import became
+   * "I imported it and the list is still empty".
+   */
+  function reportImportFailure(detail) {
+    const message = '导入失败：' + detail
+    toast(message, 'error')
+    if (shelf !== null) shelf.setNote(message, 'error')
+    else openLibrary({ note: { text: message, kind: 'error' } })
+  }
+
+  /**
+   * Where to start a freshly imported book. An EPUB's first spine items are the
+   * cover, the copyright page and the table of contents; opening on those shows
+   * a panel with two lines in it and nothing else.
+   */
+  function firstReadableChapter(book) {
+    const chapters = Array.isArray(book.chapters) ? book.chapters : []
+    const index = chapters.findIndex((chapter) => (chapter.chars ?? 0) >= FRONT_MATTER_CHARS)
+    return index === -1 ? 0 : index
   }
 
   /** Accept dropped files anywhere on `node`. */
