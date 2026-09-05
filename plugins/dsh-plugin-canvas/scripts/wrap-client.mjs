@@ -20,6 +20,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Script } from 'node:vm'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -85,6 +86,44 @@ export function wrapClient(source, shared = []) {
   )
 }
 
+/**
+ * Refuse to write a bundle the browser cannot parse.
+ *
+ * The browser loads this file as a CLASSIC SCRIPT, where a surviving `import` or
+ * `export` statement is a SyntaxError — the file never executes, so
+ * `__ModuleLoader__.load` is never reached and the loader reports the bundle as
+ * "loaded without registering". `node --check` (what scripts/check.mjs runs)
+ * cannot see it: package.json says `type: module`, so it parses lib/client.js as
+ * ESM, where both keywords are perfectly legal. `new Script()` parses in script
+ * mode, which is the mode that actually matters.
+ *
+ * This lives in the build rather than in check.mjs on purpose: `npm pack` runs
+ * `prepack` → build, and a tarball is how the bundle reaches a user.
+ *
+ * @param {string} bundle
+ */
+export function assertLoadableInBrowser(bundle) {
+  try {
+    new Script(bundle, { filename: 'lib/client.js' })
+  } catch (error) {
+    throw new Error(
+      `wrap-client produced a bundle the browser cannot parse as a script: ${error.message}\n` +
+        'A relative import in src/shared or src/client most likely escaped inlineModule().'
+    )
+  }
+  // A belt-and-braces scan for the one transform that has actually regressed:
+  // `new Script` above already rejects a top-level import/export, but a leftover
+  // one nested where it happens to parse would still be a broken module boundary.
+  const leftover = bundle
+    .split('\n')
+    .map((line, index) => ({ line, number: index + 1 }))
+    .filter(({ line }) => /^\s*(import\s*[{('"*]|export\s)/.test(line))
+  if (leftover.length > 0) {
+    const where = leftover.map(({ number, line }) => `  ${number}: ${line.trim()}`).join('\n')
+    throw new Error(`wrap-client left ${leftover.length} module statement(s) in the bundle:\n${where}`)
+  }
+}
+
 /** Read every inlined module and the client entry, write the wrapped bundle. */
 export async function buildClient() {
   const parts = []
@@ -97,7 +136,9 @@ export async function buildClient() {
     parts.push({ name: `src/client/${name}`, code })
   }
   const source = inlineModule(await readFile(join(root, 'src', 'client', 'index.js'), 'utf8'))
+  const bundle = wrapClient(source, parts)
+  assertLoadableInBrowser(bundle)
   const out = join(root, 'lib', 'client.js')
-  await writeFile(out, wrapClient(source, parts), 'utf8')
+  await writeFile(out, bundle, 'utf8')
   return out
 }
