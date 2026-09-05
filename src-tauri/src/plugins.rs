@@ -41,16 +41,31 @@ pub struct Bundled {
     pub summary: &'static str,
 }
 
-/// 目前唯一的内置插件。
+/// 目前的内置插件。
 pub const TASKBOARD: Bundled = Bundled {
     id: "dsh-plugin-taskboard",
     title: "任务看板",
     summary: "在 dsh 侧栏加一个四列任务看板：agent 用工具领活、交活，你在看板上验收或退回。它会给 agent 增加六个 taskboard_* 工具，并往系统提示里加一段工作协议。",
 };
 
+pub const CANVAS: Bundled = Bundled {
+    id: "dsh-plugin-canvas",
+    title: "无限会话画布",
+    summary: "在 dsh 侧栏加一块无限画布：区域按工作区/智能体聚会话，卡片钉住单个会话，便签写想法，拖拽收进区域并带对齐参考线。纯 GUI 插件，不注册工具、不改系统提示，装了不会影响 agent 的行为。",
+};
+
+/// 安装包带上的插件，按卡片顺序。新增一个插件只要往这里加一行，装卸、首启询问、
+/// 设置页与诊断信息都会跟着走——单插件的假设不该散落在各处。
+pub const BUNDLED: &[Bundled] = &[TASKBOARD, CANVAS];
+
+/// 按 id 找一个内置插件。前端传来的 id 不可信，所以查表而不是直接拼命令。
+pub fn find(id: &str) -> Option<&'static Bundled> {
+    BUNDLED.iter().find(|plugin| plugin.id == id)
+}
+
 /// 让用户自己移除的命令。这个 dsh 版本没有插件卸载界面，只能给命令。
-pub fn remove_command() -> String {
-    format!("dsh plugin --profile {PROFILE} remove {}", TASKBOARD.id)
+pub fn remove_command(id: &str) -> String {
+    format!("dsh plugin --profile {PROFILE} remove {id}")
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -216,8 +231,8 @@ pub fn should_ask(node: &NodeRuntime) -> bool {
 ///
 /// 不直接把安装目录里的资源交给 pnpm：Windows 上那是 Program Files（只读），
 /// 而且外壳更新会重写它、卸载会删掉它，profile 里记下的 `file:` 路径就悬空了。
-fn stage(app: &AppHandle) -> Result<PathBuf, PluginError> {
-    let name = format!("{}.tgz", TASKBOARD.id);
+fn stage(app: &AppHandle, id: &str) -> Result<PathBuf, PluginError> {
+    let name = format!("{id}.tgz");
     let source = app
         .path()
         .resolve(format!("plugins/{name}"), BaseDirectory::Resource)
@@ -270,14 +285,14 @@ fn add_args(entry: &Path, tarball: &Path) -> Vec<String> {
 ///
 /// `remove` 同样是转发给 pnpm 的动词。上游只在包**曾经是 dependency** 时才把它从
 /// bundles 里摘掉——我们装的就是 dependency，所以官方命令能卸干净。
-fn remove_args(entry: &Path) -> Vec<String> {
+fn remove_args(entry: &Path, id: &str) -> Vec<String> {
     vec![
         entry.to_string_lossy().into_owned(),
         "plugin".into(),
         "--profile".into(),
         PROFILE.into(),
         "remove".into(),
-        TASKBOARD.id.into(),
+        id.into(),
     ]
 }
 
@@ -371,33 +386,33 @@ fn activated(manifest: &str, id: &str) -> bool {
 }
 
 /// 查落盘状态确认装成了。上游成功时不打印任何成功行，只能这样验。
-fn confirm_activated() -> Result<(), PluginError> {
+fn confirm_activated(plugin: &'static Bundled) -> Result<(), PluginError> {
     let path = profile_manifest()?;
     let raw = std::fs::read_to_string(&path).map_err(|source| PluginError::Manifest {
         path: path.clone(),
         source,
     })?;
-    if activated(&raw, TASKBOARD.id) {
+    if activated(&raw, plugin.id) {
         Ok(())
     } else {
         Err(PluginError::NotActivated {
             path,
-            id: TASKBOARD.id,
+            id: plugin.id,
         })
     }
 }
 
 /// 同理，确认真的卸掉了。
-fn confirm_removed() -> Result<(), PluginError> {
+fn confirm_removed(plugin: &'static Bundled) -> Result<(), PluginError> {
     let path = profile_manifest()?;
     let raw = std::fs::read_to_string(&path).map_err(|source| PluginError::Manifest {
         path: path.clone(),
         source,
     })?;
-    if activated(&raw, TASKBOARD.id) {
+    if activated(&raw, plugin.id) {
         Err(PluginError::StillActivated {
             path,
-            id: TASKBOARD.id,
+            id: plugin.id,
         })
     } else {
         Ok(())
@@ -411,19 +426,25 @@ pub fn install(
     app: &AppHandle,
     node: &NodeRuntime,
     entry: &Path,
+    plugin: &'static Bundled,
 ) -> (Result<(), PluginError>, String) {
     let logs = LogRing::default();
-    let result = stage(app).and_then(|tarball| {
+    let result = stage(app, plugin.id).and_then(|tarball| {
         run(node, add_args(entry, &tarball), &logs)?;
-        confirm_activated()
+        confirm_activated(plugin)
     });
     (result, logs.snapshot())
 }
 
 /// 移除流程。tarball 留在 app data 里不动——下次装回来不用再复制一遍。
-pub fn uninstall(node: &NodeRuntime, entry: &Path) -> (Result<(), PluginError>, String) {
+pub fn uninstall(
+    node: &NodeRuntime,
+    entry: &Path,
+    plugin: &'static Bundled,
+) -> (Result<(), PluginError>, String) {
     let logs = LogRing::default();
-    let result = run(node, remove_args(entry), &logs).and_then(|()| confirm_removed());
+    let result =
+        run(node, remove_args(entry, plugin.id), &logs).and_then(|()| confirm_removed(plugin));
     (result, logs.snapshot())
 }
 
@@ -443,26 +464,47 @@ pub struct Status {
     pub remove_command: String,
 }
 
-pub fn status(node: Option<&NodeRuntime>) -> Status {
-    let installed = profile_manifest()
+pub fn status(node: Option<&NodeRuntime>) -> Vec<Status> {
+    // 清单读一次给所有插件用：装卸都是逐个走 CLI，但状态是同一份落盘事实。
+    let manifest = profile_manifest()
         .ok()
         .and_then(|path| std::fs::read_to_string(path).ok())
-        .map(|raw| activated(&raw, TASKBOARD.id))
-        .unwrap_or(false);
-
-    Status {
-        id: TASKBOARD.id,
-        title: TASKBOARD.title,
-        summary: TASKBOARD.summary,
-        installed,
-        pnpm: node.map(pnpm_available).unwrap_or(false),
-        remove_command: remove_command(),
-    }
+        .unwrap_or_default();
+    let pnpm = node.map(pnpm_available).unwrap_or(false);
+    BUNDLED
+        .iter()
+        .map(|plugin| Status {
+            id: plugin.id,
+            title: plugin.title,
+            summary: plugin.summary,
+            installed: activated(&manifest, plugin.id),
+            pnpm,
+            remove_command: remove_command(plugin.id),
+        })
+        .collect()
 }
 
 /// 诊断信息里的一行摘要。
 pub fn diagnostics_line() -> String {
-    format!("内置插件（{}）: {}", TASKBOARD.id, load_choice().describe())
+    let choice = load_choice();
+    let installed: Vec<&str> = BUNDLED
+        .iter()
+        .filter(|plugin| choice.installed.iter().any(|id| id == plugin.id))
+        .map(|plugin| plugin.id)
+        .collect();
+    let state = if !installed.is_empty() {
+        format!("已装 {}", installed.join(", "))
+    } else {
+        choice.describe()
+    };
+    format!(
+        "内置插件（{}）: {state}",
+        BUNDLED
+            .iter()
+            .map(|plugin| plugin.id)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 #[cfg(test)]
@@ -583,24 +625,56 @@ mod tests {
         assert!(back.installed.is_empty());
     }
 
-    /// 升 `upstream::DSH_VERSION` 之前必须先回归内置插件，并把结论写进它的
+    /// 升 `upstream::DSH_VERSION` 之前必须先回归每个内置插件，并把结论写进它的
     /// `dsh.compatibility.dshReleases`。这条守卫就是「预装插件抬高升级成本」
     /// 这个风险的对冲：忘了回归，`cargo test` 直接红。
     #[test]
-    fn bundled_plugin_declares_the_pinned_dsh_version_compatible() {
-        const MANIFEST: &str = include_str!("../../plugins/dsh-plugin-taskboard/package.json");
-        let manifest: serde_json::Value = serde_json::from_str(MANIFEST).unwrap();
-        let releases = manifest
-            .pointer("/dsh/compatibility/dshReleases")
-            .expect("插件清单里应有 dsh.compatibility.dshReleases");
+    fn bundled_plugins_declare_the_pinned_dsh_version_compatible() {
+        // include_str! 要求字面量路径，所以逐个列出而不是遍历 BUNDLED；
+        // 下面的断言保证这张表和 BUNDLED 不会走散。
+        const MANIFESTS: &[(&str, &str)] = &[
+            (
+                "dsh-plugin-taskboard",
+                include_str!("../../plugins/dsh-plugin-taskboard/package.json"),
+            ),
+            (
+                "dsh-plugin-canvas",
+                include_str!("../../plugins/dsh-plugin-canvas/package.json"),
+            ),
+        ];
         assert_eq!(
-            releases
-                .get(crate::upstream::DSH_VERSION)
-                .and_then(|value| value.as_str()),
-            Some("compatible"),
-            "{} 没被标记为与 dsh {} 兼容：先回归插件，再更新它的 compatibility.dshReleases",
-            TASKBOARD.id,
-            crate::upstream::DSH_VERSION
+            MANIFESTS.len(),
+            BUNDLED.len(),
+            "新增内置插件时也要把它的清单加进这条守卫"
         );
+        for plugin in BUNDLED {
+            let (_, raw) = MANIFESTS
+                .iter()
+                .find(|(id, _)| *id == plugin.id)
+                .unwrap_or_else(|| panic!("{} 的清单没进兼容性守卫", plugin.id));
+            let manifest: serde_json::Value = serde_json::from_str(raw).unwrap();
+            assert_eq!(
+                manifest
+                    .pointer("/dsh/compatibility/dshReleases")
+                    .and_then(|releases| releases.get(crate::upstream::DSH_VERSION))
+                    .and_then(|value| value.as_str()),
+                Some("compatible"),
+                "{} 没被标记为与 dsh {} 兼容：先回归插件，再更新它的 compatibility.dshReleases",
+                plugin.id,
+                crate::upstream::DSH_VERSION
+            );
+        }
+    }
+
+    /// 内置插件的 id 是资源文件名、profile 行名和前端 key，重名会静默串台。
+    #[test]
+    fn bundled_ids_are_unique() {
+        let mut ids: Vec<&str> = BUNDLED.iter().map(|plugin| plugin.id).collect();
+        ids.sort_unstable();
+        let count = ids.len();
+        ids.dedup();
+        assert_eq!(ids.len(), count, "内置插件 id 不能重复");
+        assert!(BUNDLED.iter().all(|plugin| find(plugin.id).is_some()));
+        assert!(find("不存在的插件").is_none());
     }
 }

@@ -29,15 +29,20 @@
 
 ### 唯一的例外：首启问一次要不要装内置插件
 
-安装包里带了一个本仓库自己写的 dsh 插件（[`plugins/dsh-plugin-taskboard`](./plugins/dsh-plugin-taskboard)），首次启动时在启动页问一次要不要装，复选框**默认勾选**。它确实会改变 dsh 的行为（给 agent 增加六个 `taskboard_*` 工具、往系统提示里加一段工作协议、在侧栏加入口），所以这里把它当例外单独写明，而不是含糊过去。
+安装包里带了两个本仓库自己写的 dsh 插件，首次启动时在启动页各问一次要不要装，复选框**默认勾选**：
+
+- [`plugins/dsh-plugin-taskboard`](./plugins/dsh-plugin-taskboard)（任务看板）**确实会改变 dsh 的行为**：给 agent 增加六个 `taskboard_*` 工具、往系统提示里加一段工作协议、在侧栏加入口。这才是需要单独写明的那个例外。
+- [`plugins/dsh-plugin-canvas`](./plugins/dsh-plugin-canvas)（无限会话画布）只在侧栏加一块画布：区域按工作区/智能体聚会话、卡片钉住单个会话、便签记想法。它不注册工具、不写系统提示、不改会话内容，所以装了它 **agent 的行为一个字都不变**——只是多了一块看板子的地方。
+
+两者都不是必需品，取消勾选就什么都不装。
 
 它为什么还在边界之内：
 
 - **不 fork、不打补丁。** 装的还是 npm 上未经修改的 `@deepseek-ai/dsh`；插件是上游设计好的扩展点，走的是官方入口 `dsh plugin --profile web add`（上游把参数转发给 profile 目录里的 pnpm，再由它自己登记进 `dsh.profile.bundles`）。外壳不碰上游的 profile 清单结构。
 - **只问一次，随时可拒。** 取消勾选就什么都不装，并且不再问。没有 pnpm 时连问都不问 —— `dsh plugin` 依赖它。
-- **可以移除。** `dsh plugin --profile web remove dsh-plugin-taskboard`。装的是打好的 tarball 而不是指向安装目录的符号链接，所以卸载外壳不会弄坏你的 dsh profile。
+- **可以移除。** `dsh plugin --profile web remove dsh-plugin-taskboard`（画布同理，换成 `dsh-plugin-canvas`）。装的是打好的 tarball 而不是指向安装目录的符号链接，所以卸载外壳不会弄坏你的 dsh profile。
 
-代价也写明：升级 `DSH_VERSION` 时要顺手回归这个插件。`cargo test` 里有一条守卫盯着这件事 —— 插件 `package.json` 的 `dsh.compatibility.dshReleases` 里没把锁定版本标成 `compatible`，测试就红。
+代价也写明：升级 `DSH_VERSION` 时要顺手回归这两个插件。`cargo test` 里有一条守卫盯着这件事 —— 任一插件 `package.json` 的 `dsh.compatibility.dshReleases` 里没把锁定版本标成 `compatible`，测试就红。
 
 ### 仓库里还有第二个插件，但它不进安装包
 
@@ -51,8 +56,10 @@
 - CI 会检查它能构建、测试通过、`lib/` 与 `src/` 同步，这样它不会烂在仓库里。
 
 要不要把它也变成内置插件（进安装包 + 首启询问 + 设置页装卸），是一个需要单独决定的
-边界问题：现在外壳的插件管道是按「只有一个内置插件」写的（`plugins.rs` 的 `TASKBOARD`
-常量、三个不带 id 的 IPC 命令、设置页的单插件状态），扩成列表是一次不小的改动。
+边界问题 —— 但**不再是工程量问题**：外壳的插件管道已经从「只有一个内置插件」改成了一份
+列表（`plugins.rs` 的 `BUNDLED`、按 id 收发的 IPC 命令、设置页按插件逐个装卸），加一行
+就能把它带进安装包。留在外面是有意的选择：仓库面板要连 GitHub、要存令牌，默认装进每台
+机器不合适。
 
 ## 职责划分
 
@@ -82,7 +89,7 @@
   （不弹系统通知、也不自动下载——那两件事该由你决定）。点「下载并安装」才会动手，带下载进度。
   安装前会先收掉 dsh 子进程：Windows 上更新器启动安装器后会直接结束进程，那是唯一的机会，
   否则会留下占着端口的孤儿 node。装完 Windows 由安装器自己把应用拉起来，macOS / Linux 由外壳重启。
-- **插件**：任务看板可以在这里装或卸，不必开命令行。状态以 dsh profile 落盘的 `bundles` 为准，
+- **插件**：两个内置插件都可以在这里逐个装或卸，不必开命令行。状态以 dsh profile 落盘的 `bundles` 为准，
   所以你自己在命令行改过它，这里显示的也是真实状态。改完要重启 dsh 服务才生效，窗口里有按钮。
 - **版本信息**：外壳版本、dsh 锁定/已装版本、实际选中的 Node 路径与版本、运行时目录。
 - **复制诊断信息**：和启动失败页那个按钮同一份内容。
@@ -164,7 +171,7 @@ npm run rust:check     # Rust 编译检查
 npm run rust:test      # Rust 单测
 ```
 
-内置插件会在 `npm run dev` / `npm run build` 前被打成 tarball（`scripts/pack-plugins.mjs` → `plugins/.pack/`），Tauri 以资源形式带进安装包。因此**直接**跑 `cargo check` 需要那个 tarball 已经存在，否则 tauri 的构建脚本会报 `resource path ... doesn't exist`；上面的 `npm run rust:*` 已经替你先打好包。
+内置插件会在 `npm run dev` / `npm run build` 前逐个被打成 tarball（`scripts/pack-plugins.mjs` → `plugins/.pack/`），Tauri 以资源形式带进安装包。因此**直接**跑 `cargo check` 需要那个 tarball 已经存在，否则 tauri 的构建脚本会报 `resource path ... doesn't exist`；上面的 `npm run rust:*` 已经替你先打好包。
 
 构建：
 
@@ -180,7 +187,7 @@ npm run tauri:build
 - **跳转后外壳失去 UI 控制权。** dsh 就绪后窗口交给它的页面，此时若 dsh 进程崩溃，外壳无法再显示错误页 —— 需要从托盘退出再重开。要修的话得改成 dsh 跑在独立 webview 里、外壳保留一层容器。
 - **会话格式与 dsh 版本绑定。** 用更新版本的 dsh 写出的会话，当前锁定版本会拒绝加载（报 `SessionFormatUnsupportedError`）。这是上游的保护机制，不是外壳的问题 —— 拒绝加载比错误解析安全。跟进上游版本即可。
 - **Node 版本要求会拦住一部分用户。** dsh 的 `engines` 字段是空的，npm 不会代为拦截，外壳的检查是唯一一道闸。
-- **内置插件只能用命令行移除。** 锁定的这个 dsh 版本里，Settings 下的插件页面都是只读的（没有插件市场、也没有卸载按钮），所以外壳把移除命令直接写在首启那张卡片上：`dsh plugin --profile web remove dsh-plugin-taskboard`（需要 pnpm）。也可以走托盘 → 设置 → 插件，那里有装/卸按钮。
+- **内置插件只能用命令行移除。** 锁定的这个 dsh 版本里，Settings 下的插件页面都是只读的（没有插件市场、也没有卸载按钮），所以外壳把移除命令直接写在首启的卡片上：`dsh plugin --profile web remove <插件名>`（需要 pnpm）。也可以走托盘 → 设置 → 插件，那里每个插件都有装/卸按钮。
 - **内置插件依赖 pnpm。** `dsh plugin` 是把参数转发给 pnpm 的，而 Node 只自带 npm。探测不到 pnpm 时外壳干脆不问 —— 不承诺做不到的事。
 - **端口分配存在几毫秒的竞态窗口**：拿到空闲端口后立即释放再交给 dsh，极端情况下可能被别的进程抢占，此时 dsh 启动失败并在错误页显示日志。上游支持 `--port 0` 可消除该窗口，但需要解析其 stdout 文本，属于对上游日志格式的静默耦合，故未采用。
 

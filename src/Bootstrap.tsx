@@ -25,11 +25,15 @@ type BootState =
 
 /** 首启时问一次的可选插件。没有要问的东西时后端返回 null。 */
 type PluginPrompt = {
+  plugins: PromptPlugin[];
+  requiresClick: boolean;
+};
+
+type PromptPlugin = {
   id: string;
   title: string;
   summary: string;
   removeCommand: string;
-  requiresClick: boolean;
   install: boolean;
 };
 
@@ -72,7 +76,8 @@ export default function Bootstrap() {
   const [state, setState] = useState<BootState>({ stage: "locatingNode" });
   const [copied, setCopied] = useState(false);
   const [prompt, setPrompt] = useState<PluginPrompt | null>(null);
-  const [install, setInstall] = useState(true);
+  /** 当前勾选的插件 id。默认由后端给（全勾）。 */
+  const [selected, setSelected] = useState<string[]>([]);
   const [confirmed, setConfirmed] = useState(false);
 
   useEffect(() => {
@@ -91,7 +96,7 @@ export default function Bootstrap() {
       .then((initial) => {
         if (active && initial) {
           setPrompt(initial);
-          setInstall(initial.install);
+          setSelected(pickedOf(initial));
         }
       })
       .catch(() => {
@@ -105,7 +110,7 @@ export default function Bootstrap() {
     const unlistenPrompt = listen<PluginPrompt>("plugin-prompt", (event) => {
       if (!active) return;
       setPrompt(event.payload);
-      setInstall(event.payload.install);
+      setSelected(pickedOf(event.payload));
     });
 
     return () => {
@@ -125,7 +130,7 @@ export default function Bootstrap() {
       .then((current) => {
         if (active && current) {
           setPrompt(current);
-          setInstall(current.install);
+          setSelected(pickedOf(current));
         }
       })
       .catch(() => {});
@@ -135,14 +140,16 @@ export default function Bootstrap() {
   }, [state.stage, prompt]);
 
   /** 每次切换都推给 Rust：dsh 装完时以它为准，用户不必点任何按钮。 */
-  const toggleInstall = (next: boolean) => {
-    setInstall(next);
-    invoke("set_plugin_choice", { install: next }).catch(() => {});
+  const toggleInstall = (id: string, next: boolean) => {
+    setSelected((current) =>
+      next ? [...current.filter((it) => it !== id), id] : current.filter((it) => it !== id),
+    );
+    invoke("set_plugin_choice", { id, install: next }).catch(() => {});
   };
 
   const confirmPlugins = () => {
     setConfirmed(true);
-    invoke("confirm_plugins", { install }).catch(() => {});
+    invoke("confirm_plugins", { ids: selected }).catch(() => {});
   };
 
   const copyDiagnostics = async () => {
@@ -235,21 +242,28 @@ export default function Bootstrap() {
       )}
       {prompt && CHOICE_STAGES.includes(state.stage) && (
         <section className="offer" aria-label="可选插件">
-          <label className="offer__pick">
-            <input
-              type="checkbox"
-              checked={install}
-              onChange={(event) => toggleInstall(event.target.checked)}
-            />
-            <span>安装{prompt.title}插件（推荐）</span>
-          </label>
-          <p className="offer__note">{prompt.summary}</p>
+          {prompt.plugins.map((plugin) => (
+            <div key={plugin.id}>
+              <label className="offer__pick">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(plugin.id)}
+                  onChange={(event) => toggleInstall(plugin.id, event.target.checked)}
+                />
+                <span>安装{plugin.title}插件（推荐）</span>
+              </label>
+              <p className="offer__note">{plugin.summary}</p>
+              <p className="offer__note">
+                以后要移除，运行 <code>{plugin.removeCommand}</code>
+              </p>
+            </div>
+          ))}
           <p className="offer__note">
             {prompt.requiresClick
               ? "点「继续」后按当前选择处理。"
               : "安装完成后会按当前选择继续，不需要再点任何按钮。"}
-            以后要移除，运行 <code>{prompt.removeCommand}</code>
-            （需要命令行与 pnpm——这个 dsh 版本还没有插件卸载界面）。
+            移除需要命令行与 pnpm——这个 dsh 版本还没有插件卸载界面，也可以走托盘 →
+            设置 → 插件。
           </p>
           {prompt.requiresClick && (
             <div className="actions">
@@ -262,6 +276,11 @@ export default function Bootstrap() {
       )}
     </main>
   );
+}
+
+/** 后端给的默认勾选集合。 */
+function pickedOf(prompt: PluginPrompt): string[] {
+  return prompt.plugins.filter((plugin) => plugin.install).map((plugin) => plugin.id);
 }
 
 function formatElapsed(seconds: number): string {

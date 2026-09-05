@@ -14,8 +14,8 @@ import { mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** 要内置的插件目录名。与 src-tauri/src/plugins.rs 里的 TASKBOARD 一一对应。 */
-const BUNDLED = ["dsh-plugin-taskboard"];
+/** 要内置的插件目录名。与 src-tauri/src/plugins.rs 里的 BUNDLED 一一对应。 */
+const BUNDLED = ["dsh-plugin-taskboard", "dsh-plugin-canvas"];
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const outDir = join(root, "plugins", ".pack");

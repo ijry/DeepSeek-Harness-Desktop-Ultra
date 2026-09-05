@@ -44,8 +44,9 @@ function megabytes(bytes: number): string {
 export default function Settings() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [update, setUpdate] = useState<UpdateState>({ phase: "checking" });
-  const [plugin, setPlugin] = useState<PluginStatus | null>(null);
-  const [pluginBusy, setPluginBusy] = useState(false);
+  const [plugins, setPlugins] = useState<PluginStatus[] | null>(null);
+  /** 正在处理的插件 id——装卸是逐个走 CLI 的，按钮也该逐个禁用。 */
+  const [pluginBusy, setPluginBusy] = useState<string | null>(null);
   const [pluginError, setPluginError] = useState<string | null>(null);
   const [needsRestart, setNeedsRestart] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -56,8 +57,8 @@ export default function Settings() {
     invoke<AppInfo>("app_info")
       .then((value) => active && setInfo(value))
       .catch(() => {});
-    invoke<PluginStatus>("plugin_status")
-      .then((value) => active && setPlugin(value))
+    invoke<PluginStatus[]>("plugin_status")
+      .then((value) => active && setPlugins(value))
       .catch(() => {});
 
     // 下载进度是 Rust 侧 emit_to 单发给这个窗口的
@@ -114,19 +115,20 @@ export default function Settings() {
     }
   };
 
-  const changePlugin = async (installIt: boolean) => {
-    setPluginBusy(true);
+  const changePlugin = async (id: string, installIt: boolean) => {
+    setPluginBusy(id);
     setPluginError(null);
     try {
-      const next = await invoke<PluginStatus>(
-        installIt ? "plugin_install" : "plugin_remove"
+      const next = await invoke<PluginStatus[]>(
+        installIt ? "plugin_install" : "plugin_remove",
+        { id },
       );
-      setPlugin(next);
+      setPlugins(next);
       setNeedsRestart(true);
     } catch (error) {
       setPluginError(String(error));
     } finally {
-      setPluginBusy(false);
+      setPluginBusy(null);
     }
   };
 
@@ -210,14 +212,34 @@ export default function Settings() {
 
       <section className="card" aria-label="插件">
         <div className="card__title">插件</div>
-        {plugin ? (
+        {plugins ? (
           <>
-            <p className="card__note">
-              {plugin.title}（{plugin.id}）：
-              {plugin.installed ? "已启用" : "未安装"}
-            </p>
-            <p className="card__note">{plugin.summary}</p>
-            {!plugin.pnpm && (
+            {plugins.map((plugin) => (
+              <div key={plugin.id}>
+                <p className="card__note">
+                  {plugin.title}（{plugin.id}）：
+                  {plugin.installed ? "已启用" : "未安装"}
+                </p>
+                <p className="card__note">{plugin.summary}</p>
+                <div className="actions">
+                  <button
+                    type="button"
+                    onClick={() => void changePlugin(plugin.id, !plugin.installed)}
+                    disabled={pluginBusy !== null || !plugin.pnpm}
+                  >
+                    {pluginBusy === plugin.id
+                      ? "处理中…"
+                      : plugin.installed
+                        ? "移除"
+                        : "安装"}
+                  </button>
+                </div>
+                <p className="card__note">
+                  也可以在命令行里卸：<code>{plugin.removeCommand}</code>
+                </p>
+              </div>
+            ))}
+            {plugins.some((plugin) => !plugin.pnpm) && (
               <p className="card__note card__note--bad">
                 没找到 pnpm，装卸都做不了——dsh 的 plugin 命令是转发给 pnpm 的。
               </p>
@@ -226,35 +248,21 @@ export default function Settings() {
               <p className="card__note card__note--bad">{pluginError}</p>
             )}
             {needsRestart && (
-              <p className="card__note">
-                改动要重启 dsh 服务才生效（profile 的插件清单每次启动只读一次）。
-              </p>
+              <>
+                <p className="card__note">
+                  改动要重启 dsh 服务才生效（profile 的插件清单每次启动只读一次）。
+                </p>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="button--secondary"
+                    onClick={() => void invoke("retry_boot")}
+                  >
+                    重启 dsh 服务
+                  </button>
+                </div>
+              </>
             )}
-            <div className="actions">
-              <button
-                type="button"
-                onClick={() => void changePlugin(!plugin.installed)}
-                disabled={pluginBusy || !plugin.pnpm}
-              >
-                {pluginBusy
-                  ? "处理中…"
-                  : plugin.installed
-                    ? "移除"
-                    : "安装"}
-              </button>
-              {needsRestart && (
-                <button
-                  type="button"
-                  className="button--secondary"
-                  onClick={() => void invoke("retry_boot")}
-                >
-                  重启 dsh 服务
-                </button>
-              )}
-            </div>
-            <p className="card__note">
-              也可以在命令行里卸：<code>{plugin.removeCommand}</code>
-            </p>
           </>
         ) : (
           <p className="card__note">正在读取插件状态…</p>

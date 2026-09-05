@@ -92,8 +92,8 @@ pub struct AppState {
 struct Prompt {
     /// 卡片是否正在展示。
     asking: bool,
-    /// 复选框当前状态。
-    install: bool,
+    /// 当前被勾选的插件 id。
+    selected: Vec<String>,
     /// 用户已经点过「继续」。
     confirmed: bool,
     /// 需要点一次才继续。
@@ -103,26 +103,37 @@ struct Prompt {
 impl Prompt {
     fn payload(&self) -> PluginPrompt {
         PluginPrompt {
-            id: plugins::TASKBOARD.id,
-            title: plugins::TASKBOARD.title,
-            summary: plugins::TASKBOARD.summary,
-            remove_command: plugins::remove_command(),
+            plugins: plugins::BUNDLED
+                .iter()
+                .map(|plugin| PromptPlugin {
+                    id: plugin.id,
+                    title: plugin.title,
+                    summary: plugin.summary,
+                    remove_command: plugins::remove_command(plugin.id),
+                    install: self.selected.iter().any(|id| id == plugin.id),
+                })
+                .collect(),
             requires_click: self.requires_click,
-            install: self.install,
         }
     }
 }
 
-/// 发给前端的卡片内容。
+/// 发给前端的卡片内容。一张卡片一个插件，勾选状态各自独立。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginPrompt {
+    plugins: Vec<PromptPlugin>,
+    requires_click: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptPlugin {
     id: &'static str,
     title: &'static str,
     summary: &'static str,
     /// 这个 dsh 版本没有插件卸载界面，所以把移除命令直接写在卡片上。
     remove_command: String,
-    requires_click: bool,
     install: bool,
 }
 
@@ -163,20 +174,30 @@ fn plugin_prompt(state: tauri::State<'_, AppState>) -> Option<PluginPrompt> {
     prompt.asking.then(|| prompt.payload())
 }
 
-/// 复选框被切换。存到 Rust 侧——dsh 装完时以它为准，用户不需要点任何按钮。
+/// 某个复选框被切换。存到 Rust 侧——dsh 装完时以它为准，用户不需要点任何按钮。
 #[tauri::command]
-fn set_plugin_choice(state: tauri::State<'_, AppState>, install: bool) {
+fn set_plugin_choice(state: tauri::State<'_, AppState>, id: String, install: bool) {
+    if plugins::find(&id).is_none() {
+        return;
+    }
     let (mutex, _) = &*state.prompt;
-    lock(mutex).install = install;
+    let mut prompt = lock(mutex);
+    prompt.selected.retain(|current| current != &id);
+    if install {
+        prompt.selected.push(id);
+    }
 }
 
 /// 用户点了「继续」。
 #[tauri::command]
-fn confirm_plugins(state: tauri::State<'_, AppState>, install: bool) {
+fn confirm_plugins(state: tauri::State<'_, AppState>, ids: Vec<String>) {
     let (mutex, notify) = &*state.prompt;
     {
         let mut prompt = lock(mutex);
-        prompt.install = install;
+        prompt.selected = ids
+            .into_iter()
+            .filter(|id| plugins::find(id).is_some())
+            .collect();
         prompt.confirmed = true;
     }
     notify.notify_all();
@@ -184,26 +205,32 @@ fn confirm_plugins(state: tauri::State<'_, AppState>, install: bool) {
 
 /// 设置页的插件区。以 profile 落盘状态为准。
 #[tauri::command]
-fn plugin_status(state: tauri::State<'_, AppState>) -> plugins::Status {
+fn plugin_status(state: tauri::State<'_, AppState>) -> Vec<plugins::Status> {
     let node = lock(&state.node).clone();
     plugins::status(node.as_ref())
 }
 
-/// 设置页里手动安装内置插件。
+/// 设置页里手动安装某个内置插件。
 #[tauri::command]
-async fn plugin_install(app: tauri::AppHandle) -> Result<plugins::Status, String> {
-    change_plugin(app, true).await
+async fn plugin_install(app: tauri::AppHandle, id: String) -> Result<Vec<plugins::Status>, String> {
+    change_plugin(app, id, true).await
 }
 
-/// 设置页里手动移除内置插件。
+/// 设置页里手动移除某个内置插件。
 #[tauri::command]
-async fn plugin_remove(app: tauri::AppHandle) -> Result<plugins::Status, String> {
-    change_plugin(app, false).await
+async fn plugin_remove(app: tauri::AppHandle, id: String) -> Result<Vec<plugins::Status>, String> {
+    change_plugin(app, id, false).await
 }
 
 /// 装或卸。底下跑的是 pnpm，秒级但是阻塞的，所以丢到 blocking 线程池，
 /// 不占着 async runtime 的 worker。
-async fn change_plugin(app: tauri::AppHandle, install: bool) -> Result<plugins::Status, String> {
+async fn change_plugin(
+    app: tauri::AppHandle,
+    id: String,
+    install: bool,
+) -> Result<Vec<plugins::Status>, String> {
+    // id 来自前端，查表落到静态定义上，绝不拿它去拼命令行。
+    let plugin = plugins::find(&id).ok_or_else(|| format!("未知的内置插件：{id}"))?;
     let node = {
         let state = app.state::<AppState>();
         let selected = lock(&state.node);
@@ -217,9 +244,9 @@ async fn change_plugin(app: tauri::AppHandle, install: bool) -> Result<plugins::
             .map_err(|error| error.to_string())?;
 
         let (result, log) = if install {
-            plugins::install(&app, &node, &entry)
+            plugins::install(&app, &node, &entry, plugin)
         } else {
-            plugins::uninstall(&node, &entry)
+            plugins::uninstall(&node, &entry, plugin)
         };
         {
             let state = app.state::<AppState>();
@@ -230,13 +257,18 @@ async fn change_plugin(app: tauri::AppHandle, install: bool) -> Result<plugins::
         let mut choice = plugins::load_choice();
         match (&result, install) {
             (Ok(()), true) => {
-                choice.installed = vec![plugins::TASKBOARD.id.to_string()];
+                if !choice.installed.iter().any(|current| current == plugin.id) {
+                    choice.installed.push(plugin.id.to_string());
+                }
                 choice.declined = false;
                 choice.failures = 0;
             }
             (Ok(()), false) => {
-                choice.installed.clear();
-                choice.declined = true;
+                choice.installed.retain(|current| current != plugin.id);
+                // 手动卸掉最后一个就等于「不要内置插件」，下次启动别再问。
+                if choice.installed.is_empty() {
+                    choice.declined = true;
+                }
             }
             (Err(_), _) => {}
         }
@@ -521,14 +553,17 @@ fn boot(app: tauri::AppHandle) {
     }
 }
 
-/// 摆出插件卡片，默认勾选。
+/// 摆出插件卡片，默认全部勾选。
 fn start_prompt(app: &tauri::AppHandle, requires_click: bool) {
     let state = app.state::<AppState>();
     let (mutex, _) = &*state.prompt;
     let payload = {
         let mut prompt = lock(mutex);
         prompt.asking = true;
-        prompt.install = true;
+        prompt.selected = plugins::BUNDLED
+            .iter()
+            .map(|plugin| plugin.id.to_string())
+            .collect();
         prompt.confirmed = false;
         prompt.requires_click = requires_click;
         prompt.payload()
@@ -540,8 +575,8 @@ fn start_prompt(app: &tauri::AppHandle, requires_click: bool) {
 /// 拿到用户的选择。
 ///
 /// 等待有上限:窗口可以被关进托盘,那样没人会来点按钮,不能让启动永远挂着。
-/// 超时就按默认(勾选)继续,与「装 dsh 期间没动过复选框」是同一个结果。
-fn wait_for_choice(app: &tauri::AppHandle) -> bool {
+/// 超时就按默认(全勾)继续,与「装 dsh 期间没动过复选框」是同一个结果。
+fn wait_for_choice(app: &tauri::AppHandle) -> Vec<String> {
     const PATIENCE: Duration = Duration::from_secs(10 * 60);
 
     let state = app.state::<AppState>();
@@ -550,7 +585,7 @@ fn wait_for_choice(app: &tauri::AppHandle) -> bool {
     {
         let prompt = lock(mutex);
         if !prompt.requires_click {
-            return prompt.install;
+            return prompt.selected.clone();
         }
     }
 
@@ -569,7 +604,7 @@ fn wait_for_choice(app: &tauri::AppHandle) -> bool {
             Err(poisoned) => poisoned.into_inner().0,
         };
     }
-    prompt.install
+    prompt.selected.clone()
 }
 
 /// 结算插件提示：必要时等一次点击，然后按勾选状态执行。
@@ -577,7 +612,7 @@ fn wait_for_choice(app: &tauri::AppHandle) -> bool {
 /// 必须在 `server::start` 之前:`dsh.profile.bundles` 每次 boot 只读一次
 /// (只有 cordis.patch.yml 会热重载),装晚了要重启服务才生效。
 fn settle_prompt(app: &tauri::AppHandle, node: &node::NodeRuntime, entry: &Path) {
-    let install = wait_for_choice(app);
+    let chosen = wait_for_choice(app);
 
     {
         let state = app.state::<AppState>();
@@ -586,32 +621,38 @@ fn settle_prompt(app: &tauri::AppHandle, node: &node::NodeRuntime, entry: &Path)
     }
 
     let mut choice = plugins::load_choice();
-    if !install {
+    if chosen.is_empty() {
         eprintln!("[plugins] 用户没有勾选，不安装内置插件");
         choice.declined = true;
         plugins::save_choice(&choice);
         return;
     }
 
-    transition(
-        app,
-        BootState::ConfiguringPlugin {
-            name: plugins::TASKBOARD.title.to_string(),
-        },
-    );
-
-    let (result, log) = plugins::install(app, node, entry);
+    // 逐个装：每个插件都是独立的一次 `dsh plugin add`，一个失败不该拖累其它的。
+    for plugin in plugins::BUNDLED
+        .iter()
+        .filter(|plugin| chosen.iter().any(|id| id == plugin.id))
     {
-        let state = app.state::<AppState>();
-        *lock(&state.plugin_log) = Some(log);
-    }
+        transition(
+            app,
+            BootState::ConfiguringPlugin {
+                name: plugin.title.to_string(),
+            },
+        );
 
-    match result {
-        Ok(()) => choice.installed.push(plugins::TASKBOARD.id.to_string()),
-        // 可选功能失败不该把应用弄挂:记下来,继续拉起服务。
-        Err(error) => {
-            eprintln!("[plugins] 启用 {} 失败：{error}", plugins::TASKBOARD.id);
-            choice.failures += 1;
+        let (result, log) = plugins::install(app, node, entry, plugin);
+        {
+            let state = app.state::<AppState>();
+            *lock(&state.plugin_log) = Some(log);
+        }
+
+        match result {
+            Ok(()) => choice.installed.push(plugin.id.to_string()),
+            // 可选功能失败不该把应用弄挂:记下来,继续拉起服务。
+            Err(error) => {
+                eprintln!("[plugins] 启用 {} 失败：{error}", plugin.id);
+                choice.failures += 1;
+            }
         }
     }
     plugins::save_choice(&choice);

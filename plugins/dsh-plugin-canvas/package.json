@@ -1,0 +1,63 @@
+{
+  "name": "dsh-plugin-canvas",
+  "description": "Infinite session canvas for the DeepSeek Harness web GUI, modeled on codeg-plus's 无限会话 board: regions bound to workspaces and agent presets, pinned session cards, sticky notes, drag-to-group, alignment guides and auto-arrange. 参考 codeg-plus 无限画布语义的 dsh 插件，纯 GUI 插件，不注册工具、不改系统提示。",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.1.1-rc.2": "compatible",
+        "0.1.2-alpha.2": "unknown"
+      }
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "author": "ijry (DSH Desktop Ultra contributors)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/issues"
+  },
+  "homepage": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/tree/main/plugins/dsh-plugin-canvas#readme",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "canvas",
+    "infinite-canvas",
+    "whiteboard",
+    "codeg-plus",
+    "sessions"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "npm run build && node --test",
+    "prepack": "npm run build"
+  }
+}
