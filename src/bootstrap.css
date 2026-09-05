@@ -134,6 +134,17 @@ pre {
   font-weight: 500;
 }
 
+/* 多个插件时用一条分隔线隔开，而不是靠间距——间距在两条说明文字之间读不出来 */
+.offer__item {
+  display: grid;
+  gap: 6px;
+}
+
+.offer__item + .offer__item {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
 /* 原生控件已经跟随 color-scheme，只把选中色对到品牌色上 */
 .offer__pick input {
   width: 16px;

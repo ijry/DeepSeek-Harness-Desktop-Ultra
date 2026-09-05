@@ -1,0 +1,52 @@
+{
+  "name": "dsh-plugin-mobile-bridge",
+  "description": "Mobile remote-control bridge for DeepSeek Harness: a token-authenticated REST+SSE surface over dsh's own /api, a pairing QR panel in the web GUI, and LAN / tunnel / relay carriers so the MCode phone app can drive a desktop dsh. 让手机 App（MCode）遥控桌面 dsh 的承接插件。",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.1.1-rc.2": "compatible"
+      }
+    }
+  },
+  "files": ["lib", "src", "cordis.patch.yml", "LICENSE", "README.md", "docs"],
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "author": "ijry (DSH Desktop Ultra contributors)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra.git"
+  },
+  "bugs": { "url": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/issues" },
+  "homepage": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/tree/main/plugins/dsh-plugin-mobile-bridge#readme",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "mcode",
+    "mobile",
+    "remote-control",
+    "qrcode",
+    "cloudflare-tunnel"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "npm run build && node --test",
+    "prepack": "npm run build"
+  }
+}

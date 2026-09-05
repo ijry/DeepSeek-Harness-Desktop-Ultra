@@ -54,9 +54,16 @@ pub const CANVAS: Bundled = Bundled {
     summary: "在 dsh 侧栏加一块无限画布：区域按工作区/智能体聚会话，卡片钉住单个会话，便签写想法，拖拽收进区域并带对齐参考线。纯 GUI 插件，不注册工具、不改系统提示，装了不会影响 agent 的行为。",
 };
 
+/// 手机遥控：给手机 App 开一个带鉴权的窄接口。
+pub const MOBILE_BRIDGE: Bundled = Bundled {
+    id: "dsh-plugin-mobile-bridge",
+    title: "手机遥控",
+    summary: "在 dsh 侧栏加一个「手机遥控」面板：扫码把 MCode 手机 App 配对到这台机器，就能在手机上看会话、发消息、批准工具调用。它不注册工具、不改系统提示，也不改 dsh 的绑定方式——另起一个只认令牌的监听，默认只在局域网可达。",
+};
+
 /// 安装包带上的插件，按卡片顺序。新增一个插件只要往这里加一行，装卸、首启询问、
 /// 设置页与诊断信息都会跟着走——单插件的假设不该散落在各处。
-pub const BUNDLED: &[Bundled] = &[TASKBOARD, CANVAS];
+pub const BUNDLED: &[Bundled] = &[TASKBOARD, CANVAS, MOBILE_BRIDGE];
 
 /// 按 id 找一个内置插件。前端传来的 id 不可信，所以查表而不是直接拼命令。
 pub fn find(id: &str) -> Option<&'static Bundled> {
@@ -641,6 +648,10 @@ mod tests {
                 "dsh-plugin-canvas",
                 include_str!("../../plugins/dsh-plugin-canvas/package.json"),
             ),
+            (
+                "dsh-plugin-mobile-bridge",
+                include_str!("../../plugins/dsh-plugin-mobile-bridge/package.json"),
+            ),
         ];
         assert_eq!(
             MANIFESTS.len(),
@@ -664,6 +675,15 @@ mod tests {
                 crate::upstream::DSH_VERSION
             );
         }
+    }
+
+    /// `remove` 必须点名要卸的那一个：它是转发给 pnpm 的动词，参数错了会去动
+    /// 别的包。装的路径由 `add_args` 那条测试盯着，卸的路径盯这里。
+    #[test]
+    fn remove_args_name_the_plugin_being_removed() {
+        let args = remove_args(Path::new("/dsh/bin.js"), MOBILE_BRIDGE.id);
+        assert_eq!(&args[1..5], &["plugin", "--profile", "web", "remove"]);
+        assert_eq!(args[5], MOBILE_BRIDGE.id);
     }
 
     /// 内置插件的 id 是资源文件名、profile 行名和前端 key，重名会静默串台。

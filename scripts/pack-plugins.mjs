@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** 要内置的插件目录名。与 src-tauri/src/plugins.rs 里的 BUNDLED 一一对应。 */
-const BUNDLED = ["dsh-plugin-taskboard", "dsh-plugin-canvas"];
+const BUNDLED = ["dsh-plugin-taskboard", "dsh-plugin-canvas", "dsh-plugin-mobile-bridge"];
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const outDir = join(root, "plugins", ".pack");

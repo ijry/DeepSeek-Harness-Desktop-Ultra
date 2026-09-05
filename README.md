@@ -29,22 +29,24 @@
 
 ### 唯一的例外：首启问一次要不要装内置插件
 
-安装包里带了两个本仓库自己写的 dsh 插件，首次启动时在启动页各问一次要不要装，复选框**默认勾选**：
+安装包里带了三个本仓库自己写的 dsh 插件，首次启动时在启动页各问一次要不要装，复选框**默认勾选**：
 
 - [`plugins/dsh-plugin-taskboard`](./plugins/dsh-plugin-taskboard)（任务看板）**确实会改变 dsh 的行为**：给 agent 增加六个 `taskboard_*` 工具、往系统提示里加一段工作协议、在侧栏加入口。这才是需要单独写明的那个例外。
 - [`plugins/dsh-plugin-canvas`](./plugins/dsh-plugin-canvas)（无限会话画布）只在侧栏加一块画布：区域按工作区/智能体聚会话、卡片钉住单个会话、便签记想法。它不注册工具、不写系统提示、不改会话内容，所以装了它 **agent 的行为一个字都不变**——只是多了一块看板子的地方。
+- [`plugins/dsh-plugin-mobile-bridge`](./plugins/dsh-plugin-mobile-bridge)（手机遥控）扫码把 [MCode](https://getmcode.lingyun.net) 手机 App 配对到这台机器，在手机上看会话、发消息、批准工具调用。它同样不注册工具、不碰系统提示，**agent 的行为一个字不变**；但它确实在 dsh 里多开了一个只认令牌的监听，所以另有一条自己的边界，见下。
 
-两者都不是必需品，取消勾选就什么都不装。
+三者都不是必需品，取消勾选就什么都不装。
 
 它为什么还在边界之内：
 
 - **不 fork、不打补丁。** 装的还是 npm 上未经修改的 `@deepseek-ai/dsh`；插件是上游设计好的扩展点，走的是官方入口 `dsh plugin --profile web add`（上游把参数转发给 profile 目录里的 pnpm，再由它自己登记进 `dsh.profile.bundles`）。外壳不碰上游的 profile 清单结构。
-- **只问一次，随时可拒。** 取消勾选就什么都不装，并且不再问。没有 pnpm 时连问都不问 —— `dsh plugin` 依赖它。
-- **可以移除。** `dsh plugin --profile web remove dsh-plugin-taskboard`（画布同理，换成 `dsh-plugin-canvas`）。装的是打好的 tarball 而不是指向安装目录的符号链接，所以卸载外壳不会弄坏你的 dsh profile。
+- **只问一次，随时可拒。** 每个插件一个复选框，全都取消就什么都不装，并且不再问。没有 pnpm 时连问都不问 —— `dsh plugin` 依赖它。
+- **可以移除。** 托盘 → 设置 → 插件里逐个装卸，或者 `dsh plugin --profile web remove <包名>`。装的是打好的 tarball 而不是指向安装目录的符号链接，所以卸载外壳不会弄坏你的 dsh profile。
+- **手机遥控不改 dsh 的绑定方式。** dsh 自己照旧只听 `127.0.0.1`；插件另起一个监听，每个有状态请求都要 Bearer token，管理接口只挂在 loopback 载体上。细节与外网接入教程见它的 [README](./plugins/dsh-plugin-mobile-bridge/README.md) 与 [docs/public-access.md](./plugins/dsh-plugin-mobile-bridge/docs/public-access.md)。
 
-代价也写明：升级 `DSH_VERSION` 时要顺手回归这两个插件。`cargo test` 里有一条守卫盯着这件事 —— 任一插件 `package.json` 的 `dsh.compatibility.dshReleases` 里没把锁定版本标成 `compatible`，测试就红。
+代价也写明：升级 `DSH_VERSION` 时要顺手回归这三个插件。`cargo test` 里有一条守卫盯着这件事 —— 任一插件 `package.json` 的 `dsh.compatibility.dshReleases` 里没把锁定版本标成 `compatible`，测试就红。
 
-### 仓库里还有第二个插件，但它不进安装包
+### 仓库里还有一个插件，但它不进安装包
 
 [`plugins/dsh-plugin-repopanel`](./plugins/dsh-plugin-repopanel)（仓库面板：看 issue / PR，
 把其中一条交给 agent 变成任务）也放在这个仓库里维护，但它**不是**上面那个例外的延伸：
@@ -89,7 +91,7 @@
   （不弹系统通知、也不自动下载——那两件事该由你决定）。点「下载并安装」才会动手，带下载进度。
   安装前会先收掉 dsh 子进程：Windows 上更新器启动安装器后会直接结束进程，那是唯一的机会，
   否则会留下占着端口的孤儿 node。装完 Windows 由安装器自己把应用拉起来，macOS / Linux 由外壳重启。
-- **插件**：两个内置插件都可以在这里逐个装或卸，不必开命令行。状态以 dsh profile 落盘的 `bundles` 为准，
+- **插件**：内置插件都可以在这里逐个装或卸，不必开命令行。状态以 dsh profile 落盘的 `bundles` 为准，
   所以你自己在命令行改过它，这里显示的也是真实状态。改完要重启 dsh 服务才生效，窗口里有按钮。
 - **版本信息**：外壳版本、dsh 锁定/已装版本、实际选中的 Node 路径与版本、运行时目录。
 - **复制诊断信息**：和启动失败页那个按钮同一份内容。
@@ -188,6 +190,7 @@ npm run tauri:build
 - **会话格式与 dsh 版本绑定。** 用更新版本的 dsh 写出的会话，当前锁定版本会拒绝加载（报 `SessionFormatUnsupportedError`）。这是上游的保护机制，不是外壳的问题 —— 拒绝加载比错误解析安全。跟进上游版本即可。
 - **Node 版本要求会拦住一部分用户。** dsh 的 `engines` 字段是空的，npm 不会代为拦截，外壳的检查是唯一一道闸。
 - **内置插件只能用命令行移除。** 锁定的这个 dsh 版本里，Settings 下的插件页面都是只读的（没有插件市场、也没有卸载按钮），所以外壳把移除命令直接写在首启的卡片上：`dsh plugin --profile web remove <插件名>`（需要 pnpm）。也可以走托盘 → 设置 → 插件，那里每个插件都有装/卸按钮。
+- **手机遥控插件会开一个局域网监听。** 默认 `0.0.0.0:8790`，只服务带 Bearer token 的窄接口，管理接口不挂在上面。不想要就在首启取消勾选、在设置页移除，或给它配 `lan: false`。往公网暴露前请读它的 [README 安全边界](./plugins/dsh-plugin-mobile-bridge/README.md#安全边界)——**永远不要把 dsh 自己的端口暴露出去**。
 - **内置插件依赖 pnpm。** `dsh plugin` 是把参数转发给 pnpm 的，而 Node 只自带 npm。探测不到 pnpm 时外壳干脆不问 —— 不承诺做不到的事。
 - **端口分配存在几毫秒的竞态窗口**：拿到空闲端口后立即释放再交给 dsh，极端情况下可能被别的进程抢占，此时 dsh 启动失败并在错误页显示日志。上游支持 `--port 0` 可消除该窗口，但需要解析其 stdout 文本，属于对上游日志格式的静默耦合，故未采用。
 

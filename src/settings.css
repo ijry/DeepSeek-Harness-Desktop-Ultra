@@ -87,9 +87,17 @@ body {
   transition: width 0.2s ease;
 }
 
+/* 插件卡片里的每一个插件。多于一个时要有可见的分界，否则两段说明文字会连成一片 */
+.plugin + .plugin {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   word-break: break-all;
   user-select: all;
 }
+
