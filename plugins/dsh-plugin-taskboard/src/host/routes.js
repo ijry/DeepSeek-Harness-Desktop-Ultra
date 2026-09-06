@@ -31,6 +31,10 @@ export const ROUTE_PREFIX = '/dsh-plugin-taskboard'
 /** SSE stream path (registered as an exact route; longest-prefix keeps it disjoint). */
 export const SSE_PATH = '/dsh-plugin-taskboard/events'
 
+/** WebSocket upgrade path. Owned here rather than in ./socket.js: that module is
+ *  shared verbatim across the panel plugins, so the route belongs to the caller. */
+export const SOCKET_PATH = '/dsh-plugin-taskboard/socket'
+
 /** Heartbeat cadence for the SSE stream. */
 const HEARTBEAT_MS = 20_000
 
@@ -126,7 +130,10 @@ export function registerTaskboardRoutes(ctx, options) {
   // Same frames, two carriers: the socket is preferred by the panel because an
   // SSE would hold one of the origin's ~6 HTTP connections for its whole life
   // (see ./socket.js); SSE stays for a DSH build with no upgrade hook.
-  const socket = createEventSocket(ctx, { hello: () => ({ revision: store.snapshot().revision }) })
+  const socket = createEventSocket(ctx, {
+    path: SOCKET_PATH,
+    hello: () => ({ revision: store.snapshot().revision }),
+  })
 
   const broadcast = (change) => {
     const data = { revision: change.revision, kind: change.kind, tasks: change.tasks }

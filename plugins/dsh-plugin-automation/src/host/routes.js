@@ -36,6 +36,10 @@ export const ROUTE_PREFIX = '/dsh-plugin-automation'
 /** SSE stream path (an exact route; longest-prefix keeps it disjoint). */
 export const SSE_PATH = '/dsh-plugin-automation/events'
 
+/** WebSocket upgrade path. Owned here rather than in ./socket.js: that module is
+ *  shared verbatim across the panel plugins, so the route belongs to the caller. */
+export const SOCKET_PATH = '/dsh-plugin-automation/socket'
+
 /** Heartbeat cadence for the SSE stream. */
 const HEARTBEAT_MS = 20_000
 
@@ -188,7 +192,10 @@ export function registerAutomationRoutes(ctx, options) {
   // Same frames, two carriers: the panel prefers the socket because an SSE holds
   // one of the origin's ~6 HTTP connections for as long as it lives (see
   // ./socket.js); SSE stays for a DSH build with no upgrade hook.
-  const socket = createEventSocket(ctx, { hello: () => ({ revision: store.revision }) })
+  const socket = createEventSocket(ctx, {
+    path: SOCKET_PATH,
+    hello: () => ({ revision: store.revision }),
+  })
 
   const broadcast = (change) => {
     const data = { revision: change.revision, kind: change.kind }

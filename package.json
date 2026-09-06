@@ -8,6 +8,7 @@
     "dev": "npm run pack:plugins && vite",
     "build": "npm run pack:plugins && tsc && vite build",
     "pack:plugins": "node scripts/pack-plugins.mjs",
+    "sync:shared": "node scripts/sync-shared.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

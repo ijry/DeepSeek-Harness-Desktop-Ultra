@@ -7,6 +7,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { acceptKey, createEventSocket, encodeFrame, readFrame } from '../src/host/socket.js'
+// socket.js 是跨插件共享的副本，不再自带路径常量；路由归调用方所有。从 routes.js 取，
+// 这样这条测试同时盯住「插件真的把自己的那条路径接上了」。
+import { SOCKET_PATH } from '../src/host/routes.js'
 
 /** Minimal stand-in for the upgraded Duplex: records writes, replays events. */
 class FakeSocket {
@@ -120,13 +123,19 @@ test('readFrame：超过上限的帧报 overflow，而不是照着分配内存',
 })
 
 test('没有 registerUpgrade 的 DSH 构建：返回 undefined，调用方留在 SSE 上', () => {
-  const socket = createEventSocket({ webServer: {} }, { hello: () => ({}) })
+  const socket = createEventSocket({ webServer: {} }, { path: SOCKET_PATH, hello: () => ({}) })
   assert.equal(socket, undefined)
+})
+
+test('缺 path 直接抛：共享模块不替调用方猜路由', () => {
+  const ctx = fakeCtx()
+  assert.throws(() => createEventSocket(ctx, { hello: () => ({}) }), TypeError)
+  assert.equal(ctx.registered.path, undefined)
 })
 
 test('握手成功后先发 hello，broadcast 落到每个客户端', () => {
   const ctx = fakeCtx()
-  const hub = createEventSocket(ctx, { hello: () => ({ revision: 7 }) })
+  const hub = createEventSocket(ctx, { path: SOCKET_PATH, hello: () => ({ revision: 7 }) })
   assert.equal(ctx.registered.path, '/dsh-plugin-canvas/socket')
 
   const first = new FakeSocket()
@@ -151,7 +160,7 @@ test('握手成功后先发 hello，broadcast 落到每个客户端', () => {
 
 test('客户端 close 帧：回一个 close 并把它从广播里摘掉', () => {
   const ctx = fakeCtx()
-  const hub = createEventSocket(ctx, { hello: () => ({}) })
+  const hub = createEventSocket(ctx, { path: SOCKET_PATH, hello: () => ({}) })
   const socket = new FakeSocket()
   ctx.registered.handler(upgradeRequest(), socket, Buffer.alloc(0))
   socket.emit('data', maskedFrame('', 0x8))
@@ -163,7 +172,7 @@ test('客户端 close 帧：回一个 close 并把它从广播里摘掉', () => 
 
 test('客户端 ping 帧：原样 pong 回去，连接留着', () => {
   const ctx = fakeCtx()
-  const hub = createEventSocket(ctx, { hello: () => ({}) })
+  const hub = createEventSocket(ctx, { path: SOCKET_PATH, hello: () => ({}) })
   const socket = new FakeSocket()
   ctx.registered.handler(upgradeRequest(), socket, Buffer.alloc(0))
   socket.emit('data', maskedFrame('hi', 0x9))
@@ -176,7 +185,7 @@ test('客户端 ping 帧：原样 pong 回去，连接留着', () => {
 
 test('跨源 upgrade 被拒：WebSocket 不受 CORS 约束，所以这道闸必须自己写', () => {
   const ctx = fakeCtx()
-  const hub = createEventSocket(ctx, { hello: () => ({}) })
+  const hub = createEventSocket(ctx, { path: SOCKET_PATH, hello: () => ({}) })
   const socket = new FakeSocket()
   ctx.registered.handler(upgradeRequest({ origin: 'http://evil.example' }), socket, Buffer.alloc(0))
   assert.match(String(socket.writes[0]), /^HTTP\/1\.1 400 Bad Request/)
@@ -187,7 +196,7 @@ test('跨源 upgrade 被拒：WebSocket 不受 CORS 约束，所以这道闸必�
 
 test('缺 Sec-WebSocket-Key 的 upgrade 也被拒', () => {
   const ctx = fakeCtx()
-  const hub = createEventSocket(ctx, { hello: () => ({}) })
+  const hub = createEventSocket(ctx, { path: SOCKET_PATH, hello: () => ({}) })
   const socket = new FakeSocket()
   const request = upgradeRequest()
   delete request.headers['sec-websocket-key']
@@ -199,7 +208,7 @@ test('缺 Sec-WebSocket-Key 的 upgrade 也被拒', () => {
 
 test('head 里预读到的帧不会被丢掉', () => {
   const ctx = fakeCtx()
-  const hub = createEventSocket(ctx, { hello: () => ({}) })
+  const hub = createEventSocket(ctx, { path: SOCKET_PATH, hello: () => ({}) })
   const socket = new FakeSocket()
   // A client that closes immediately: its close frame arrives in `head`.
   ctx.registered.handler(upgradeRequest(), socket, maskedFrame('', 0x8))
@@ -212,7 +221,7 @@ test('真实握手：Node 自带的 WebSocket 客户端能连上并收到 hello 
   // real RFC 6455 implementation, which is the part hand-rolled framing gets
   // wrong. Node's built-in WebSocket plays the browser.
   const ctx = fakeCtx()
-  const hub = createEventSocket(ctx, { hello: () => ({ revision: 3 }) })
+  const hub = createEventSocket(ctx, { path: SOCKET_PATH, hello: () => ({ revision: 3 }) })
   const server = createServer((_req, res) => {
     res.writeHead(404)
     res.end()

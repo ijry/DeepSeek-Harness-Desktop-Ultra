@@ -48,6 +48,10 @@ export const ROUTE_PREFIX = '/dsh-plugin-canvas'
  *  it disjoint from the JSON prefix above. */
 export const SSE_PATH = '/dsh-plugin-canvas/events'
 
+/** WebSocket upgrade path. Owned here rather than in ./socket.js: that module is
+ *  shared verbatim across the panel plugins, so the route belongs to the caller. */
+export const SOCKET_PATH = '/dsh-plugin-canvas/socket'
+
 /** Heartbeat cadence for the SSE stream. */
 const HEARTBEAT_MS = 20_000
 
@@ -123,7 +127,10 @@ export function registerCanvasRoutes(ctx, options) {
   // Same frames, two carriers: the panel prefers the socket because an SSE would
   // hold one of the origin's ~6 HTTP connections for its whole life (see
   // ./socket.js); SSE stays for a DSH build with no upgrade hook.
-  const socket = createEventSocket(ctx, { hello: () => ({ revision: store.revision }) })
+  const socket = createEventSocket(ctx, {
+    path: SOCKET_PATH,
+    hello: () => ({ revision: store.revision }),
+  })
 
   const broadcast = (change) => {
     const frame = `event: change\ndata: ${JSON.stringify(change)}\n\n`

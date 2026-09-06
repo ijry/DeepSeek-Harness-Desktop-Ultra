@@ -1,5 +1,6 @@
 /**
- * The automation event socket: the SSE stream's frames on a WebSocket instead.
+ * The push socket every panel plugin's event stream rides on: the SSE frames on
+ * a WebSocket instead.
  *
  * Why a second transport for the same frames: a browser gives one origin about
  * six concurrent HTTP/1.1 connections, and an EventSource holds one of them for
@@ -18,12 +19,23 @@
  * client frames are read just far enough to honour close and ping. Nothing the
  * browser sends is treated as data, so the parser has no interesting states.
  *
- * @module dsh-plugin-automation/host/socket
+ * ————————————————————————————————————————————————————————————————————————————
+ * GENERATED FILE — do not edit in place.
+ *
+ * The canonical copy is `plugins/.shared/host/socket.js`; every plugin's
+ * `src/host/socket.js` is a byte-identical copy of it, written by
+ * `npm run sync:shared` at the repo root and pinned by
+ * `scripts/shared-sources.test.mjs`. Edit the canonical copy, re-run the sync,
+ * and rebuild the plugins' `lib/`.
+ *
+ * This module deliberately knows nothing about which plugin it serves: the
+ * upgrade path is the caller's (`options.path`), which is also what lets a
+ * future shared channel mount one socket for several plugins.
+ * ————————————————————————————————————————————————————————————————————————————
+ *
+ * @module dsh-plugin-shared/host/socket
  */
 import { createHash } from 'node:crypto'
-
-/** Upgrade path (exact route on the shared webserver). */
-export const SOCKET_PATH = '/dsh-plugin-automation/socket'
 
 /** RFC 6455's handshake GUID. */
 const HANDSHAKE_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
@@ -98,10 +110,12 @@ export function readFrame(buffer) {
  * Register the push socket. Returns `{ broadcast, size, dispose }`, or undefined
  * when this DSH build has no upgrade hook — the caller then stays on SSE alone.
  * @param ctx - plugin context (needs `ctx.webServer.registerUpgrade`).
- * @param options - { path, hello } where `hello()` yields the baseline frame payload.
+ * @param options - { path, hello }: `path` is the upgrade route (required, the
+ *   caller owns its own routing), `hello()` yields the baseline frame payload.
  */
 export function createEventSocket(ctx, options) {
-  const { path = SOCKET_PATH, hello } = options
+  const { path, hello } = options
+  if (typeof path !== 'string' || path === '') throw new TypeError('createEventSocket 需要一个 path')
   if (typeof ctx.webServer?.registerUpgrade !== 'function') return undefined
 
   const clients = new Set()
@@ -131,7 +145,7 @@ export function createEventSocket(ctx, options) {
     const origin = req.headers.origin
     // An upgrade is not a CORS request, so the same-origin rule the SSE route
     // gets for free has to be spelled out: without it any page could open this
-    // stream and read the ledger.
+    // stream and read whatever the plugin pushes.
     const sameOrigin = origin === undefined || origin === ''
       || origin === `http://${req.headers.host}` || origin === `https://${req.headers.host}`
     if (typeof key !== 'string' || key === '' || !sameOrigin) {
@@ -176,7 +190,7 @@ export function createEventSocket(ctx, options) {
           }
         }
         // Text, binary and pong frames are ignored: this socket is push-only,
-        // so nothing the browser sends can reach the ledger through it.
+        // so nothing the browser sends can reach the plugin through it.
       }
     }
     socket.on('data', (chunk) => {

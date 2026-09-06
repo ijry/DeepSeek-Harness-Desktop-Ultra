@@ -53,6 +53,10 @@ export const ROUTE_PREFIX = '/dsh-plugin-otools-git'
 /** SSE stream path (an exact route; longest-prefix keeps it disjoint). */
 export const SSE_PATH = '/dsh-plugin-otools-git/events'
 
+/** WebSocket upgrade path. Owned here rather than in ./socket.js: that module is
+ *  shared verbatim across the panel plugins, so the route belongs to the caller. */
+export const SOCKET_PATH = '/dsh-plugin-otools-git/socket'
+
 /** Heartbeat cadence for the SSE stream. */
 const HEARTBEAT_MS = 20_000
 
@@ -75,7 +79,7 @@ export function registerGitRoutes(ctx, options) {
   // lives (see ./socket.js), and with every bundled plugin installed that budget
   // is what the shell's own requests are missing. SSE stays behind for a DSH
   // build whose webserver has no upgrade hook.
-  const socket = createEventSocket(ctx, { hello })
+  const socket = createEventSocket(ctx, { path: SOCKET_PATH, hello })
   const broadcast = (event, data) => {
     const text = frame(event, data)
     for (const res of subscribers) {
