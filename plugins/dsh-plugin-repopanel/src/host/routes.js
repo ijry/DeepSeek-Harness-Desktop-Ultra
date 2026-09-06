@@ -1,6 +1,7 @@
 /**
  * /dsh-plugin-repopanel routes on the shared DSH webserver: a JSON API for the
- * browser panel plus an SSE stream mirroring every committed ledger change.
+ * browser panel plus a live stream of every committed ledger change, carried on
+ * a WebSocket and mirrored on SSE for builds with no upgrade hook.
  *
  * The panel's reads are proxied rather than served from a cache — a repository
  * is re-derived from the workspace's `origin` remote (behind a short TTL, since
@@ -43,6 +44,7 @@ import {
 import { hostLang } from '../shared/lang.js'
 import { forgeClient } from './forge.js'
 import { resolveRemote } from './remote.js'
+import { createEventSocket } from './socket.js'
 import { indexBoard, taskboardBaseFrom, taskboardClient } from './taskboard.js'
 
 /** Route prefix on the shared DSH webserver (same origin as the GUI). */
@@ -183,8 +185,8 @@ function taskTitle(number, title) {
 }
 
 /**
- * Register the panel routes (JSON prefix + exact SSE stream). Returns the
- * disposer.
+ * Register the panel routes (JSON prefix + exact SSE stream, plus the event
+ * socket when this DSH build can upgrade). Returns the disposer.
  *
  * @param options - { store, workspaces, credentialsFile, now, fetchImpl }
  */
@@ -195,9 +197,17 @@ export function registerRepoPanelRoutes(ctx, options) {
   const remoteCache = new Map()
   let heartbeat
 
+  // Same frames, two carriers: the panel prefers the socket because an SSE holds
+  // one of the origin's ~6 HTTP connections for its whole life (see ./socket.js),
+  // and the GUI plus every sibling panel share that origin. SSE stays for a DSH
+  // build whose webserver has no upgrade hook.
+  const socket = createEventSocket(ctx, { hello: () => ({ revision: store.revision }) })
+
   const broadcast = (change) => {
-    const frame = `event: change\ndata: ${JSON.stringify({ revision: change.revision, kind: change.kind })}\n\n`
+    const data = { revision: change.revision, kind: change.kind }
+    const frame = `event: change\ndata: ${JSON.stringify(data)}\n\n`
     for (const res of subscribers) res.write(frame)
+    socket?.broadcast('change', data)
   }
   const unsubscribeBroadcast = store.subscribe(broadcast)
 
@@ -598,6 +608,7 @@ export function registerRepoPanelRoutes(ctx, options) {
   ]
   return () => {
     unsubscribeBroadcast()
+    socket?.dispose()
     for (const dispose of disposers) dispose()
     if (heartbeat !== undefined) clearInterval(heartbeat)
     for (const res of subscribers) res.end()

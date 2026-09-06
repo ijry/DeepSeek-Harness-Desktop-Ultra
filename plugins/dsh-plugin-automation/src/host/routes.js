@@ -1,6 +1,7 @@
 /**
  * /dsh-plugin-automation routes on the shared DSH webserver: a JSON API for the
- * browser panel plus an SSE stream mirroring every committed ledger change.
+ * browser panel plus a change stream — a WebSocket, with the SSE route kept as
+ * the fallback — mirroring every committed ledger change.
  *
  * Two decisions worth naming:
  *
@@ -27,6 +28,7 @@ import {
   runsFor,
 } from '../shared/protocol.js'
 import { AUTOMATION_TEMPLATES } from '../shared/templates.js'
+import { createEventSocket } from './socket.js'
 
 /** Route prefix on the shared DSH webserver (same origin as the GUI). */
 export const ROUTE_PREFIX = '/dsh-plugin-automation'
@@ -173,8 +175,8 @@ export function previewSchedule(params, now) {
 }
 
 /**
- * Register the panel routes (JSON prefix + exact SSE stream). Returns the
- * disposer.
+ * Register the panel routes (JSON prefix + exact SSE stream + the upgrade route
+ * when this DSH build offers one). Returns the disposer.
  *
  * @param options - { store, engine, workspaces, taskboardBase, now }
  */
@@ -183,9 +185,16 @@ export function registerAutomationRoutes(ctx, options) {
   const subscribers = new Set()
   let heartbeat
 
+  // Same frames, two carriers: the panel prefers the socket because an SSE holds
+  // one of the origin's ~6 HTTP connections for as long as it lives (see
+  // ./socket.js); SSE stays for a DSH build with no upgrade hook.
+  const socket = createEventSocket(ctx, { hello: () => ({ revision: store.revision }) })
+
   const broadcast = (change) => {
-    const frame = `event: change\ndata: ${JSON.stringify({ revision: change.revision, kind: change.kind })}\n\n`
+    const data = { revision: change.revision, kind: change.kind }
+    const frame = `event: change\ndata: ${JSON.stringify(data)}\n\n`
     for (const res of subscribers) res.write(frame)
+    socket?.broadcast('change', data)
   }
   const unsubscribeBroadcast = store.subscribe(broadcast)
 
@@ -390,6 +399,7 @@ export function registerAutomationRoutes(ctx, options) {
   ]
   return () => {
     unsubscribeBroadcast()
+    socket?.dispose()
     for (const dispose of disposers) dispose()
     if (heartbeat !== undefined) clearInterval(heartbeat)
     for (const res of subscribers) res.end()

@@ -23,6 +23,7 @@ import {
   userCanMove,
 } from '../shared/protocol.js'
 import { ERR, ToolError, liveTaskAt, versionGuard } from './tools.js'
+import { createEventSocket } from './socket.js'
 
 /** Route prefix on the shared DSH webserver (same origin as the GUI). */
 export const ROUTE_PREFIX = '/dsh-plugin-taskboard'
@@ -122,9 +123,16 @@ export function registerTaskboardRoutes(ctx, options) {
   const subscribers = new Set()
   let heartbeat
 
+  // Same frames, two carriers: the socket is preferred by the panel because an
+  // SSE would hold one of the origin's ~6 HTTP connections for its whole life
+  // (see ./socket.js); SSE stays for a DSH build with no upgrade hook.
+  const socket = createEventSocket(ctx, { hello: () => ({ revision: store.snapshot().revision }) })
+
   const broadcast = (change) => {
-    const frame = `event: change\ndata: ${JSON.stringify({ revision: change.revision, kind: change.kind, tasks: change.tasks })}\n\n`
+    const data = { revision: change.revision, kind: change.kind, tasks: change.tasks }
+    const frame = `event: change\ndata: ${JSON.stringify(data)}\n\n`
     for (const res of subscribers) res.write(frame)
+    socket?.broadcast('change', data)
   }
   const unsubscribeBroadcast = store.subscribe(broadcast)
 
@@ -387,6 +395,7 @@ export function registerTaskboardRoutes(ctx, options) {
   ]
   return () => {
     unsubscribeBroadcast()
+    socket?.dispose()
     for (const dispose of disposers) dispose()
     if (heartbeat !== undefined) clearInterval(heartbeat)
     for (const res of subscribers) res.end()

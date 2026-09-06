@@ -10,7 +10,7 @@
 
 - **host 半边**（`exports "."`，Node 宿主进程）：远端解析、forge REST 客户端、
   面板设置与「条目 → 任务」映射的单文件账本、写进 agent 系统提示的不可信数据纪律，
-  以及 `/dsh-plugin-repopanel` 的 JSON + SSE 路由。
+  以及 `/dsh-plugin-repopanel` 的 JSON + WebSocket/SSE 路由。
 - **浏览器半边**（`exports "./client"`，web GUI）：零依赖、纯 DOM 的列表 / 详情抽屉 /
   设置弹层，不引 React、不引任何 `@deepseek-ai/*` 浏览器包。
 
@@ -102,7 +102,8 @@ plugins/dsh-plugin-repopanel
 │   │   ├── forge.js        # provider 分派
 │   │   ├── store.js        # 账本：设置 + 映射，串行队列 + 原子写
 │   │   ├── taskboard.js    # 任务板桥（HTTP，带回环围栏）
-│   │   ├── routes.js       # JSON + SSE 路由
+│   │   ├── routes.js       # JSON + WebSocket/SSE 路由
+│   │   ├── socket.js       # 事件推送用的 WebSocket（省掉一条常驻 HTTP 连接）
 │   │   ├── protocol-text.js# 不可信数据纪律的系统提示段
 │   │   └── sdk.js          # dshHomePath（不 import @deepseek-ai/*）
 │   ├── shared/protocol.js  # 纯领域核心：source key、远端解析、设置 scope、分页、prompt 组装

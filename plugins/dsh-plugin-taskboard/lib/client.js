@@ -35,6 +35,11 @@ window.__ModuleLoader__.load({
   const PLUGIN_ID = 'dsh-plugin-taskboard'
   const ROUTE_PREFIX = '/dsh-plugin-taskboard'
   const SSE_PATH = '/dsh-plugin-taskboard/events'
+  const SOCKET_PATH = '/dsh-plugin-taskboard/socket'
+  /** Handshake deadline before falling back to SSE. */
+  const SOCKET_OPEN_TIMEOUT_MS = 4000
+  /** Reconnect delay after a working socket drops (the SSE `retry` value). */
+  const STREAM_RETRY_MS = 2000
   const STYLE_ID = 'dsh-plugin-taskboard-style'
 
   // ------------------------------------------------------------------- i18n
@@ -780,34 +785,114 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     return colors[status] ?? colors.todo
   }
 
-  // -------------------------------------------------------------------- sse
-  let sse = null
+  // ----------------------------------------------------------------- stream
+  // Ledger changes arrive on a WebSocket rather than an EventSource: the GUI and
+  // every panel plugin share one origin, a browser gives that origin about six
+  // concurrent HTTP/1.1 connections, and each persistent SSE holds one until the
+  // panel unloads. With the bundled plugins all installed the budget is spent on
+  // streams, and unrelated requests on the same origin (session lists, the
+  // workspace folder picker) then queue forever — no response, no error. A
+  // socket rides its own pool. SSE stays as the fallback for a DSH build whose
+  // webserver has no upgrade hook, and for the test DOM, which has no WebSocket.
+  let stream = null
+  let retry = null
+
+  function onHello(data) {
+    if (typeof data.revision === 'number' && data.revision > model.revision) void refresh()
+  }
+
+  function startStream() {
+    stopStream()
+    if (!startSocket()) startSse()
+  }
+
+  function stopStream() {
+    if (retry !== null) {
+      clearTimeout(retry)
+      retry = null
+    }
+    const current = stream
+    stream = null
+    if (current === null) return
+    try { current.close() } catch { /* already closed */ }
+  }
+
+  function scheduleRetry() {
+    if (retry !== null) return
+    retry = setTimeout(() => { retry = null; startStream() }, STREAM_RETRY_MS)
+  }
+
+  /** Open the socket. False means this browser or DSH build cannot use one. */
+  function startSocket() {
+    if (typeof WebSocket !== 'function') return false
+    const scheme = location.protocol === 'https:' ? 'wss://' : 'ws://'
+    let socket
+    try { socket = new WebSocket(scheme + location.host + SOCKET_PATH) } catch (error) {
+      console.warn('[dsh-plugin-taskboard] WebSocket failed:', error?.message ?? error)
+      return false
+    }
+    stream = { kind: 'socket', close: () => socket.close() }
+    const mine = stream
+    let opened = false
+    // A handshake nobody answers must not strand the panel without a stream:
+    // closing on the deadline routes us to SSE through the close handler.
+    const deadline = setTimeout(() => {
+      if (opened) return
+      try { socket.close() } catch { /* already closing */ }
+    }, SOCKET_OPEN_TIMEOUT_MS)
+    socket.addEventListener('open', () => {
+      opened = true
+      clearTimeout(deadline)
+      if (stream !== mine) return
+      model.connected = true
+      emit()
+    })
+    socket.addEventListener('message', (event) => {
+      if (stream !== mine) return
+      let frame
+      try { frame = JSON.parse(event.data) } catch { return }
+      if (frame.event === 'hello') {
+        onHello(frame.data ?? {})
+        return
+      }
+      if (frame.event !== 'change') return
+      try { applyChange(frame.data) } catch { void refresh() }
+    })
+    socket.addEventListener('close', () => {
+      clearTimeout(deadline)
+      // Only the attempt currently holding the seat may act on its own close: a
+      // close arriving after stopStream() (or after a newer attempt took over)
+      // must not resurrect anything.
+      if (stream !== mine) return
+      stream = null
+      model.connected = false
+      emit()
+      // Opened once means the carrier works and the host went away: come back.
+      // Never opened means no upgrade hook here — switch to SSE for good.
+      if (opened) scheduleRetry()
+      else startSse()
+    })
+    return true
+  }
+
   function startSse() {
-    stopSse()
     if (typeof EventSource === 'undefined') return
     let source
     try { source = new EventSource(SSE_PATH) } catch (error) {
       console.warn('[dsh-plugin-taskboard] EventSource failed:', error?.message ?? error)
       return
     }
-    sse = source
+    stream = { kind: 'sse', close: () => source.close() }
     source.addEventListener('open', () => { model.connected = true; emit() })
     source.addEventListener('error', () => { model.connected = false; emit() })
     source.addEventListener('hello', (event) => {
       try {
-        const data = JSON.parse(event.data)
-        if (typeof data.revision === 'number' && data.revision > model.revision) void refresh()
+        onHello(JSON.parse(event.data))
       } catch { /* malformed frame; full refresh stays safe */ }
     })
     source.addEventListener('change', (event) => {
       try { applyChange(JSON.parse(event.data)) } catch { void refresh() }
     })
-  }
-  function stopSse() {
-    if (sse !== null) {
-      try { sse.close() } catch { /* already closed */ }
-      sse = null
-    }
   }
 
   // ------------------------------------------------------- open / close
@@ -1539,7 +1624,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       if (onActivate !== null) document.removeEventListener(ACTIVATE_EVENT, onActivate)
       if (onDocClick !== null) document.removeEventListener('click', onDocClick, true)
       unbindModelListener()
-      stopSse()
+      stopStream()
       document.documentElement.removeAttribute(OPEN_ATTR)
       model.open = false
       model.hydrated = false
@@ -1562,7 +1647,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       ensureMounted()
       modelListener()
       void refreshAll()
-      startSse()
+      startStream()
       observer = new MutationObserver(() => { ensureMounted() })
       const root = document.body ?? document.documentElement
       observer.observe(root, { childList: true, subtree: true })

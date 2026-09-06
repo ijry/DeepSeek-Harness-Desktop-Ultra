@@ -9,7 +9,7 @@
 
 - **host 半边**（`exports "."`，Node 宿主进程）：单文件账本
   （`<DSH 家目录>/dsh-plugin-canvas.json`）、八个变更、`/dsh-plugin-canvas` 的
-  JSON + SSE 路由、以及把 `workspaceRegistry` / `sessionQuery` 归一成一份视图。
+  JSON + WebSocket/SSE 路由、以及把 `workspaceRegistry` / `sessionQuery` 归一成一份视图。
 - **浏览器半边**（`exports "./client"`，web GUI）：零依赖、纯 DOM 的画布——自己的
   平移缩放、点阵、框选、拖拽、对齐参考线、缩放吸附、工具条与菜单。不引 React，
   不引任何 `@deepseek-ai/*` 浏览器包。
@@ -78,8 +78,11 @@ codeg-plus 的「文件夹分组」在 dsh 里没有对应概念，**没有硬�
 
 ## 一致性协议
 
-账本给每次提交分配一个稠密 `revision`，一次提交对应**恰好一个** SSE 事件；空操作
-不占号。浏览器侧的规则与 codeg-plus 的 `canvas-store.ts` 完全一致：
+账本给每次提交分配一个稠密 `revision`，一次提交对应**恰好一个**事件帧；空操作
+不占号。事件优先走 `/dsh-plugin-canvas/socket`（WebSocket），没有 upgrade 钩子的
+DSH 构建退回同样帧的 `/dsh-plugin-canvas/events`（SSE）—— 一条常驻 SSE 会按住那
+6 条同源 HTTP 连接里的一条，装齐插件后整页的请求都会开始排队。浏览器侧的规则与
+codeg-plus 的 `canvas-store.ts` 完全一致：
 
 - 只有事件流推进 `revision`：`<= 本地`丢弃，`== 本地 + 1`应用，`> 本地 + 1`是缺口
   ——不应用，直接全量对账。
@@ -95,7 +98,8 @@ plugins/dsh-plugin-canvas
 ├── cordis.patch.yml      # 打进 web profile 的插件行
 ├── src
 │   ├── index.js          # host 加载入口：账本 + 路由
-│   ├── host/             # store（账本）/ board（八个变更）/ routes（JSON+SSE）
+│   ├── host/             # store（账本）/ board（八个变更）/ routes（JSON+WS/SSE）
+│   │                     # socket（事件推送用的 WebSocket）
 │   │                     # sessions（工作区/会话/预设视图）/ transcript / sdk
 │   ├── shared/           # units 板上单位 / layout 网格与货架 / snap 落点与对齐
 │   │                     # model 节点记录与校验 / derive 派生图（host 与浏览器共用）

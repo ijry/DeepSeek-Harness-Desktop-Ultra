@@ -13,6 +13,7 @@
 const PLUGIN_ID = 'dsh-plugin-otools-git'
 const ROUTE_PREFIX = '/dsh-plugin-otools-git'
 const SSE_PATH = '/dsh-plugin-otools-git/events'
+const SOCKET_PATH = '/dsh-plugin-otools-git/socket'
 const STYLE_ID = 'dsh-plugin-otools-git-style'
 const PANEL_NAME = 'dsh-plugin-otools-git'
 const ACTIVATE_EVENT = 'dsh-panel-activate'

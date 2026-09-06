@@ -39,9 +39,14 @@ agent 都不可主动移入），任务从认领到交验由 agent 与人在现�
 
 ## 功能
 
-- **实时看板**：页面挂载后即订阅 `/dsh-plugin-taskboard/events`（SSE），任何一次
-  宿主提交（工具或路由触发的写操作）都广播增量，看板自动刷新；浏览器
-  `EventSource` 断线自动重连，打开瞬间还会全量对账一次。
+- **实时看板**：页面挂载后即订阅 `/dsh-plugin-taskboard/socket`（WebSocket），任何一次
+  宿主提交（工具或路由触发的写操作）都广播增量，看板自动刷新；断线 2 秒后重连，
+  打开瞬间还会全量对账一次。没有 upgrade 钩子的 DSH 构建自动退回同样帧的
+  `/dsh-plugin-taskboard/events`（SSE）。
+  **为什么优先 WebSocket**：浏览器对每个源只给约 6 条并发 HTTP/1.1 连接，DSH 的
+  GUI 和所有面板插件共用 `dsh web` 那一个源，而一条常驻 SSE 会按住一条连接直到
+  面板卸载 —— 插件装齐之后额度就没了，之后这个源上任何请求（会话列表、选工作区的
+  文件夹对话框）都只是排队，不报错也不超时。WebSocket 走独立的连接池。
 - **详情弹层**：点卡片看全量记录（描述、执行 prompt、状态版本、认领人、项目），
   备注区读 agent 的结构化交接报告；Ctrl+Enter 发备注。
 - **验收 / 退回 / 编辑 / 移动 / 删除**：`review` 卡片提供「通过验收」与「退回
@@ -62,7 +67,7 @@ plugins/dsh-plugin-taskboard
 ├── cordis.patch.yml      # 打进 web profile 的插件行
 ├── src
 │   ├── index.js          # host 加载入口：协议段 + 工具 + 路由
-│   ├── host/             # store（账本）/ tools（六工具）/ routes（JSON+SSE）/ sdk / protocol-text
+│   ├── host/             # store（账本）/ tools（六工具）/ routes（JSON+SSE）/ socket（WS 推送）/ sdk / protocol-text
 │   ├── shared/protocol.js # 纯领域核心：列映射、迁移表、守卫（host 与测试共用）
 │   └── client/index.js   # 浏览器看板（vanilla DOM，构建时被包成 loader 模块）
 ├── scripts/              # wrap-client / build / check

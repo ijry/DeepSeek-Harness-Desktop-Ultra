@@ -49,7 +49,7 @@ DSH Web GUI 里的完整 Git 客户端，界面复刻 [otools-git](https://githu
 
 推送对话框支持 `--force-with-lease`（默认排在 `--force` 前面）、`--set-upstream`、`--follow-tags`、`--tags`、`--dry-run`；选了 `--force` 要手打 `yes` 才能继续。
 
-**长任务不阻塞界面。** 抓取 / 拉取 / 推送 / 克隆 / 子模块更新交给 host 侧的操作注册表，进度和输出走 SSE。关掉进度弹窗不会中断推送，再打开还能看到它推到哪了。认证失败会变成一个「填凭证并重试」的按钮，而不是只报个错；SSH 首次连接会把指纹摆出来让你核对后再写 `known_hosts` —— **指纹跟本地记录不一致时拒绝自动改写**。
+**长任务不阻塞界面。** 抓取 / 拉取 / 推送 / 克隆 / 子模块更新交给 host 侧的操作注册表，进度和输出走事件流（首选 WebSocket，没有 upgrade 钩子时退回 SSE）。关掉进度弹窗不会中断推送，再打开还能看到它推到哪了。认证失败会变成一个「填凭证并重试」的按钮，而不是只报个错；SSH 首次连接会把指纹摆出来让你核对后再写 `known_hosts` —— **指纹跟本地记录不一致时拒绝自动改写**。
 
 ### 没有做的三块
 
@@ -78,7 +78,9 @@ src/host/{status,diff,history,refs,commit,remotes,stash,nested,config}.js
                       git 引擎，porcelain v2 / -z / %x1f 分隔的 log 格式
 src/host/{auth,ai,ops,workspaces,store}.js
                       凭证、AI 写提交信息、长任务注册表、工作区索引、偏好
-src/host/{http,routes,actions}.js   JSON + SSE 路由（读在 routes，写在 actions）
+src/host/{http,routes,actions,socket}.js
+                      JSON + WebSocket/SSE 路由（读在 routes，写在 actions，
+                      事件优先走 socket 那条 WS，省掉一条常驻 HTTP 连接）
 src/shared/protocol.js              错误码与全部入参校验
 src/client/*.js       浏览器侧，22 个片段拼成一个 IIFE（scripts/wrap-client.mjs）
 ```

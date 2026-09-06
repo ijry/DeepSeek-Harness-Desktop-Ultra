@@ -1,6 +1,7 @@
 /**
  * The transport: the `{ok, value}` / `{ok, error}` envelope the host speaks, plus
- * the SSE stream that carries preference changes and live operation progress.
+ * the change stream that carries preference changes and live operation progress —
+ * a WebSocket where the host offers one, the SSE route otherwise.
  *
  * Every request carries `workspaceId`, never a filesystem path the browser made
  * up: the host resolves that id against DSH's workspace registry, which is what
@@ -77,16 +78,119 @@ function repoParams(extra) {
   return { workspaceId: model.workspaceId, ...(extra ?? {}) }
 }
 
-// --------------------------------------------------------------------- SSE
-let sse = null
+// ------------------------------------------------------------------ stream
+// The host's change stream arrives on a WebSocket, with the SSE route as the
+// fallback. Why two carriers for the same frames: a browser gives one origin
+// about six concurrent HTTP/1.1 connections, and a live EventSource holds one of
+// them until the panel unloads. The DSH GUI and every panel plugin share that
+// single origin, so with the bundled plugins all installed the whole budget sits
+// in persistent streams — and unrelated requests on the same origin (the shell's
+// own folder picker, its session lists) then queue forever: no response, no
+// error, nothing to time out. A WebSocket rides a separate pool, so this stream
+// costs the shell nothing. SSE stays for a DSH build whose webserver has no
+// upgrade hook, and for the test DOM, which has no WebSocket.
+let stream = null
+let streamRetry = null
+/** The operation listener, kept so a reconnect can register it again. */
+let opListener = null
+
+/** Handshake deadline before falling back to SSE. */
+const SOCKET_OPEN_TIMEOUT_MS = 4000
+
+/** Reconnect delay after a working socket drops (the SSE `retry` value). */
+const STREAM_RETRY_MS = 2000
+
+/** Every event name the host sends, on either carrier. */
+const STREAM_EVENTS = ['hello', 'prefs', 'operation']
 
 /**
- * Subscribe to the host's change stream. Two event kinds: `prefs` (re-read the
- * preferences) and `operation` (one operation record changed — merged in place so
- * the progress dialog updates without a refetch).
+ * Subscribe to the host's change stream. Three event kinds, identical on both
+ * carriers: `hello` (the baseline revision plus the live operation list), `prefs`
+ * (re-read the preferences) and `operation` (one operation record changed —
+ * merged in place so the progress dialog updates without a refetch).
  */
-function startSse(onOperation) {
-  stopSse()
+function startStream(onOperation) {
+  stopStream()
+  if (onOperation !== undefined) opListener = onOperation
+  if (!startSocket()) startSse()
+}
+
+/** Drop the current carrier, and any reconnect it had queued. */
+function stopStream() {
+  if (streamRetry !== null) {
+    clearTimeout(streamRetry)
+    streamRetry = null
+  }
+  const current = stream
+  stream = null
+  if (current === null) return
+  try {
+    current.close()
+  } catch { /* already closed */ }
+}
+
+/** Come back after a carrier that used to work dropped. */
+function scheduleStreamRetry() {
+  if (streamRetry !== null) return
+  streamRetry = setTimeout(() => {
+    streamRetry = null
+    startStream()
+  }, STREAM_RETRY_MS)
+}
+
+/** Open the socket. False means this browser or this DSH build cannot use one. */
+function startSocket() {
+  if (typeof window.WebSocket !== 'function') return false
+  let socket
+  try {
+    const scheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://'
+    socket = new window.WebSocket(scheme + window.location.host + SOCKET_PATH)
+  } catch (error) {
+    console.warn(LOG + ' socket unavailable:', messageOf(error))
+    return false
+  }
+  stream = { kind: 'socket', close: () => socket.close() }
+  const mine = stream
+  let opened = false
+  // A handshake nobody answers must not strand the panel without a stream:
+  // closing on the deadline routes us to SSE through the close handler.
+  const deadline = setTimeout(() => {
+    if (opened) return
+    try {
+      socket.close()
+    } catch { /* already closing */ }
+  }, SOCKET_OPEN_TIMEOUT_MS)
+  socket.addEventListener('open', () => {
+    opened = true
+    clearTimeout(deadline)
+    if (stream !== mine) return
+    model.connected = true
+    emit()
+  })
+  socket.addEventListener('message', (event) => {
+    if (stream !== mine) return
+    const payload = parseEvent(event)
+    if (payload === undefined) return
+    applyStreamEvent(payload.event, payload.data)
+  })
+  socket.addEventListener('close', () => {
+    clearTimeout(deadline)
+    // Only the attempt currently holding the seat may act on its own close: a
+    // close arriving after stopStream() — or after a newer attempt took over —
+    // must not clear the live connection's bookkeeping or start a second stream.
+    if (stream !== mine) return
+    stream = null
+    model.connected = false
+    emit()
+    // Opened once means the carrier works and the host went away: come back.
+    // Never opened means there is no upgrade hook here — take SSE for good.
+    if (opened) scheduleStreamRetry()
+    else startSse()
+  })
+  return true
+}
+
+function startSse() {
   if (typeof window.EventSource !== 'function') return
   let source
   try {
@@ -95,7 +199,7 @@ function startSse(onOperation) {
     console.warn(LOG + ' event stream unavailable:', messageOf(error))
     return
   }
-  sse = source
+  stream = { kind: 'sse', close: () => source.close() }
   source.addEventListener('open', () => {
     model.connected = true
     emit()
@@ -105,36 +209,12 @@ function startSse(onOperation) {
     model.connected = false
     emit()
   })
-  source.addEventListener('hello', (event) => {
-    model.connected = true
-    const data = parseEvent(event)
-    if (data !== undefined) {
-      if (typeof data.revision === 'number') model.revision = data.revision
-      if (Array.isArray(data.operations)) model.ops = data.operations
-    }
-    emit()
-  })
-  source.addEventListener('prefs', (event) => {
-    const data = parseEvent(event)
-    if (data !== undefined && typeof data.revision === 'number') model.revision = data.revision
-    void loadPrefs()
-  })
-  source.addEventListener('operation', (event) => {
-    const record = parseEvent(event)
-    if (record === undefined || typeof record.id !== 'string') return
-    mergeOperation(record)
-    if (onOperation !== undefined) {
-      try {
-        onOperation(record)
-      } catch (error) {
-        console.warn(LOG + ' operation listener threw:', messageOf(error))
-      }
-    }
-    emit()
-  })
+  for (const name of STREAM_EVENTS) {
+    source.addEventListener(name, (event) => applyStreamEvent(name, parseEvent(event)))
+  }
 }
 
-/** Parse one SSE payload, tolerating a truncated frame. */
+/** Parse one frame's payload, tolerating a truncated one. */
 function parseEvent(event) {
   try {
     const data = JSON.parse(event.data)
@@ -153,13 +233,34 @@ function mergeOperation(record) {
   if (model.ops.length > 60) model.ops.length = 60
 }
 
-function stopSse() {
-  if (sse !== null) {
-    try {
-      sse.close()
-    } catch { /* already closed */ }
-    sse = null
+/**
+ * Apply one decoded frame. Both carriers land here with the same name and the
+ * same payload, so the WebSocket and the SSE fallback cannot drift apart.
+ */
+function applyStreamEvent(name, data) {
+  if (data === null || typeof data !== 'object') return
+  if (name === 'hello') {
+    model.connected = true
+    if (typeof data.revision === 'number') model.revision = data.revision
+    if (Array.isArray(data.operations)) model.ops = data.operations
+    emit()
+    return
   }
+  if (name === 'prefs') {
+    if (typeof data.revision === 'number') model.revision = data.revision
+    void loadPrefs()
+    return
+  }
+  if (name !== 'operation' || typeof data.id !== 'string') return
+  mergeOperation(data)
+  if (opListener !== null) {
+    try {
+      opListener(data)
+    } catch (error) {
+      console.warn(LOG + ' operation listener threw:', messageOf(error))
+    }
+  }
+  emit()
 }
 
 // ------------------------------------------------------------------ loaders

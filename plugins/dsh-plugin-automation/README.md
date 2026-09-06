@@ -9,7 +9,7 @@
 
 - **host 半边**（`exports "."`，Node 宿主进程）：单文件账本
   （`<DSH 家目录>/dsh-plugin-automation.json`）、调度循环、把一次触发变成真正的
-  agent 运行、以及 `/dsh-plugin-automation` 的 JSON + SSE 路由。
+  agent 运行、以及 `/dsh-plugin-automation` 的 JSON + WebSocket/SSE 路由。
 - **浏览器半边**（`exports "./client"`，web GUI）：零依赖、纯 DOM 的自动化列表、
   编辑弹层、模板库与运行历史，不做 React、不引任何 `@deepseek-ai/*` 浏览器包。
 
@@ -100,8 +100,12 @@ CLI 契约是公开且跨版本稳定的，而进程内那条路要依赖 Agent 
 
 ## 功能
 
-- **实时列表**：页面挂载后即订阅 `/dsh-plugin-automation/events`（SSE），任何一次宿主提交
-  都广播增量，列表自动刷新；断线自动重连，重连时按 revision 全量对账一次。
+- **实时列表**：页面挂载后即订阅 `/dsh-plugin-automation/socket`（WebSocket），任何一次宿主提交
+  都广播增量，列表自动刷新；断线 2 秒后重连，重连时按 revision 全量对账一次。没有 upgrade
+  钩子的 DSH 构建自动退回同样帧的 `/dsh-plugin-automation/events`（SSE）。
+  **为什么优先 WebSocket**：浏览器对每个源只给约 6 条并发 HTTP/1.1 连接，DSH 的 GUI 和所有
+  面板插件共用 `dsh web` 那一个源，一条常驻 SSE 会按住一条连接直到面板卸载 —— 插件装齐后
+  额度就没了，之后这个源上任何请求都只是排队，不报错也不超时。WebSocket 走独立连接池。
 - **侧栏角标**：不打开面板也能看到「几条已启用 / 几条最近失败 / 现在有几次在跑」。
 - **模板库**：新建时先给几条现成的（每日测试回归、收工前的改动清点、每周依赖巡检、
   近期提交自查、TODO 清理提案、把待办投到看板），选一条就把表单填好，创建前随便改。
@@ -126,7 +130,8 @@ plugins/dsh-plugin-automation
 │   │   ├── store.js      # 单文件账本：串行写队列、原子落盘、快照、账本事务
 │   │   ├── engine.js     # 调度循环、在跑表、触发分派
 │   │   ├── runner.js     # 起 dsh --profile headless 子进程、超时、取消、认会话
-│   │   ├── routes.js     # JSON + SSE 路由
+│   │   ├── routes.js     # JSON + WebSocket/SSE 路由
+│   │   ├── socket.js     # 事件推送用的 WebSocket（省掉一条常驻 HTTP 连接）
 │   │   ├── taskboard.js  # 投递到任务看板（走它自己的 HTTP API）
 │   │   └── sdk.js        # dshHomePath / 找到本进程的 dsh 启动器
 │   ├── shared/
@@ -151,7 +156,8 @@ plugins/dsh-plugin-automation
 | GET | `/preview?kind=&cron=&intervalMinutes=&count=` | 这张时间表的中文含义 + 接下来几次触发时间 |
 | GET | `/runs?automationId=&limit=` | 某条的运行历史（默认 50，上限 200） |
 | GET | `/run?id=` | 单次运行，**只有这个接口带完整输出** |
-| GET | `/events` | SSE：`hello` 一帧带当前 revision，之后每次提交一帧 `change` |
+| GET | `/events` | SSE 兜底：`hello` 一帧带当前 revision，之后每次提交一帧 `change` |
+| WS | `/socket` | 首选载体：同样的 `hello` / `change` 帧，不占那 6 条 HTTP 连接 |
 | POST | `/automations` | 新建（body `{ draft }`） |
 | POST | `/automations/update` | 全量覆盖（`{ id, draft, ifVersion? }`） |
 | POST | `/automations/enabled` | 启用 / 暂停（`{ id, enabled, ifVersion? }`） |

@@ -46,7 +46,7 @@ function apply(ctx) {
     if (unbindModel !== null) unbindModel()
     closeAllOverlays()
     closeMenu()
-    stopSse()
+    stopStream()
     document.documentElement.removeAttribute(OPEN_ATTR)
     model.open = false
     model.connected = false
@@ -85,7 +85,7 @@ function apply(ctx) {
     })
     ensureMounted()
     renderEntry()
-    startSse(applyOperationToUi)
+    startStream(applyOperationToUi)
     // The DSH shell re-renders its own tree; both a mutation observer and a slow
     // interval keep the seats attached across those repaints.
     observer = new MutationObserver(() => ensureMounted())

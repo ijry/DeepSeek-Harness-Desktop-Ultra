@@ -44,6 +44,11 @@ window.__ModuleLoader__.load({
   const PLUGIN_ID = 'dsh-plugin-automation'
   const ROUTE_PREFIX = '/dsh-plugin-automation'
   const SSE_PATH = '/dsh-plugin-automation/events'
+  const SOCKET_PATH = '/dsh-plugin-automation/socket'
+  /** Handshake deadline before falling back to SSE. */
+  const SOCKET_OPEN_TIMEOUT_MS = 4000
+  /** Reconnect delay after a working socket drops (the SSE `retry` value). */
+  const STREAM_RETRY_MS = 2000
   const STYLE_ID = 'dsh-plugin-automation-style'
   const PANEL_NAME = 'dsh-plugin-automation'
   const ACTIVATE_EVENT = 'dsh-panel-activate'
@@ -1471,33 +1476,137 @@ html[data-dsh-au-open] .dsh-au-view { display: flex; flex-direction: column; hei
     )
   }
 
-  // --------------------------------------------------------------------- sse
-  let source = null
-  let sseTimer = null
+  // ----------------------------------------------------------------- stream
+  // Committed changes arrive on a WebSocket rather than an EventSource: the GUI
+  // and every panel plugin share one origin, a browser gives that origin about
+  // six concurrent HTTP/1.1 connections, and each persistent SSE holds one until
+  // the panel unloads. With the bundled plugins all installed the budget is spent
+  // on streams, and unrelated requests on the same origin (session lists, the
+  // workspace folder picker) then queue forever — no response, no error. A socket
+  // rides its own pool. SSE stays as the fallback for a DSH build whose webserver
+  // has no upgrade hook, and for the test DOM, which has no WebSocket.
+  let stream = null
+  let retry = null
 
   /**
-   * Subscribe to committed host changes. The panel refetches on any change rather
-   * than applying deltas: the whole state is one small local read, and reconciling
-   * by revision means a missed frame costs nothing.
+   * Both carriers deliver the same two frames, so both land here. The panel
+   * refetches on any change rather than applying deltas: the whole state is one
+   * small local read, and reconciling by revision means a missed frame costs
+   * nothing.
    */
+  function onHello() {
+    model.connected = true
+    // A reconnect may have missed frames; reconcile by refetching once.
+    if (model.open) void refresh()
+    emit()
+  }
+
+  function onChange(payload) {
+    if (payload !== null && payload.revision === model.revision) return
+    if (model.open || !model.booted) void refresh()
+    else model.revision = payload?.revision ?? model.revision
+  }
+
+  function startStream() {
+    stopStream()
+    if (!startSocket()) startSse()
+  }
+
+  function stopStream() {
+    if (retry !== null) {
+      clearTimeout(retry)
+      retry = null
+    }
+    const current = stream
+    stream = null
+    if (current === null) return
+    try {
+      current.close()
+    } catch { /* already closed */ }
+  }
+
+  function scheduleRetry() {
+    if (retry !== null) return
+    retry = setTimeout(() => {
+      retry = null
+      startStream()
+    }, STREAM_RETRY_MS)
+  }
+
+  /** Open the socket. False means this browser or DSH build cannot use one. */
+  function startSocket() {
+    // `typeof` rather than a bare read: the test DOM has no WebSocket binding at
+    // all, and a ReferenceError there would take the whole panel down.
+    if (typeof WebSocket !== 'function') return false
+    const scheme = location.protocol === 'https:' ? 'wss://' : 'ws://'
+    let socket
+    try {
+      socket = new WebSocket(scheme + location.host + SOCKET_PATH)
+    } catch (error) {
+      console.warn(LOG + ' WebSocket unavailable:', messageOf(error))
+      return false
+    }
+    stream = { kind: 'socket', close: () => socket.close() }
+    const mine = stream
+    let opened = false
+    // A handshake nobody answers must not strand the panel without a stream:
+    // closing on the deadline routes us to SSE through the close handler.
+    const deadline = setTimeout(() => {
+      if (opened) return
+      try {
+        socket.close()
+      } catch { /* already closing */ }
+    }, SOCKET_OPEN_TIMEOUT_MS)
+    socket.addEventListener('open', () => {
+      opened = true
+      clearTimeout(deadline)
+      if (stream !== mine) return
+      model.connected = true
+      emit()
+    })
+    socket.addEventListener('message', (event) => {
+      if (stream !== mine) return
+      let frame
+      try {
+        frame = JSON.parse(event.data)
+      } catch {
+        return
+      }
+      if (frame.event === 'hello') onHello()
+      else if (frame.event === 'change') onChange(frame.data ?? null)
+    })
+    socket.addEventListener('close', () => {
+      clearTimeout(deadline)
+      // Only the attempt currently holding the seat may act on its own close: a
+      // close arriving after stopStream() (or after a newer attempt took over)
+      // must not resurrect anything.
+      if (stream !== mine) return
+      stream = null
+      model.connected = false
+      emit()
+      // Opened once means the carrier works and the host went away: come back.
+      // Never opened means no upgrade hook here — switch to SSE for good.
+      if (opened) scheduleRetry()
+      else startSse()
+    })
+    return true
+  }
+
   function startSse() {
-    if (typeof EventSource === 'undefined' || source !== null) return
+    if (typeof EventSource === 'undefined') return
+    let source
     try {
       source = new EventSource(SSE_PATH)
     } catch (error) {
       console.warn(LOG + ' SSE unavailable:', messageOf(error))
       return
     }
+    stream = { kind: 'sse', close: () => source.close() }
     source.addEventListener('open', () => {
       model.connected = true
       emit()
     })
-    source.addEventListener('hello', () => {
-      model.connected = true
-      // A reconnect may have missed frames; reconcile by refetching once.
-      if (model.open) void refresh()
-      emit()
-    })
+    source.addEventListener('hello', () => onHello())
     source.addEventListener('change', (event) => {
       let payload
       try {
@@ -1505,28 +1614,13 @@ html[data-dsh-au-open] .dsh-au-view { display: flex; flex-direction: column; hei
       } catch {
         payload = null
       }
-      if (payload !== null && payload.revision === model.revision) return
-      if (model.open || !model.booted) void refresh()
-      else model.revision = payload?.revision ?? model.revision
+      onChange(payload)
     })
     source.addEventListener('error', () => {
       // EventSource reconnects on its own; only the badge changes.
       model.connected = false
       emit()
     })
-  }
-
-  function stopSse() {
-    if (source !== null) {
-      try {
-        source.close()
-      } catch { /* already closed */ }
-      source = null
-    }
-    if (sseTimer !== null) {
-      clearInterval(sseTimer)
-      sseTimer = null
-    }
   }
 
   // ---------------------------------------------------------------- rendering
@@ -1603,7 +1697,7 @@ html[data-dsh-au-open] .dsh-au-view { display: flex; flex-direction: column; hei
       if (onDocClick !== null) document.removeEventListener('click', onDocClick, true)
       while (overlays.length > 0) overlays[overlays.length - 1].close()
       unbindModelListener()
-      stopSse()
+      stopStream()
       document.documentElement.removeAttribute(OPEN_ATTR)
       model.open = false
       model.connected = false
@@ -1647,7 +1741,7 @@ html[data-dsh-au-open] .dsh-au-view { display: flex; flex-direction: column; hei
       // The badge is worth having before the panel is ever opened: it is how a
       // user notices a failing automation.
       void refresh()
-      startSse()
+      startStream()
       observer = new MutationObserver(() => ensureMounted())
       observer.observe(document.body ?? document.documentElement, { childList: true, subtree: true })
       mountTimer = setInterval(() => ensureMounted(), 3000)

@@ -1,7 +1,10 @@
 /**
  * /dsh-plugin-otools-git routes on the shared DSH webserver: a JSON API for the
- * browser panel plus an SSE stream carrying preference changes and live operation
- * progress.
+ * browser panel plus an event stream carrying preference changes and live
+ * operation progress. The stream has two carriers with identical frames — a
+ * WebSocket (./socket.js) and the SSE route below — because a persistent SSE
+ * spends one of the origin's scarce HTTP connections; see ./socket.js for why
+ * that matters and why SSE is still here.
  *
  * Nothing about a repository is cached beyond the short TTLs in host/workspaces.js
  * — the panel is a live view of a working tree, so every read runs `git`. The two
@@ -42,6 +45,7 @@ import { listStashes, stashDiff, stashSummary } from './stash.js'
 import { preparedMessage, readStatus } from './status.js'
 import { createOperations } from './ops.js'
 import { registerActionRoutes } from './actions.js'
+import { createEventSocket } from './socket.js'
 
 /** Route prefix on the shared DSH webserver (same origin as the GUI). */
 export const ROUTE_PREFIX = '/dsh-plugin-otools-git'
@@ -64,6 +68,14 @@ export function registerGitRoutes(ctx, options) {
   let heartbeat
 
   const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+  /** The baseline payload both carriers open with. */
+  const hello = () => ({ revision: prefs.revision, operations: operations.list() })
+  // Same frames, two carriers: the panel prefers the socket because a persistent
+  // SSE holds one of the origin's ~6 HTTP connections for as long as the panel
+  // lives (see ./socket.js), and with every bundled plugin installed that budget
+  // is what the shell's own requests are missing. SSE stays behind for a DSH
+  // build whose webserver has no upgrade hook.
+  const socket = createEventSocket(ctx, { hello })
   const broadcast = (event, data) => {
     const text = frame(event, data)
     for (const res of subscribers) {
@@ -73,10 +85,11 @@ export function registerGitRoutes(ctx, options) {
         subscribers.delete(res)
       }
     }
+    socket?.broadcast(event, data)
   }
   const unsubscribePrefs = prefs.subscribe((change) => broadcast('prefs', change))
-  // The registry is created here so its change events can reach the same SSE
-  // stream without a callback handed in from the entry point.
+  // The registry is created here so its change events can reach the same stream
+  // without a callback handed in from the entry point.
   const operations = createOperations({
     now: options.now,
     onChange: (record) => broadcast('operation', record),
@@ -348,7 +361,7 @@ export function registerGitRoutes(ctx, options) {
     res.write('retry: 2000\n\n')
     // Baseline frame: the client reconciles by revision and refetches on a gap
     // instead of replaying every lost frame.
-    res.write(frame('hello', { revision: prefs.revision, operations: operations.list() }))
+    res.write(frame('hello', hello()))
     subscribers.add(res)
     // A socket that dies between 'close' detection and the next write emits
     // 'error' on the response — drop the subscriber instead of crashing.
@@ -381,6 +394,7 @@ export function registerGitRoutes(ctx, options) {
   ]
   return () => {
     unsubscribePrefs()
+    socket?.dispose()
     for (const dispose of disposers) dispose()
     if (heartbeat !== undefined) clearInterval(heartbeat)
     for (const res of subscribers) {

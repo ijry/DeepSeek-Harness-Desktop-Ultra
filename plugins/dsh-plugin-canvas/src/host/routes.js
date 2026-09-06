@@ -1,6 +1,7 @@
 /**
  * /dsh-plugin-canvas routes on the shared dsh webserver: a JSON API for every
- * board mutation plus an SSE stream mirroring each committed one.
+ * board mutation plus an event stream mirroring each committed one — on a
+ * WebSocket where the build has an upgrade hook, on SSE otherwise.
  *
  * Wire contract, ported from codeg-plus's Tauri commands so the browser half can
  * keep its revision protocol unchanged:
@@ -9,6 +10,7 @@
  *   GET  /sessions                 → { sessions, workspaces, agents }
  *   GET  /sessions/<id>/transcript → { turns, truncated }
  *   GET  /events                   → SSE: `hello` then one `change` per commit
+ *   WS   /socket                   → the same two frames, preferred (see ./socket.js)
  *   POST /nodes                    → create           → { value: node, revision }
  *   POST /nodes/move               → batch move       → { value: moves, revision }
  *   POST /nodes/delete             → batch delete     → { value: ids, revision }
@@ -26,6 +28,7 @@
 import { hostLang } from '../shared/lang.js'
 import { CanvasInputError } from '../shared/model.js'
 import { readTranscript } from './transcript.js'
+import { createEventSocket } from './socket.js'
 import {
   CanvasNotFoundError,
   createNode,
@@ -117,6 +120,11 @@ export function registerCanvasRoutes(ctx, options) {
   const subscribers = new Set()
   let heartbeat
 
+  // Same frames, two carriers: the panel prefers the socket because an SSE would
+  // hold one of the origin's ~6 HTTP connections for its whole life (see
+  // ./socket.js); SSE stays for a DSH build with no upgrade hook.
+  const socket = createEventSocket(ctx, { hello: () => ({ revision: store.revision }) })
+
   const broadcast = (change) => {
     const frame = `event: change\ndata: ${JSON.stringify(change)}\n\n`
     for (const res of subscribers) {
@@ -126,6 +134,7 @@ export function registerCanvasRoutes(ctx, options) {
         subscribers.delete(res)
       }
     }
+    socket?.broadcast('change', change)
   }
   const unsubscribe = store.subscribe(broadcast)
 
@@ -305,6 +314,7 @@ export function registerCanvasRoutes(ctx, options) {
   ]
   return () => {
     unsubscribe()
+    socket?.dispose()
     for (const dispose of disposers) dispose()
     if (heartbeat !== undefined) clearInterval(heartbeat)
     for (const res of subscribers) res.end()
