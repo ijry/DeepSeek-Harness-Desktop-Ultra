@@ -1,0 +1,15 @@
+# dsh-plugin-ai-switch bundle patch: inserts the plugin row into the web profile
+# roster. Applied as a profile bundle layer (the `dsh.bundle.patch` manifest field)
+# over dsh-base; activate with
+#   dsh plugin --profile <name> add link:<path-to-this-package>
+# or install the published npm package with
+#   dsh plugin --profile <name> add dsh-plugin-ai-switch
+#
+# The row is a bare plugin by package name: the node half (exports ".") runs in the
+# host process (the account store, the local route proxy, the client config writers,
+# the panel event socket and the static panel bundle), and the `dsh.client`
+# declaration in package.json makes the browser half (exports "./client", served at
+# /plugins/<id>/client.js) load in the web GUI.
+- insert:
+    - id: dsh-plugin-ai-switch
+      name: dsh-plugin-ai-switch

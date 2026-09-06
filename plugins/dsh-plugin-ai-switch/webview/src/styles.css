@@ -1,0 +1,3498 @@
+@import "@xterm/xterm/css/xterm.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:where(h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd) {
+  margin: 0;
+}
+
+:where(ul, ol) {
+  margin: 0;
+  padding: 0;
+}
+
+:where(button, input:not([type="checkbox"]):not([type="radio"]), optgroup, select, textarea) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+
+:where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  border: 1px solid #d6d3d1;
+}
+
+input:not([type="checkbox"]):not([type="radio"])[class*="border-stone-200"],
+select[class*="border-stone-200"],
+textarea[class*="border-stone-200"] {
+  border-color: #d6d3d1;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+:root {
+  color: #1d1d1f;
+  background: #e8e6e1;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI",
+    sans-serif;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  height: 100%;
+  max-height: 100dvh;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.9), transparent 34rem),
+    linear-gradient(135deg, #f5f3ee 0%, #e7e4dd 48%, #dcd9d1 100%);
+}
+
+button,
+select,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+input:not([type="checkbox"]):not([type="radio"]),
+textarea {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+textarea {
+  cursor: text;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* `data-plain-text` opts a button out of the chrome below. Some buttons are a run
+   of text that happens to be clickable — the account row's stats line — and on
+   those the radius plus the shadow draw a ghost border around the sentence. The
+   opt-out also leaves `box-shadow` unset, so the focus-visible ring further down
+   this file finally reaches them. */
+.accounts-screen button[class*="border"]:not([data-plain-text]),
+.accounts-screen button:not([class*="border"]):not([data-plain-text]) {
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.accounts-screen button:not([class*="border"]):not([data-plain-text]) {
+  border: 1px solid transparent;
+}
+
+.accounts-screen input:not([type="checkbox"]):not([type="radio"]),
+.accounts-screen select,
+.accounts-screen textarea {
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.accounts-screen input:not([type="checkbox"]):not([type="radio"]):not([class*="border"]),
+.accounts-screen select:not([class*="border"]),
+.accounts-screen textarea:not([class*="border"]) {
+  border: 1px solid #d6d3d1;
+  background: #fff;
+}
+
+.accounts-screen input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+.accounts-screen select:focus-visible,
+.accounts-screen textarea:focus-visible {
+  outline: none;
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18), 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.vibe-scrollbar {
+  scrollbar-color: transparent transparent;
+  scrollbar-width: thin;
+}
+
+.vibe-scrollbar::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.vibe-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vibe-scrollbar::-webkit-scrollbar-thumb {
+  background-clip: content-box;
+  background-color: transparent;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+.vibe-scrollbar-dark.vibe-scrollbar-active {
+  scrollbar-color: rgba(147, 161, 161, 0.42) transparent;
+}
+
+.vibe-scrollbar-light.vibe-scrollbar-active {
+  scrollbar-color: rgba(68, 64, 60, 0.32) transparent;
+}
+
+.vibe-scrollbar-dark.vibe-scrollbar-active::-webkit-scrollbar-thumb {
+  background-color: rgba(147, 161, 161, 0.42);
+}
+
+.vibe-scrollbar-light.vibe-scrollbar-active::-webkit-scrollbar-thumb {
+  background-color: rgba(68, 64, 60, 0.32);
+}
+
+.vibe-scrollbar-horizontal::-webkit-scrollbar {
+  height: 8px;
+}
+
+/* xterm 6 renders its own slider element; the colours come from the terminal
+   theme (see XtermPane.createTheme) and the width from `overviewRuler.width`. */
+.xterm-pane {
+  --vscode-scrollbar-shadow: transparent;
+}
+
+.xterm-pane .xterm-scrollable-element > .scrollbar {
+  background: transparent !important;
+}
+
+.xterm-pane .xterm-scrollable-element > .scrollbar > .slider {
+  border-radius: 999px;
+}
+
+.xterm-pane .xterm-decoration-overview-ruler {
+  pointer-events: none;
+}
+
+.vibe-skin {
+  background: var(--vibe-app-background-layer, var(--vibe-background-layer));
+  background-position: var(--vibe-app-background-position, center);
+  background-repeat: var(--vibe-app-background-repeat, no-repeat);
+  background-size: var(--vibe-app-background-size, cover);
+  color: var(--vibe-text);
+}
+
+.vibe-skin-frame {
+  color: var(--vibe-text);
+}
+
+.vibe-skin-body {
+  background: var(--vibe-body-background-layer, transparent);
+  background-position: var(--vibe-body-background-position, center);
+  background-repeat: var(--vibe-body-background-repeat, no-repeat);
+  background-size: var(--vibe-body-background-size, cover);
+  color: var(--vibe-text);
+}
+
+.vibe-skin-sidebar,
+.vibe-skin-workspace,
+.vibe-skin-right-rail {
+  color: var(--vibe-text);
+}
+
+.vibe-skin-sidebar {
+  background: var(--vibe-sidebar-background-layer, var(--vibe-panel-subtle));
+  background-position: var(--vibe-sidebar-background-position, center);
+  background-repeat: var(--vibe-sidebar-background-repeat, no-repeat);
+  background-size: var(--vibe-sidebar-background-size, cover);
+  border-color: var(--vibe-sidebar-border, var(--vibe-border));
+  box-shadow: var(--vibe-sidebar-shadow);
+}
+
+.vibe-skin-workspace {
+  background: var(--vibe-workspace-background-layer, var(--vibe-panel-subtle));
+  background-position: var(--vibe-workspace-background-position, center);
+  background-repeat: var(--vibe-workspace-background-repeat, no-repeat);
+  background-size: var(--vibe-workspace-background-size, cover);
+  border-color: var(--vibe-workspace-border, var(--vibe-border));
+  box-shadow: var(--vibe-workspace-shadow);
+}
+
+.vibe-skin-right-rail {
+  background: var(--vibe-right-rail-background-layer, var(--vibe-panel-subtle));
+  background-position: var(--vibe-right-rail-background-position, center);
+  background-repeat: var(--vibe-right-rail-background-repeat, no-repeat);
+  background-size: var(--vibe-right-rail-background-size, cover);
+  border-color: var(--vibe-right-rail-border, var(--vibe-border));
+  box-shadow: var(--vibe-right-rail-shadow);
+}
+
+.vibe-skin-backdrop {
+  background:
+    radial-gradient(circle at 18% 16%, color-mix(in srgb, var(--vibe-accent) 18%, transparent), transparent 36%),
+    radial-gradient(circle at 84% 14%, color-mix(in srgb, var(--vibe-accent) 12%, transparent), transparent 28%);
+}
+
+.vibe-skin-panel,
+.vibe-skin-panel-strong,
+.vibe-skin-panel-subtle {
+  border-color: var(--vibe-border);
+  color: var(--vibe-text);
+  backdrop-filter: blur(18px);
+}
+
+.vibe-skin-panel {
+  background: var(--vibe-panel);
+  box-shadow: 0 18px 40px rgba(17, 87, 164, 0.14);
+}
+
+.vibe-skin-panel-strong {
+  background: var(--vibe-panel-strong);
+  box-shadow: 0 20px 55px rgba(17, 87, 164, 0.2);
+}
+
+.vibe-skin-panel-subtle {
+  background: var(--vibe-panel-subtle);
+}
+
+.vibe-skin-titlebar {
+  background: var(--vibe-titlebar-background-layer, var(--vibe-panel-strong));
+  background-position: var(--vibe-titlebar-background-position, center);
+  background-repeat: var(--vibe-titlebar-background-repeat, no-repeat);
+  background-size: var(--vibe-titlebar-background-size, cover);
+  border-color: var(--vibe-titlebar-border, var(--vibe-border));
+  color: var(--vibe-titlebar-color, var(--vibe-text));
+  box-shadow: var(--vibe-titlebar-shadow);
+  backdrop-filter: var(--vibe-titlebar-backdrop-filter);
+  font-size: var(--vibe-titlebar-font-size);
+  letter-spacing: var(--vibe-titlebar-letter-spacing);
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--vibe-titlebar-padding);
+  text-transform: var(--vibe-titlebar-text-transform);
+  white-space: nowrap;
+}
+
+.vibe-skin-titlebar > * {
+  min-width: 0;
+}
+
+.vibe-skin--codex-2007 .vibe-skin-titlebar {
+  text-shadow: 0 1px 1px rgba(0, 44, 92, 0.55);
+}
+
+.vibe-skin-titlebar-controls {
+  background: var(--vibe-titlebar-controls-background-layer, transparent);
+  background-position: var(--vibe-titlebar-controls-background-position, center);
+  background-repeat: var(--vibe-titlebar-controls-background-repeat, no-repeat);
+  background-size: var(--vibe-titlebar-controls-background-size, cover);
+  border-color: var(--vibe-titlebar-controls-border, transparent);
+  color: var(--vibe-titlebar-controls-color, var(--vibe-titlebar-color, var(--vibe-text)));
+  flex-shrink: 0;
+  box-shadow: var(--vibe-titlebar-controls-shadow);
+}
+
+.vibe-skin-window-button {
+  display: inline-grid;
+  height: 1.35rem;
+  width: 1.55rem;
+  place-items: center;
+  border: 1px solid var(--vibe-window-button-border, rgba(255, 255, 255, 0.58));
+  border-radius: 0.45rem;
+  background: var(--vibe-window-button-background-layer, linear-gradient(180deg, rgba(255,255,255,0.92), rgba(71,159,230,0.88) 48%, rgba(16,100,188,0.9)));
+  color: var(--vibe-window-button-color, #ffffff);
+  box-shadow: var(--vibe-window-button-shadow, inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,45,96,0.3));
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.vibe-skin-window-button-minimize {
+  background: var(--vibe-window-button-minimize-background-layer, var(--vibe-window-button-background-layer, linear-gradient(180deg, #effbff, #3294e5 52%, #0d62b5)));
+}
+
+.vibe-skin-window-button-maximize {
+  background: var(--vibe-window-button-maximize-background-layer, var(--vibe-window-button-background-layer, linear-gradient(180deg, #effbff, #3294e5 52%, #0d62b5)));
+}
+
+.vibe-skin-window-button-close {
+  background: var(--vibe-window-button-close-background-layer, linear-gradient(180deg, #ffb0b7, #f05b68 46%, #b8202f));
+}
+
+.vibe-skin-sidebar-header {
+  background: var(--vibe-sidebar-header-background-layer, var(--vibe-panel-strong));
+  background-position: var(--vibe-sidebar-header-background-position, center);
+  background-repeat: var(--vibe-sidebar-header-background-repeat, no-repeat);
+  background-size: var(--vibe-sidebar-header-background-size, cover);
+  border-color: var(--vibe-sidebar-header-border, var(--vibe-border));
+  color: var(--vibe-sidebar-header-color, var(--vibe-text));
+  box-shadow: var(--vibe-sidebar-header-shadow);
+  backdrop-filter: var(--vibe-sidebar-header-backdrop-filter);
+  padding: var(--vibe-sidebar-header-padding);
+}
+
+.vibe-skin-profile {
+  background: var(--vibe-sidebar-profile-background-layer, transparent);
+  background-position: var(--vibe-sidebar-profile-background-position, center);
+  background-repeat: var(--vibe-sidebar-profile-background-repeat, no-repeat);
+  background-size: var(--vibe-sidebar-profile-background-size, cover);
+  border-color: var(--vibe-sidebar-profile-border, transparent);
+  color: var(--vibe-sidebar-profile-color, var(--vibe-text));
+  box-shadow: var(--vibe-sidebar-profile-shadow);
+  padding: var(--vibe-sidebar-profile-padding);
+}
+
+.vibe-skin-avatar {
+  background: var(--vibe-avatar-background-layer, radial-gradient(circle at 35% 20%, #ffffff, #9edbff 46%, #2684d5));
+  background-position: var(--vibe-avatar-background-position, center);
+  background-repeat: var(--vibe-avatar-background-repeat, no-repeat);
+  background-size: var(--vibe-avatar-background-size, cover);
+  border-color: var(--vibe-avatar-border, rgba(255, 255, 255, 0.78));
+  box-shadow: var(--vibe-avatar-shadow, inset 0 1px 0 rgba(255,255,255,0.82), 0 8px 18px rgba(13,104,190,0.22));
+}
+
+.vibe-skin-online-badge {
+  background: var(--vibe-online-badge-background-layer, linear-gradient(180deg, #8cff9f, #16a34a));
+  border-color: var(--vibe-online-badge-border, #ffffff);
+  box-shadow: var(--vibe-online-badge-shadow, 0 0 0 1px rgba(16,129,62,0.22));
+}
+
+.vibe-skin-profile-badge {
+  background: var(--vibe-profile-badge-background-layer, linear-gradient(180deg, #fff8c9, #f3b61f));
+  border-color: var(--vibe-profile-badge-border, rgba(157, 101, 0, 0.26));
+  color: var(--vibe-profile-badge-color, #7a4a00);
+  box-shadow: var(--vibe-profile-badge-shadow);
+}
+
+.vibe-skin-control-panel {
+  background: var(
+    --vibe-control-panel-background-layer,
+    var(--vibe-toolbar-background-layer, var(--vibe-panel-subtle))
+  );
+  background-position: var(
+    --vibe-control-panel-background-position,
+    var(--vibe-toolbar-background-position, center)
+  );
+  background-repeat: var(
+    --vibe-control-panel-background-repeat,
+    var(--vibe-toolbar-background-repeat, no-repeat)
+  );
+  background-size: var(
+    --vibe-control-panel-background-size,
+    var(--vibe-toolbar-background-size, cover)
+  );
+  border-color: var(--vibe-control-panel-border, var(--vibe-toolbar-border, var(--vibe-border)));
+  color: var(--vibe-control-panel-color, var(--vibe-toolbar-color, var(--vibe-text)));
+  box-shadow: var(--vibe-control-panel-shadow, var(--vibe-toolbar-shadow));
+  backdrop-filter: var(
+    --vibe-control-panel-backdrop-filter,
+    var(--vibe-toolbar-backdrop-filter)
+  );
+  padding: var(--vibe-control-panel-padding, var(--vibe-toolbar-padding));
+}
+
+.vibe-skin-session-list {
+  background: var(--vibe-session-list-background-layer, transparent);
+  background-position: var(--vibe-session-list-background-position, center);
+  background-repeat: var(--vibe-session-list-background-repeat, no-repeat);
+  background-size: var(--vibe-session-list-background-size, cover);
+  border: 1px solid var(--vibe-session-list-border, transparent);
+  border-radius: var(--vibe-session-list-border-radius);
+  box-shadow: var(--vibe-session-list-shadow);
+  color: var(--vibe-session-list-color, var(--vibe-text));
+  padding: var(--vibe-session-list-padding);
+}
+
+.app-sidebar-drawer {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 50;
+  width: min(var(--app-sidebar-width), calc(100vw - 3rem));
+  max-width: 100vw;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.35);
+}
+
+.app-sidebar-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.vibe-session-rail {
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+}
+
+/* Narrow windows drop the session-list grid track, so the list floats above the
+   workspace instead of stacking on top of it. */
+.vibe-session-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 45;
+  width: min(var(--vibe-session-list-width), calc(100vw - 3rem));
+  max-width: 100vw;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.35);
+}
+
+.vibe-session-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+/* The rail doubles as a resize gutter: the collapse button keeps its clicks and
+   the strips above and below it start the drag. */
+.vibe-session-rail-drag {
+  cursor: col-resize;
+  flex: 1 1 auto;
+  min-height: 0.75rem;
+  touch-action: none;
+  width: 100%;
+}
+
+.vibe-session-rail-drag-active {
+  background: rgba(56, 189, 248, 0.35);
+}
+
+.vibe-session-rail-handle {
+  align-items: center;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 3.25rem;
+  justify-content: center;
+  transition:
+    background-color var(--motion-duration-instant, 120ms) var(--motion-ease-standard),
+    border-color var(--motion-duration-instant, 120ms) var(--motion-ease-standard),
+    color var(--motion-duration-instant, 120ms) var(--motion-ease-standard);
+  width: 100%;
+}
+
+.vibe-dark-session-rail {
+  background: linear-gradient(180deg, rgba(6, 35, 48, 0.9), rgba(3, 20, 34, 0.9));
+  border-right: 1px solid rgba(45, 212, 191, 0.16);
+}
+
+.vibe-dark-session-rail .vibe-session-rail-handle {
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  color: #9fc3cf;
+}
+
+.vibe-dark-session-rail .vibe-session-rail-handle:hover {
+  background: rgba(14, 116, 144, 0.4);
+  color: #e6fbff;
+}
+
+.vibe-light-session-rail {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.94), rgba(241, 245, 249, 0.9));
+  border-right: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.vibe-light-session-rail .vibe-session-rail-handle {
+  border: 1px solid rgba(214, 211, 209, 0.9);
+  color: #57534e;
+}
+
+.vibe-light-session-rail .vibe-session-rail-handle:hover {
+  background: rgba(226, 232, 240, 0.9);
+  color: #1c1917;
+}
+
+.vibe-skin-session-rail {
+  background: var(--vibe-panel-subtle, rgba(255, 255, 255, 0.12));
+  border-right: 1px solid var(--vibe-border, rgba(255, 255, 255, 0.24));
+}
+
+.vibe-skin-session-rail .vibe-session-rail-handle {
+  border: 1px solid var(--vibe-border, rgba(255, 255, 255, 0.24));
+  color: var(--vibe-muted-text, inherit);
+}
+
+.vibe-skin-session-rail .vibe-session-rail-handle:hover {
+  background: var(--vibe-panel-strong, rgba(255, 255, 255, 0.24));
+  color: var(--vibe-text, inherit);
+}
+
+.vibe-tiled-terminal {
+  /* Keep each tile wide enough for real terminal output; the row scrolls instead
+     of squeezing panes below a usable width. */
+  width: var(--vibe-tile-width, 28rem);
+}
+
+.vibe-tiled-terminal-active {
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.55);
+}
+
+.vibe-tiled-terminals {
+  /* The row is the only way to reach off-screen tiles, so its horizontal bar stays
+     visible instead of fading like the session list scrollbar. */
+  padding-bottom: 2px;
+  scrollbar-gutter: stable;
+}
+
+.vibe-dark-session-list {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(20, 184, 166, 0.18), transparent 12rem),
+    linear-gradient(180deg, rgba(6, 35, 48, 0.88), rgba(3, 20, 34, 0.72));
+  border: 1px solid rgba(45, 212, 191, 0.16);
+  border-radius: 1.35rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 36px rgba(0, 0, 0, 0.2);
+}
+
+.vibe-dark-group-panel {
+  background:
+    radial-gradient(circle at 8% 0%, rgba(94, 234, 212, 0.18), transparent 8rem),
+    linear-gradient(135deg, rgba(9, 66, 86, 0.96), rgba(4, 36, 59, 0.94) 54%, rgba(13, 54, 69, 0.92));
+  border-color: rgba(45, 212, 191, 0.26);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 24px rgba(0, 0, 0, 0.16);
+}
+
+.vibe-dark-list-trigger {
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  background:
+    linear-gradient(135deg, rgba(14, 116, 144, 0.34), rgba(15, 76, 117, 0.18));
+  color: #dff8ff;
+}
+
+.vibe-dark-list-trigger:hover {
+  border-color: rgba(94, 234, 212, 0.36);
+  background:
+    linear-gradient(135deg, rgba(20, 184, 166, 0.28), rgba(56, 189, 248, 0.18));
+  color: #ffffff;
+}
+
+.vibe-dark-session-card {
+  background:
+    linear-gradient(180deg, rgba(13, 53, 67, 0.92), rgba(6, 31, 42, 0.94));
+  border-color: rgba(125, 211, 252, 0.16);
+  color: #f4fbff;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+}
+
+.vibe-dark-session-card:hover {
+  background:
+    linear-gradient(180deg, rgba(18, 67, 83, 0.96), rgba(8, 39, 52, 0.96));
+  border-color: rgba(56, 189, 248, 0.42);
+}
+
+.vibe-dark-session-card:disabled {
+  background: rgba(7, 30, 40, 0.68);
+  border-color: rgba(148, 163, 184, 0.12);
+  color: #91a9b4;
+}
+
+.vibe-dark-session-meta {
+  color: #9fc3cf;
+}
+
+.vibe-light-session-list {
+  border: 1px solid rgba(14, 116, 144, 0.18);
+  border-radius: 1.35rem;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(14, 165, 233, 0.18), transparent 11rem),
+    radial-gradient(circle at 94% 6%, rgba(251, 191, 36, 0.18), transparent 9rem),
+    linear-gradient(180deg, rgba(239, 249, 255, 0.94), rgba(236, 253, 245, 0.82));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 18px 36px rgba(14, 116, 144, 0.08);
+}
+
+.vibe-light-group-panel {
+  border-color: rgba(14, 116, 144, 0.22);
+  background: transparent;
+  box-shadow: none;
+}
+
+.vibe-light-list-trigger {
+  border: 1px solid rgba(14, 116, 144, 0.14);
+  background: transparent;
+  color: #075985;
+}
+
+.vibe-light-list-trigger:hover {
+  border-color: rgba(14, 116, 144, 0.28);
+  background:
+    linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(20, 184, 166, 0.16));
+  color: #0c4a6e;
+}
+
+.vibe-light-session-card {
+  border-color: rgba(217, 119, 6, 0.2);
+  background:
+    linear-gradient(180deg, #fffef7, rgba(255, 251, 235, 0.95));
+  color: #1f3a34;
+  box-shadow: 0 10px 18px rgba(120, 83, 20, 0.08);
+}
+
+.vibe-light-session-card:hover {
+  border-color: rgba(20, 184, 166, 0.38);
+  background:
+    linear-gradient(180deg, #ffffff, rgba(236, 253, 245, 0.96));
+}
+
+.vibe-light-session-card:disabled {
+  border-color: rgba(120, 113, 108, 0.14);
+  background: rgba(248, 244, 230, 0.72);
+  color: #8a7655;
+}
+
+.vibe-light-session-meta {
+  color: #6d5c36;
+}
+
+.vibe-skin-group-panel {
+  background: var(--vibe-group-panel-background-layer, var(--vibe-panel));
+  background-position: var(--vibe-group-panel-background-position, center);
+  background-repeat: var(--vibe-group-panel-background-repeat, no-repeat);
+  background-size: var(--vibe-group-panel-background-size, cover);
+  border-color: var(--vibe-group-panel-border, var(--vibe-border));
+  border-radius: var(--vibe-group-panel-border-radius);
+  color: var(--vibe-group-panel-color, var(--vibe-text));
+  box-shadow: var(--vibe-group-panel-shadow);
+  padding: var(--vibe-group-panel-padding);
+}
+
+.vibe-skin-list-trigger {
+  background: var(--vibe-list-trigger-background-layer, transparent);
+  background-position: var(--vibe-list-trigger-background-position, center);
+  background-repeat: var(--vibe-list-trigger-background-repeat, no-repeat);
+  background-size: var(--vibe-list-trigger-background-size, cover);
+  border: 1px solid var(--vibe-list-trigger-border, transparent);
+  border-radius: var(--vibe-list-trigger-border-radius);
+  color: var(--vibe-list-trigger-color, var(--vibe-text));
+  box-shadow: var(--vibe-list-trigger-shadow);
+  padding: var(--vibe-list-trigger-padding);
+}
+
+.vibe-skin-session {
+  background: var(--vibe-session-row-background-layer, var(--vibe-panel-strong));
+  background-position: var(--vibe-session-row-background-position, center);
+  background-repeat: var(--vibe-session-row-background-repeat, no-repeat);
+  background-size: var(--vibe-session-row-background-size, cover);
+  border-color: var(--vibe-session-row-border, var(--vibe-border));
+  border-radius: var(--vibe-session-row-border-radius);
+  color: var(--vibe-session-row-color, var(--vibe-text));
+  box-shadow: var(--vibe-session-row-shadow);
+  padding: var(--vibe-session-row-padding);
+}
+
+.vibe-skin-tabbar {
+  background: var(--vibe-tab-bar-background-layer, var(--vibe-tab-bar));
+  background-position: var(--vibe-tab-bar-background-position, center);
+  background-repeat: var(--vibe-tab-bar-background-repeat, no-repeat);
+  background-size: var(--vibe-tab-bar-background-size, cover);
+  border-color: var(--vibe-tab-bar-border, var(--vibe-border));
+  box-shadow: var(--vibe-tab-bar-shadow);
+  backdrop-filter: var(--vibe-tab-bar-backdrop-filter);
+}
+
+.vibe-dark-tabbar {
+  background:
+    linear-gradient(180deg, rgba(9, 31, 41, 0.98), rgba(4, 21, 29, 0.98));
+  border-color: rgba(125, 211, 252, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.26);
+  padding-top: 0.25rem;
+}
+
+.vibe-dark-tab,
+.vibe-dark-tab-active {
+  align-self: flex-end;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 0.85rem 0.85rem 0 0;
+  height: calc(100% - 0.25rem);
+  transition:
+    background-color var(--motion-duration-control, 180ms) var(--motion-ease-standard),
+    border-color var(--motion-duration-control, 180ms) var(--motion-ease-standard),
+    color var(--motion-duration-control, 180ms) var(--motion-ease-standard);
+}
+
+.vibe-dark-tab {
+  background: rgba(4, 21, 29, 0.5);
+  color: #9eb7c2;
+}
+
+.vibe-dark-tab:hover {
+  background: rgba(15, 50, 64, 0.86);
+  border-color: rgba(125, 211, 252, 0.14);
+  color: #e8fbff;
+}
+
+.vibe-dark-tab-active {
+  background:
+    linear-gradient(180deg, rgba(20, 61, 76, 0.98), rgba(8, 37, 50, 0.98));
+  border-color: rgba(125, 211, 252, 0.28);
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 -10px 20px rgba(56, 189, 248, 0.06);
+}
+
+.vibe-dark-tab-close {
+  color: #8fb0bc;
+}
+
+.vibe-dark-tab-close:hover {
+  color: #ffffff;
+  transform: scale(1.08);
+}
+
+.vibe-light-tabbar {
+  border-color: rgba(13, 148, 136, 0.16);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(251, 191, 36, 0.18), transparent 9rem),
+    linear-gradient(180deg, rgba(255, 253, 244, 0.98), rgba(236, 253, 245, 0.94));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -1px 0 rgba(13, 148, 136, 0.08);
+  padding-top: 0.25rem;
+}
+
+.vibe-light-tab,
+.vibe-light-tab-active {
+  align-self: flex-end;
+  height: calc(100% - 0.25rem);
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 0.85rem 0.85rem 0 0;
+  transition:
+    background-color var(--motion-duration-control, 180ms) var(--motion-ease-standard),
+    border-color var(--motion-duration-control, 180ms) var(--motion-ease-standard),
+    color var(--motion-duration-control, 180ms) var(--motion-ease-standard);
+}
+
+.vibe-light-tab {
+  background: rgba(255, 255, 255, 0.42);
+  color: #477067;
+}
+
+.vibe-light-tab:hover {
+  border-color: rgba(20, 184, 166, 0.18);
+  background: rgba(255, 255, 255, 0.76);
+  color: #17433e;
+}
+
+.vibe-light-tab-active {
+  border-color: rgba(217, 119, 6, 0.28);
+  background:
+    linear-gradient(180deg, #ffffff, #fff7dc 54%, #ecfdf5);
+  color: #173d38;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    0 -10px 20px rgba(217, 119, 6, 0.06);
+}
+
+.vibe-light-tab-close {
+  color: #5e8b80;
+}
+
+.vibe-light-tab-close:hover {
+  color: #0f3b36;
+  transform: scale(1.08);
+}
+
+/* The tab-bar action cluster is sticky, so it needs its own opaque backdrop to keep
+   tabs from sliding visibly underneath it. */
+.vibe-dark-tabbar-actions {
+  background: linear-gradient(90deg, rgba(4, 21, 29, 0), rgba(4, 21, 29, 0.98) 0.75rem);
+}
+
+.vibe-light-tabbar-actions {
+  background: linear-gradient(90deg, rgba(255, 253, 244, 0), rgba(255, 253, 244, 0.98) 0.75rem);
+}
+
+.vibe-skin-tabbar-actions {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--vibe-tab-bar, var(--vibe-panel-strong, rgba(0, 0, 0, 0.4))) 0.75rem
+  );
+}
+
+.vibe-skin-tab,
+.vibe-skin-tab-active {
+  border-color: var(--vibe-tab-border, var(--vibe-border));
+}
+
+.vibe-skin-tab {
+  background: var(--vibe-tab-background-layer, var(--vibe-tab-inactive));
+  background-position: var(--vibe-tab-background-position, center);
+  background-repeat: var(--vibe-tab-background-repeat, no-repeat);
+  background-size: var(--vibe-tab-background-size, cover);
+  color: var(--vibe-tab-color, var(--vibe-muted-text));
+}
+
+.vibe-skin-tab:hover {
+  background: var(--vibe-tab-hover, var(--vibe-tab-inactive));
+  color: var(--vibe-text);
+}
+
+.vibe-skin-tab-active {
+  background: var(--vibe-tab-active-background-layer, var(--vibe-tab-active));
+  background-position: var(--vibe-tab-active-background-position, center);
+  background-repeat: var(--vibe-tab-active-background-repeat, no-repeat);
+  background-size: var(--vibe-tab-active-background-size, cover);
+  color: var(--vibe-tab-active-color, var(--vibe-text));
+}
+
+.vibe-skin-tab-close {
+  color: var(--vibe-tab-close-color, var(--vibe-muted-text));
+}
+
+.vibe-tab-trigger {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  line-height: 1;
+  outline: none;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.vibe-tab-trigger:hover {
+  background: transparent;
+  color: inherit;
+}
+
+.vibe-tab-close-icon {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  line-height: 1;
+  padding: 0 0.55rem;
+}
+
+.vibe-tab-close-icon:hover {
+  background: transparent;
+}
+
+.vibe-skin-terminal-shell {
+  background: var(--vibe-terminal-shell-background-layer, var(--vibe-panel-strong));
+  background-position: var(--vibe-terminal-shell-background-position, center);
+  background-repeat: var(--vibe-terminal-shell-background-repeat, no-repeat);
+  background-size: var(--vibe-terminal-shell-background-size, cover);
+  border-color: var(--vibe-terminal-shell-border, var(--vibe-border));
+  border-radius: var(--vibe-terminal-shell-border-radius, 18px);
+  box-shadow: var(--vibe-terminal-shell-shadow);
+  color: var(--vibe-terminal-shell-color, var(--vibe-text));
+  padding: var(--vibe-terminal-shell-padding);
+}
+
+.vibe-skin-terminal-shell .xterm-pane,
+.vibe-skin-terminal-shell .xterm-pane-skin-transparent,
+.vibe-skin-terminal-shell .xterm,
+.vibe-skin-terminal-shell .xterm-screen,
+.vibe-skin-terminal-shell .xterm-viewport,
+.vibe-skin-terminal-shell .xterm-scrollable-element,
+.vibe-skin-terminal-shell .xterm-helpers,
+.vibe-skin-terminal-shell .xterm-decoration-container,
+.vibe-skin-terminal-shell .xterm-selection-layer,
+.vibe-skin-terminal-shell .xterm-text-layer,
+.vibe-skin-terminal-shell .xterm-cursor-layer,
+.vibe-skin-terminal-shell .xterm-link-layer,
+.vibe-skin-terminal-shell .xterm-rows,
+.vibe-skin-terminal-shell .xterm-screen canvas,
+.vibe-skin-terminal-shell canvas {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.vibe-skin-empty-state {
+  background: var(--vibe-empty-state-background-layer, transparent);
+  background-position: var(--vibe-empty-state-background-position, center);
+  background-repeat: var(--vibe-empty-state-background-repeat, no-repeat);
+  background-size: var(--vibe-empty-state-background-size, cover);
+  color: var(--vibe-empty-state-color, var(--vibe-text));
+}
+
+.vibe-skin-launch-panel {
+  background: var(--vibe-launch-panel-background-layer, var(--vibe-panel-strong));
+  background-position: var(--vibe-launch-panel-background-position, center);
+  background-repeat: var(--vibe-launch-panel-background-repeat, no-repeat);
+  background-size: var(--vibe-launch-panel-background-size, cover);
+  border-color: var(--vibe-launch-panel-border, var(--vibe-border));
+  border-radius: var(--vibe-launch-panel-border-radius);
+  box-shadow: var(--vibe-launch-panel-shadow);
+  color: var(--vibe-launch-panel-color, var(--vibe-text));
+  backdrop-filter: var(--vibe-launch-panel-backdrop-filter);
+  font-size: var(--vibe-launch-panel-font-size);
+  line-height: var(--vibe-launch-panel-line-height);
+  letter-spacing: var(--vibe-launch-panel-letter-spacing);
+  padding: var(--vibe-launch-panel-padding);
+  text-transform: var(--vibe-launch-panel-text-transform);
+}
+
+.vibe-skin-agent-strip {
+  background: var(--vibe-agent-strip-background-layer, var(--vibe-panel-subtle));
+  background-position: var(--vibe-agent-strip-background-position, center);
+  background-repeat: var(--vibe-agent-strip-background-repeat, no-repeat);
+  background-size: var(--vibe-agent-strip-background-size, cover);
+  border-color: var(--vibe-agent-strip-border, var(--vibe-border));
+  box-shadow: var(--vibe-agent-strip-shadow);
+  color: var(--vibe-agent-strip-color, var(--vibe-text));
+  backdrop-filter: var(--vibe-agent-strip-backdrop-filter);
+  border-radius: var(--vibe-agent-strip-border-radius);
+  padding: var(--vibe-agent-strip-padding);
+}
+
+.vibe-skin-agent-option {
+  background: var(--vibe-agent-option-background-layer, var(--vibe-panel));
+  background-position: var(--vibe-agent-option-background-position, center);
+  background-repeat: var(--vibe-agent-option-background-repeat, no-repeat);
+  background-size: var(--vibe-agent-option-background-size, cover);
+  border-color: var(--vibe-agent-option-border, var(--vibe-border));
+  border-radius: var(--vibe-agent-option-border-radius);
+  box-shadow: var(--vibe-agent-option-shadow);
+  color: var(--vibe-agent-option-color, var(--vibe-muted-text));
+  padding: var(--vibe-agent-option-padding);
+}
+
+.vibe-skin-agent-option:hover {
+  background: var(--vibe-button-hover-background-layer, var(--vibe-tab-hover));
+  color: var(--vibe-text);
+}
+
+.vibe-skin-agent-option-active {
+  background: var(--vibe-agent-option-active-background-layer, var(--vibe-tab-active));
+  background-position: var(--vibe-agent-option-active-background-position, center);
+  background-repeat: var(--vibe-agent-option-active-background-repeat, no-repeat);
+  background-size: var(--vibe-agent-option-active-background-size, cover);
+  border-color: var(--vibe-agent-option-active-border, var(--vibe-accent));
+  box-shadow: var(--vibe-agent-option-active-shadow);
+  color: var(--vibe-agent-option-active-color, var(--vibe-text));
+}
+
+.vibe-skin-composer {
+  background: var(--vibe-composer-background-layer, var(--vibe-panel));
+  background-position: var(--vibe-composer-background-position, center);
+  background-repeat: var(--vibe-composer-background-repeat, no-repeat);
+  background-size: var(--vibe-composer-background-size, cover);
+  border-color: var(--vibe-composer-border, var(--vibe-border));
+  border-radius: var(--vibe-composer-border-radius);
+  box-shadow: var(--vibe-composer-shadow);
+  color: var(--vibe-composer-color, var(--vibe-text));
+  backdrop-filter: var(--vibe-composer-backdrop-filter);
+  padding: var(--vibe-composer-padding);
+}
+
+.vibe-skin-composer-input {
+  background: var(--vibe-composer-input-background-layer, var(--vibe-field-background-layer, var(--vibe-panel-strong)));
+  background-position: var(--vibe-composer-input-background-position, center);
+  background-repeat: var(--vibe-composer-input-background-repeat, no-repeat);
+  background-size: var(--vibe-composer-input-background-size, cover);
+  border-color: var(--vibe-composer-input-border, var(--vibe-field-border, var(--vibe-border)));
+  border-radius: var(--vibe-composer-input-border-radius);
+  box-shadow: var(--vibe-composer-input-shadow);
+  color: var(--vibe-composer-input-color, var(--vibe-field-color, var(--vibe-text)));
+  padding: var(--vibe-composer-input-padding);
+}
+
+.vibe-skin-composer-input::placeholder {
+  color: var(--vibe-muted-text);
+  opacity: 0.72;
+}
+
+.vibe-skin-composer-meta-bar {
+  background: var(--vibe-composer-meta-bar-background-layer, var(--vibe-panel-subtle));
+  background-position: var(--vibe-composer-meta-bar-background-position, center);
+  background-repeat: var(--vibe-composer-meta-bar-background-repeat, no-repeat);
+  background-size: var(--vibe-composer-meta-bar-background-size, cover);
+  border-color: var(--vibe-composer-meta-bar-border, var(--vibe-border));
+  border-radius: var(--vibe-composer-meta-bar-border-radius);
+  box-shadow: var(--vibe-composer-meta-bar-shadow);
+  color: var(--vibe-composer-meta-bar-color, var(--vibe-muted-text));
+  padding: var(--vibe-composer-meta-bar-padding);
+}
+
+.vibe-skin-composer-control {
+  background: var(--vibe-composer-control-background-layer, var(--vibe-select-background-layer, var(--vibe-field-background-layer, var(--vibe-panel-strong))));
+  background-position: var(--vibe-composer-control-background-position, center);
+  background-repeat: var(--vibe-composer-control-background-repeat, no-repeat);
+  background-size: var(--vibe-composer-control-background-size, cover);
+  border-color: var(--vibe-composer-control-border, var(--vibe-select-border, var(--vibe-border)));
+  border-radius: var(--vibe-composer-control-border-radius);
+  box-shadow: var(--vibe-composer-control-shadow);
+  color: var(--vibe-composer-control-color, var(--vibe-select-color, var(--vibe-text)));
+  padding: var(--vibe-composer-control-padding);
+}
+
+.vibe-skin-composer-send-button {
+  background: var(--vibe-composer-send-button-background-layer, var(--vibe-button-background-layer, var(--vibe-button)));
+  background-position: var(--vibe-composer-send-button-background-position, center);
+  background-repeat: var(--vibe-composer-send-button-background-repeat, no-repeat);
+  background-size: var(--vibe-composer-send-button-background-size, cover);
+  border-color: var(--vibe-composer-send-button-border, var(--vibe-button-border, var(--vibe-border)));
+  border-radius: var(--vibe-composer-send-button-border-radius);
+  box-shadow: var(--vibe-composer-send-button-shadow, var(--vibe-button-shadow));
+  color: var(--vibe-composer-send-button-color, var(--vibe-button-color, var(--vibe-button-text)));
+  padding: var(--vibe-composer-send-button-padding);
+}
+
+.vibe-skin-composer-send-button:hover {
+  background: var(--vibe-button-hover-background-layer, var(--vibe-button-hover));
+}
+
+.vibe-skin-composer-addon {
+  background: var(--vibe-composer-addon-background-layer, var(--vibe-panel-subtle));
+  background-position: var(--vibe-composer-addon-background-position, center);
+  background-repeat: var(--vibe-composer-addon-background-repeat, no-repeat);
+  background-size: var(--vibe-composer-addon-background-size, cover);
+  border-color: var(--vibe-composer-addon-border, var(--vibe-border));
+  border-radius: var(--vibe-composer-addon-border-radius);
+  box-shadow: var(--vibe-composer-addon-shadow);
+  color: var(--vibe-composer-addon-color, var(--vibe-muted-text));
+  font-size: var(--vibe-composer-addon-font-size);
+  letter-spacing: var(--vibe-composer-addon-letter-spacing);
+  line-height: var(--vibe-composer-addon-line-height);
+  padding: var(--vibe-composer-addon-padding);
+}
+
+.vibe-skin-modal {
+  background: var(--vibe-modal-background-layer, var(--vibe-panel-strong));
+  background-position: var(--vibe-modal-background-position, center);
+  background-repeat: var(--vibe-modal-background-repeat, no-repeat);
+  background-size: var(--vibe-modal-background-size, cover);
+  border-color: var(--vibe-modal-border, var(--vibe-border));
+  border-radius: var(--vibe-modal-border-radius);
+  color: var(--vibe-modal-color, var(--vibe-text));
+  box-shadow: var(--vibe-modal-shadow);
+  backdrop-filter: var(--vibe-modal-backdrop-filter);
+  padding: var(--vibe-modal-padding);
+}
+
+.vibe-skin-right-card {
+  background: var(--vibe-right-card-background-layer, var(--vibe-panel-strong));
+  background-position: var(--vibe-right-card-background-position, center);
+  background-repeat: var(--vibe-right-card-background-repeat, no-repeat);
+  background-size: var(--vibe-right-card-background-size, cover);
+  border-color: var(--vibe-right-card-border, var(--vibe-border));
+  color: var(--vibe-right-card-color, var(--vibe-text));
+  box-shadow: var(--vibe-right-card-shadow);
+}
+
+.vibe-skin-showcase-stage {
+  background: var(--vibe-showcase-stage-background-layer, radial-gradient(circle at 50% 12%, rgba(255,255,255,0.95), rgba(195,232,255,0.72) 42%, rgba(73,155,221,0.42)));
+  background-position: var(--vibe-showcase-stage-background-position, center);
+  background-repeat: var(--vibe-showcase-stage-background-repeat, no-repeat);
+  background-size: var(--vibe-showcase-stage-background-size, cover);
+  border-color: var(--vibe-showcase-stage-border, var(--vibe-border));
+  color: var(--vibe-showcase-stage-color, var(--vibe-text));
+  box-shadow: var(--vibe-showcase-stage-shadow, inset 0 1px 0 rgba(255,255,255,0.82));
+}
+
+.vibe-skin-showcase-figure {
+  background: var(--vibe-showcase-figure-background-layer, transparent);
+  background-position: var(--vibe-showcase-figure-background-position, center);
+  background-repeat: var(--vibe-showcase-figure-background-repeat, no-repeat);
+  background-size: var(--vibe-showcase-figure-background-size, cover);
+  border-color: var(--vibe-showcase-figure-border, rgba(255,255,255,0.58));
+  color: var(--vibe-showcase-figure-color, var(--vibe-text));
+  box-shadow: var(--vibe-showcase-figure-shadow, 0 18px 30px rgba(10,82,154,0.2));
+}
+
+.vibe-skin-showcase-footer {
+  background: var(--vibe-showcase-footer-background-layer, rgba(255,255,255,0.5));
+  background-position: var(--vibe-showcase-footer-background-position, center);
+  background-repeat: var(--vibe-showcase-footer-background-repeat, no-repeat);
+  background-size: var(--vibe-showcase-footer-background-size, cover);
+  border-color: var(--vibe-showcase-footer-border, var(--vibe-border));
+  color: var(--vibe-showcase-footer-color, var(--vibe-muted-text));
+  box-shadow: var(--vibe-showcase-footer-shadow);
+}
+
+.vibe-skin-qq-mascot {
+  position: relative;
+  width: 7.5rem;
+  height: 8.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 2rem;
+  overflow: visible;
+  background:
+    radial-gradient(circle at 35% 18%, rgba(255, 255, 255, 0.96), transparent 1.6rem),
+    linear-gradient(180deg, #d8f6ff 0%, #5dc4ff 48%, #0d73cd 100%);
+}
+
+.vibe-skin-qq-mascot::before,
+.vibe-skin-qq-mascot::after {
+  position: absolute;
+  left: 50%;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.vibe-skin-qq-mascot::before {
+  top: 1.2rem;
+  width: 4.8rem;
+  height: 3.9rem;
+  border: 1px solid rgba(3, 82, 157, 0.28);
+  border-radius: 45% 45% 38% 38%;
+  background:
+    radial-gradient(circle at 34% 40%, #0f315d 0 0.18rem, transparent 0.22rem),
+    radial-gradient(circle at 66% 40%, #0f315d 0 0.18rem, transparent 0.22rem),
+    linear-gradient(180deg, #ffffff 0%, #d8f8ff 45%, #82d5ff 100%);
+  box-shadow: inset 0 0.55rem 0 rgba(255, 255, 255, 0.62), 0 0.55rem 1rem rgba(9, 81, 151, 0.22);
+}
+
+.vibe-skin-qq-mascot::after {
+  top: 4.85rem;
+  width: 5.7rem;
+  height: 2.7rem;
+  border: 1px solid rgba(4, 85, 160, 0.3);
+  border-radius: 1.35rem 1.35rem 1.75rem 1.75rem;
+  background:
+    radial-gradient(circle at 50% 26%, rgba(255, 255, 255, 0.86), transparent 1.35rem),
+    linear-gradient(180deg, #3bb5ff 0%, #0d78d5 62%, #075da7 100%);
+  box-shadow: inset 0 0.45rem 0 rgba(255, 255, 255, 0.34), 0 1rem 1.2rem rgba(4, 63, 126, 0.22);
+}
+
+.vibe-skin-qq-mascot-antenna {
+  position: absolute;
+  top: 0.25rem;
+  left: 50%;
+  width: 2.4rem;
+  height: 1.3rem;
+  border-top: 2px solid #0b6dbf;
+  border-radius: 50% 50% 0 0;
+  transform: translateX(-50%);
+}
+
+.vibe-skin-qq-mascot-antenna::before,
+.vibe-skin-qq-mascot-antenna::after {
+  position: absolute;
+  top: -0.25rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(4, 66, 126, 0.32);
+  content: "";
+}
+
+.vibe-skin-qq-mascot-antenna::before {
+  left: -0.08rem;
+}
+
+.vibe-skin-qq-mascot-antenna::after {
+  right: -0.08rem;
+}
+
+.vibe-skin-qq-mascot-ear {
+  position: absolute;
+  top: 2.2rem;
+  width: 1.1rem;
+  height: 1.7rem;
+  border: 1px solid rgba(4, 85, 160, 0.24);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #d9f7ff, #5ec7ff);
+}
+
+.vibe-skin-qq-mascot-ear-left {
+  left: 0.95rem;
+  transform: rotate(-18deg);
+}
+
+.vibe-skin-qq-mascot-ear-right {
+  right: 0.95rem;
+  transform: rotate(18deg);
+}
+
+.vibe-skin-qq-mascot-screen {
+  position: absolute;
+  top: 5.45rem;
+  left: 50%;
+  z-index: 1;
+  display: grid;
+  width: 2.6rem;
+  height: 1.15rem;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  border-radius: 0.65rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(190, 239, 255, 0.82));
+  color: #0a5ea7;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  transform: translateX(-50%);
+}
+
+.vibe-skin-qq-mascot-scarf {
+  position: absolute;
+  top: 4.42rem;
+  left: 50%;
+  z-index: 2;
+  width: 4.15rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ff7b89, #d92238 52%, #ffb2bb);
+  box-shadow: 0 0.22rem 0.45rem rgba(142, 26, 45, 0.22);
+  transform: translateX(-50%) rotate(-3deg);
+}
+
+.vibe-skin-qq-friend-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(222, 246, 255, 0.94) 54%, rgba(152, 214, 249, 0.92)),
+    var(--vibe-right-card-background-layer, var(--vibe-panel-strong));
+}
+
+.vibe-skin-qq-card-title {
+  border-bottom: 1px solid rgba(31, 132, 211, 0.26);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(169, 222, 252, 0.58));
+  color: var(--vibe-text);
+}
+
+.vibe-skin-qq-friend-stage {
+  position: relative;
+  min-height: 10.5rem;
+  overflow: hidden;
+  border-color: rgba(31, 132, 211, 0.28);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.98), transparent 4.7rem),
+    linear-gradient(180deg, #dff7ff 0%, #a9e0fb 54%, #6fb3e5 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+.vibe-skin-qq-friend-stage::before {
+  position: absolute;
+  right: 1.4rem;
+  bottom: 1rem;
+  left: 1.4rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  background: radial-gradient(ellipse at center, rgba(21, 88, 153, 0.24), transparent 70%);
+  content: "";
+}
+
+.vibe-skin-qq-person {
+  position: relative;
+  z-index: 1;
+  width: 7rem;
+  height: 10rem;
+}
+
+.vibe-skin-qq-person::before,
+.vibe-skin-qq-person::after {
+  position: absolute;
+  bottom: 0.25rem;
+  width: 1.9rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: #1d4f85;
+  content: "";
+}
+
+.vibe-skin-qq-person::before {
+  left: 1.5rem;
+  transform: rotate(-6deg);
+}
+
+.vibe-skin-qq-person::after {
+  right: 1.5rem;
+  transform: rotate(6deg);
+}
+
+.vibe-skin-qq-person-hair {
+  position: absolute;
+  top: 0.6rem;
+  left: 50%;
+  z-index: 3;
+  width: 3.65rem;
+  height: 3.8rem;
+  border-radius: 48% 48% 40% 40%;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 236, 184, 0.46), transparent 0.85rem),
+    linear-gradient(145deg, #7a3f20, #2f1b16 64%);
+  box-shadow: 0 0.4rem 0.8rem rgba(62, 29, 19, 0.22);
+  transform: translateX(-50%);
+}
+
+.vibe-skin-qq-person-face {
+  position: absolute;
+  top: 1.35rem;
+  left: 50%;
+  z-index: 4;
+  width: 2.65rem;
+  height: 2.45rem;
+  border-radius: 45% 45% 48% 48%;
+  background:
+    radial-gradient(circle at 34% 42%, #2b1a16 0 0.12rem, transparent 0.14rem),
+    radial-gradient(circle at 65% 42%, #2b1a16 0 0.12rem, transparent 0.14rem),
+    radial-gradient(circle at 50% 68%, #d45361 0 0.16rem, transparent 0.19rem),
+    linear-gradient(180deg, #ffe1c4, #f5b58f);
+  transform: translateX(-50%);
+}
+
+.vibe-skin-qq-person-body {
+  position: absolute;
+  top: 3.85rem;
+  left: 50%;
+  z-index: 2;
+  width: 4.75rem;
+  height: 4.75rem;
+  border-radius: 1.2rem 1.2rem 1.8rem 1.8rem;
+  background:
+    linear-gradient(90deg, transparent 0 26%, rgba(255, 255, 255, 0.86) 26% 36%, transparent 36% 64%, rgba(255, 255, 255, 0.86) 64% 74%, transparent 74%),
+    linear-gradient(180deg, #ff9bb6 0%, #ef4f83 47%, #4c9adf 48%, #1d68bd 100%);
+  box-shadow: inset 0 0.55rem 0 rgba(255, 255, 255, 0.28), 0 0.8rem 1rem rgba(7, 76, 144, 0.18);
+  transform: translateX(-50%);
+}
+
+.vibe-skin-qq-person-body::before,
+.vibe-skin-qq-person-body::after {
+  position: absolute;
+  bottom: -1.5rem;
+  width: 0.7rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f4b18d, #dc8c70);
+  content: "";
+}
+
+.vibe-skin-qq-person-body::before {
+  left: 1.3rem;
+}
+
+.vibe-skin-qq-person-body::after {
+  right: 1.3rem;
+}
+
+.vibe-skin-qq-person-hand {
+  position: absolute;
+  top: 4.4rem;
+  z-index: 3;
+  width: 0.7rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe0c2, #efae8b);
+}
+
+.vibe-skin-qq-person-hand-left {
+  left: 0.9rem;
+  transform: rotate(22deg);
+}
+
+.vibe-skin-qq-person-hand-right {
+  right: 0.9rem;
+  transform: rotate(-22deg);
+}
+
+.vibe-skin--rescue-pups .vibe-skin-titlebar {
+  text-shadow: 0 1px 1px rgba(0, 42, 89, 0.5);
+}
+
+.vibe-skin--rescue-pups .vibe-skin-showcase-stage {
+  min-height: 12.5rem;
+}
+
+.vibe-skin--rescue-pups .vibe-skin-right-card {
+  overflow: hidden;
+}
+
+.vibe-skin-rescue-avatar-mark {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 16%, rgba(255, 255, 255, 0.9), transparent 1.4rem),
+    linear-gradient(180deg, #6cc8ff 0%, #197fd9 54%, #ef4037 55%, #b91f1a 100%);
+}
+
+.vibe-skin-rescue-avatar-face,
+.vibe-skin-rescue-avatar-hair,
+.vibe-skin-rescue-avatar-vest {
+  position: absolute;
+  left: 50%;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.vibe-skin-rescue-avatar-face {
+  top: 0.9rem;
+  z-index: 2;
+  width: 1.75rem;
+  height: 1.6rem;
+  border-radius: 45% 45% 48% 48%;
+  background:
+    radial-gradient(circle at 34% 43%, #18324a 0 0.1rem, transparent 0.12rem),
+    radial-gradient(circle at 66% 43%, #18324a 0 0.1rem, transparent 0.12rem),
+    radial-gradient(circle at 50% 69%, #b91f1a 0 0.12rem, transparent 0.14rem),
+    linear-gradient(180deg, #ffe0bd, #f1a978);
+  box-shadow: 0 0.3rem 0.5rem rgba(81, 42, 16, 0.16);
+}
+
+.vibe-skin-rescue-avatar-hair {
+  top: 0.55rem;
+  z-index: 3;
+  width: 2.05rem;
+  height: 1.1rem;
+  border-radius: 1rem 1rem 0.35rem 0.35rem;
+  background: linear-gradient(140deg, #7d431d, #2f1d13 70%);
+}
+
+.vibe-skin-rescue-avatar-vest {
+  bottom: -0.15rem;
+  z-index: 1;
+  width: 2.85rem;
+  height: 2.1rem;
+  border-radius: 1rem 1rem 0 0;
+  background:
+    linear-gradient(90deg, transparent 0 26%, rgba(255, 255, 255, 0.85) 26% 38%, transparent 38% 62%, rgba(255, 255, 255, 0.85) 62% 74%, transparent 74%),
+    linear-gradient(180deg, #ffffff 0%, #ffdf55 46%, #0e72ca 47%, #075eb1 100%);
+}
+
+.vibe-skin-rescue-hq {
+  position: relative;
+  width: 9.25rem;
+  height: 9.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 2rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 24% 18%, rgba(255, 255, 255, 0.95), transparent 1.7rem),
+    linear-gradient(180deg, #bfeeff 0%, #6dc9ff 50%, #46b05a 51%, #2e8d45 100%);
+}
+
+.vibe-skin-rescue-hq::before {
+  position: absolute;
+  right: 0.9rem;
+  bottom: 0.75rem;
+  left: 0.9rem;
+  height: 0.9rem;
+  border-radius: 999px;
+  background: radial-gradient(ellipse at center, rgba(21, 88, 81, 0.26), transparent 72%);
+  content: "";
+}
+
+.vibe-skin-rescue-hq-sky,
+.vibe-skin-rescue-hq-antenna,
+.vibe-skin-rescue-hq-deck,
+.vibe-skin-rescue-hq-window,
+.vibe-skin-rescue-hq-tower,
+.vibe-skin-rescue-hq-badge,
+.vibe-skin-rescue-hq-base,
+.vibe-skin-rescue-hq-hill {
+  position: absolute;
+  content: "";
+}
+
+.vibe-skin-rescue-hq-sky {
+  top: 0.8rem;
+  right: 0.95rem;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, #fff59d 0 48%, rgba(255, 245, 157, 0.18) 52% 100%);
+}
+
+.vibe-skin-rescue-hq-antenna {
+  top: 0.6rem;
+  left: 50%;
+  z-index: 5;
+  width: 0.18rem;
+  height: 2.05rem;
+  border-radius: 999px;
+  background: #0f4f99;
+  transform: translateX(-50%);
+}
+
+.vibe-skin-rescue-hq-antenna::before {
+  position: absolute;
+  top: -0.3rem;
+  left: 50%;
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 999px;
+  background: #ef4037;
+  box-shadow: 0 0 0 0.18rem rgba(255, 255, 255, 0.68);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.vibe-skin-rescue-hq-deck {
+  top: 2.15rem;
+  left: 50%;
+  z-index: 4;
+  width: 5.6rem;
+  height: 2.3rem;
+  border: 0.18rem solid #0f5fb6;
+  border-radius: 1.3rem;
+  background:
+    radial-gradient(circle at 50% 58%, #ffffff 0 0.55rem, transparent 0.58rem),
+    linear-gradient(180deg, #ffffff 0%, #ffdf55 46%, #e83c35 47%, #b91f1a 100%);
+  box-shadow: inset 0 0.32rem 0 rgba(255, 255, 255, 0.55), 0 0.55rem 0.9rem rgba(6, 73, 141, 0.18);
+  transform: translateX(-50%);
+}
+
+.vibe-skin-rescue-hq-window {
+  top: 2.78rem;
+  z-index: 5;
+  width: 1.05rem;
+  height: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 0.35rem;
+  background: linear-gradient(180deg, #9ee6ff, #1e97ed);
+}
+
+.vibe-skin-rescue-hq-window-left {
+  left: 2.45rem;
+}
+
+.vibe-skin-rescue-hq-window-right {
+  right: 2.45rem;
+}
+
+.vibe-skin-rescue-hq-tower {
+  top: 4rem;
+  left: 50%;
+  z-index: 3;
+  width: 3.4rem;
+  height: 3.7rem;
+  border: 0.18rem solid #0f5fb6;
+  border-radius: 0.55rem 0.55rem 0.25rem 0.25rem;
+  background:
+    linear-gradient(90deg, transparent 0 34%, rgba(255, 255, 255, 0.7) 34% 47%, transparent 47% 53%, rgba(255, 255, 255, 0.7) 53% 66%, transparent 66%),
+    linear-gradient(180deg, #f8fbff, #cdeaff 52%, #64bbf6);
+  transform: translateX(-50%);
+}
+
+.vibe-skin-rescue-hq-badge {
+  top: 5.15rem;
+  left: 50%;
+  z-index: 6;
+  display: grid;
+  width: 2.4rem;
+  height: 1.25rem;
+  place-items: center;
+  border: 0.12rem solid #ffffff;
+  border-radius: 0.75rem;
+  background: linear-gradient(180deg, #ffdf55, #f5a623);
+  color: #784400;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  transform: translateX(-50%);
+}
+
+.vibe-skin-rescue-hq-base {
+  right: 1.85rem;
+  bottom: 1.15rem;
+  left: 1.85rem;
+  z-index: 2;
+  height: 1.55rem;
+  border: 0.18rem solid #0f5fb6;
+  border-radius: 0.7rem 0.7rem 0.55rem 0.55rem;
+  background: linear-gradient(180deg, #ffffff, #f1493f 48%, #b91f1a);
+}
+
+.vibe-skin-rescue-hq-hill {
+  bottom: -1.3rem;
+  z-index: 1;
+  width: 5.2rem;
+  height: 2.8rem;
+  border-radius: 50% 50% 0 0;
+  background: linear-gradient(180deg, #63c86d, #2e8d45);
+}
+
+.vibe-skin-rescue-hq-hill-left {
+  left: -1.4rem;
+}
+
+.vibe-skin-rescue-hq-hill-right {
+  right: -1.4rem;
+}
+
+.vibe-skin-rescue-team-card {
+  background:
+    radial-gradient(circle at 16% 18%, rgba(255, 255, 255, 0.9), transparent 4rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(223, 244, 255, 0.92) 54%, rgba(255, 218, 91, 0.82));
+}
+
+.vibe-skin-rescue-team-card span[role="img"] {
+  justify-self: center;
+}
+
+.vibe-skin-rescue-dog {
+  --pup-color: #ef4037;
+  position: relative;
+  display: block;
+  width: 3.1rem;
+  height: 3.15rem;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 1.2rem;
+  background:
+    radial-gradient(circle at 34% 18%, rgba(255, 255, 255, 0.92), transparent 0.82rem),
+    linear-gradient(180deg, var(--pup-color), color-mix(in srgb, var(--pup-color) 76%, #111827));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58), 0 0.45rem 0.8rem rgba(17, 78, 139, 0.16);
+}
+
+.vibe-skin-rescue-dog-face {
+  position: absolute;
+  top: 0.85rem;
+  left: 50%;
+  width: 1.8rem;
+  height: 1.55rem;
+  border-radius: 46% 46% 52% 52%;
+  background:
+    radial-gradient(circle at 35% 42%, #18324a 0 0.1rem, transparent 0.12rem),
+    radial-gradient(circle at 65% 42%, #18324a 0 0.1rem, transparent 0.12rem),
+    radial-gradient(circle at 50% 66%, #18324a 0 0.12rem, transparent 0.14rem),
+    linear-gradient(180deg, #fff4df, #dca574);
+  transform: translateX(-50%);
+}
+
+.vibe-skin-rescue-dog-ear {
+  position: absolute;
+  top: 0.95rem;
+  width: 0.8rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: #8b5a2b;
+}
+
+.vibe-skin-rescue-dog-ear-left {
+  left: 0.45rem;
+  transform: rotate(-22deg);
+}
+
+.vibe-skin-rescue-dog-ear-right {
+  right: 0.45rem;
+  transform: rotate(22deg);
+}
+
+.vibe-skin-rescue-dog-red {
+  --pup-color: #ef4037;
+}
+
+.vibe-skin-rescue-dog-blue {
+  --pup-color: #1687ef;
+}
+
+.vibe-skin-rescue-dog-yellow {
+  --pup-color: #f3bd28;
+}
+
+.vibe-skin-rescue-dog-green {
+  --pup-color: #39a954;
+}
+
+.vibe-skin-rescue-dog-pink {
+  --pup-color: #ec6cad;
+}
+
+.vibe-skin-rescue-dog-orange {
+  --pup-color: #f08a2d;
+}
+
+.vibe-skin-rescue-civic-stage {
+  border-color: rgba(208, 126, 0, 0.26);
+  background:
+    radial-gradient(circle at 50% 16%, rgba(255, 255, 255, 0.9), transparent 3.8rem),
+    linear-gradient(180deg, #dff5ff, #9bdcff 64%, #73c36d 65%, #44a552);
+}
+
+.vibe-skin-rescue-mayor {
+  position: relative;
+  width: 4rem;
+  height: 5.15rem;
+}
+
+.vibe-skin-rescue-mayor::before,
+.vibe-skin-rescue-mayor::after {
+  position: absolute;
+  bottom: 0.08rem;
+  width: 1.12rem;
+  height: 0.36rem;
+  border-radius: 999px;
+  background: #4d2c16;
+  content: "";
+}
+
+.vibe-skin-rescue-mayor::before {
+  left: 0.75rem;
+  transform: rotate(-5deg);
+}
+
+.vibe-skin-rescue-mayor::after {
+  right: 0.75rem;
+  transform: rotate(5deg);
+}
+
+.vibe-skin-rescue-mayor-hat,
+.vibe-skin-rescue-mayor-head,
+.vibe-skin-rescue-mayor-body {
+  position: absolute;
+  left: 50%;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.vibe-skin-rescue-mayor-hat {
+  top: 0.25rem;
+  z-index: 4;
+  width: 2.45rem;
+  height: 1.05rem;
+  border-radius: 0.35rem 0.35rem 0.2rem 0.2rem;
+  background: linear-gradient(180deg, #fff5d2, #f1b945);
+  box-shadow: 0 0.42rem 0 -0.16rem #a86b1f;
+}
+
+.vibe-skin-rescue-mayor-head {
+  top: 1.1rem;
+  z-index: 3;
+  width: 1.65rem;
+  height: 1.55rem;
+  border-radius: 45% 45% 50% 50%;
+  background:
+    radial-gradient(circle at 35% 42%, #2d1d12 0 0.09rem, transparent 0.11rem),
+    radial-gradient(circle at 65% 42%, #2d1d12 0 0.09rem, transparent 0.11rem),
+    radial-gradient(circle at 50% 69%, #b91f1a 0 0.12rem, transparent 0.14rem),
+    linear-gradient(180deg, #ffe1bf, #e9a16f);
+}
+
+.vibe-skin-rescue-mayor-body {
+  top: 2.45rem;
+  z-index: 2;
+  width: 2.8rem;
+  height: 2.25rem;
+  border-radius: 1rem 1rem 0.45rem 0.45rem;
+  background:
+    linear-gradient(90deg, transparent 0 45%, #ffdf55 45% 55%, transparent 55%),
+    linear-gradient(180deg, #8fd0ff 0%, #1c82db 52%, #0f5fb6 100%);
+  box-shadow: inset 0 0.42rem 0 rgba(255, 255, 255, 0.24);
+}
+
+.vibe-skin-rescue-chicken {
+  position: relative;
+  width: 4rem;
+  height: 5.15rem;
+}
+
+.vibe-skin-rescue-chicken::before,
+.vibe-skin-rescue-chicken::after {
+  position: absolute;
+  bottom: 0.35rem;
+  width: 0.72rem;
+  height: 0.18rem;
+  border-radius: 999px;
+  background: #cf7f14;
+  content: "";
+}
+
+.vibe-skin-rescue-chicken::before {
+  left: 1.25rem;
+  transform: rotate(-18deg);
+}
+
+.vibe-skin-rescue-chicken::after {
+  right: 1.25rem;
+  transform: rotate(18deg);
+}
+
+.vibe-skin-rescue-chicken-comb,
+.vibe-skin-rescue-chicken-body,
+.vibe-skin-rescue-chicken-wing {
+  position: absolute;
+  content: "";
+}
+
+.vibe-skin-rescue-chicken-comb {
+  top: 0.65rem;
+  left: 50%;
+  z-index: 3;
+  width: 1.4rem;
+  height: 0.85rem;
+  border-radius: 999px 999px 0.25rem 0.25rem;
+  background:
+    radial-gradient(circle at 20% 50%, #ef4037 0 0.32rem, transparent 0.34rem),
+    radial-gradient(circle at 50% 26%, #ef4037 0 0.42rem, transparent 0.44rem),
+    radial-gradient(circle at 80% 50%, #ef4037 0 0.32rem, transparent 0.34rem);
+  transform: translateX(-50%);
+}
+
+.vibe-skin-rescue-chicken-body {
+  top: 1.25rem;
+  left: 50%;
+  z-index: 2;
+  width: 2.5rem;
+  height: 2.85rem;
+  border-radius: 48% 48% 45% 45%;
+  background:
+    radial-gradient(circle at 36% 36%, #2d1d12 0 0.1rem, transparent 0.12rem),
+    radial-gradient(circle at 64% 36%, #2d1d12 0 0.1rem, transparent 0.12rem),
+    linear-gradient(90deg, transparent 0 46%, #f08a2d 46% 54%, transparent 54%),
+    linear-gradient(180deg, #fffdf3, #ffd965 70%, #f4b92c);
+  box-shadow: inset 0 0.5rem 0 rgba(255, 255, 255, 0.5), 0 0.65rem 0.9rem rgba(146, 87, 0, 0.16);
+  transform: translateX(-50%);
+}
+
+.vibe-skin-rescue-chicken-wing {
+  top: 2.25rem;
+  right: 0.75rem;
+  z-index: 4;
+  width: 1.1rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #fff6bd, #edb22b);
+  transform: rotate(-22deg);
+}
+
+.vibe-skin-status-bar {
+  background: var(--vibe-status-bar-background-layer, var(--vibe-panel-subtle));
+  background-position: var(--vibe-status-bar-background-position, center);
+  background-repeat: var(--vibe-status-bar-background-repeat, no-repeat);
+  background-size: var(--vibe-status-bar-background-size, cover);
+  border-color: var(--vibe-status-bar-border, var(--vibe-border));
+  color: var(--vibe-status-bar-color, var(--vibe-text));
+  box-shadow: var(--vibe-status-bar-shadow);
+}
+
+.vibe-skin-taskbar {
+  background: var(--vibe-taskbar-background-layer, linear-gradient(180deg, #48b9ff 0%, #1683da 48%, #0759a8 100%));
+  background-position: var(--vibe-taskbar-background-position, center);
+  background-repeat: var(--vibe-taskbar-background-repeat, no-repeat);
+  background-size: var(--vibe-taskbar-background-size, cover);
+  border-color: var(--vibe-taskbar-border, rgba(4, 72, 139, 0.72));
+  box-shadow: var(--vibe-taskbar-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 -10px 20px rgba(5, 62, 118, 0.2));
+  color: var(--vibe-taskbar-color, #ffffff);
+}
+
+.vibe-skin-taskbar-start-button {
+  background: var(--vibe-taskbar-start-button-background-layer, linear-gradient(180deg, #9ef7a2 0%, #35b95d 45%, #08762f 100%));
+  background-position: var(--vibe-taskbar-start-button-background-position, center);
+  background-repeat: var(--vibe-taskbar-start-button-background-repeat, no-repeat);
+  background-size: var(--vibe-taskbar-start-button-background-size, cover);
+  border-color: var(--vibe-taskbar-start-button-border, rgba(255, 255, 255, 0.72));
+  border-radius: var(--vibe-taskbar-start-button-border-radius, 999px);
+  box-shadow: var(--vibe-taskbar-start-button-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.82), 0 4px 10px rgba(0, 68, 37, 0.35));
+  color: var(--vibe-taskbar-start-button-color, #ffffff);
+  padding: var(--vibe-taskbar-start-button-padding);
+}
+
+.vibe-skin-taskbar-start-menu {
+  background: var(--vibe-taskbar-start-menu-background-layer, linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(207, 238, 255, 0.96) 52%, rgba(127, 199, 244, 0.94)));
+  background-position: var(--vibe-taskbar-start-menu-background-position, center);
+  background-repeat: var(--vibe-taskbar-start-menu-background-repeat, no-repeat);
+  background-size: var(--vibe-taskbar-start-menu-background-size, cover);
+  border-color: var(--vibe-taskbar-start-menu-border, rgba(17, 100, 181, 0.45));
+  box-shadow: var(--vibe-taskbar-start-menu-shadow, 0 18px 40px rgba(0, 50, 105, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.9));
+  color: var(--vibe-taskbar-start-menu-color, var(--vibe-text));
+}
+
+.vibe-skin-taskbar-menu-item {
+  background: var(--vibe-taskbar-menu-item-background-layer, transparent);
+  color: var(--vibe-taskbar-menu-item-color, var(--vibe-text));
+  font-size: var(--vibe-taskbar-menu-item-font-size);
+  letter-spacing: var(--vibe-taskbar-menu-item-letter-spacing);
+  padding: var(--vibe-taskbar-menu-item-padding);
+}
+
+.vibe-skin-taskbar-menu-item:hover:not(:disabled) {
+  background: var(--vibe-button-hover-background-layer, rgba(37, 135, 216, 0.18));
+}
+
+.vibe-skin-taskbar-item,
+.vibe-skin-taskbar-item-active {
+  background: var(--vibe-taskbar-item-background-layer, rgba(255, 255, 255, 0.14));
+  border-color: var(--vibe-taskbar-item-border, rgba(255, 255, 255, 0.34));
+  color: var(--vibe-taskbar-item-color, #ffffff);
+  box-shadow: var(--vibe-taskbar-item-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.24));
+  padding: var(--vibe-taskbar-item-padding);
+}
+
+.vibe-skin-taskbar-item-active {
+  background: var(--vibe-taskbar-item-active-background-layer, linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(41, 139, 222, 0.42)));
+  border-color: var(--vibe-taskbar-item-active-border, rgba(255, 255, 255, 0.56));
+  color: var(--vibe-taskbar-item-active-color, #ffffff);
+  box-shadow: var(--vibe-taskbar-item-active-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 1px 4px rgba(0, 45, 96, 0.22));
+}
+
+.vibe-skin-taskbar-tray {
+  background: var(--vibe-taskbar-tray-background-layer, rgba(4, 80, 151, 0.36));
+  border-color: var(--vibe-taskbar-tray-border, rgba(255, 255, 255, 0.28));
+  color: var(--vibe-taskbar-tray-color, #eef9ff);
+  box-shadow: var(--vibe-taskbar-tray-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.22));
+  padding: var(--vibe-taskbar-tray-padding);
+}
+
+.vibe-skin-taskbar-clock {
+  background: var(--vibe-taskbar-clock-background-layer, rgba(255, 255, 255, 0.16));
+  border-color: var(--vibe-taskbar-clock-border, transparent);
+  color: var(--vibe-taskbar-clock-color, #ffffff);
+  font-size: var(--vibe-taskbar-clock-font-size);
+  letter-spacing: var(--vibe-taskbar-clock-letter-spacing);
+  padding: var(--vibe-taskbar-clock-padding);
+}
+
+.vibe-skin-ghost {
+  background: var(--vibe-ghost-button-background-layer, var(--vibe-panel-subtle));
+  background-position: var(--vibe-ghost-button-background-position, center);
+  background-repeat: var(--vibe-ghost-button-background-repeat, no-repeat);
+  background-size: var(--vibe-ghost-button-background-size, cover);
+  border-color: var(--vibe-ghost-button-border, var(--vibe-border));
+  border-radius: var(--vibe-ghost-button-border-radius);
+  color: var(--vibe-ghost-button-color, var(--vibe-text));
+  box-shadow: var(--vibe-ghost-button-shadow);
+  padding: var(--vibe-ghost-button-padding);
+}
+
+.vibe-skin-primary {
+  background: var(--vibe-button-background-layer, var(--vibe-button));
+  background-position: var(--vibe-button-background-position, center);
+  background-repeat: var(--vibe-button-background-repeat, no-repeat);
+  background-size: var(--vibe-button-background-size, cover);
+  border-color: var(--vibe-button-border, var(--vibe-border));
+  border-radius: var(--vibe-button-border-radius);
+  color: var(--vibe-button-color, var(--vibe-button-text));
+  box-shadow: var(--vibe-button-shadow, 0 10px 22px rgba(17, 87, 164, 0.22));
+  padding: var(--vibe-button-padding);
+}
+
+.vibe-skin-primary:hover {
+  background: var(--vibe-button-hover-background-layer, var(--vibe-button-hover));
+}
+
+.vibe-skin-ghost:hover,
+.vibe-skin-list-trigger:hover,
+.vibe-skin-session:hover {
+  background: var(--vibe-button-hover-background-layer, var(--vibe-tab-hover));
+  color: var(--vibe-text);
+}
+
+.vibe-skin-tab-close:hover {
+  color: var(--vibe-text);
+  transform: scale(1.08);
+}
+
+.vibe-skin-field,
+.vibe-skin-select {
+  background: var(--vibe-field-background-layer, var(--vibe-panel-strong));
+  background-position: var(--vibe-field-background-position, center);
+  background-repeat: var(--vibe-field-background-repeat, no-repeat);
+  background-size: var(--vibe-field-background-size, cover);
+  border-color: var(--vibe-field-border, var(--vibe-border));
+  border-radius: var(--vibe-field-border-radius);
+  color: var(--vibe-field-color, var(--vibe-text));
+  box-shadow: var(--vibe-field-shadow);
+  padding: var(--vibe-field-padding);
+}
+
+.vibe-skin-select {
+  background: var(--vibe-select-background-layer, var(--vibe-field-background-layer, var(--vibe-panel-strong)));
+  background-position: var(--vibe-select-background-position, var(--vibe-field-background-position, center));
+  background-repeat: var(--vibe-select-background-repeat, var(--vibe-field-background-repeat, no-repeat));
+  background-size: var(--vibe-select-background-size, var(--vibe-field-background-size, cover));
+  border-color: var(--vibe-select-border, var(--vibe-field-border, var(--vibe-border)));
+  border-radius: var(--vibe-select-border-radius, var(--vibe-field-border-radius));
+  color: var(--vibe-select-color, var(--vibe-field-color, var(--vibe-text)));
+  box-shadow: var(--vibe-select-shadow, var(--vibe-field-shadow));
+  padding: var(--vibe-select-padding, var(--vibe-field-padding));
+}
+
+.vibe-skin-field::placeholder {
+  color: var(--vibe-muted-text);
+  opacity: 0.75;
+}
+
+.vibe-skin-primary:focus-visible,
+.vibe-skin-ghost:focus-visible,
+.vibe-skin-field:focus,
+.vibe-skin-select:focus,
+.vibe-skin-agent-option:focus-visible,
+.vibe-skin-composer-input:focus,
+.vibe-skin-composer-control:focus,
+.vibe-skin-composer-send-button:focus-visible,
+.vibe-skin-list-trigger:focus-visible,
+.vibe-skin-session:focus-visible,
+.vibe-skin-tab-close:focus-visible {
+  box-shadow: 0 0 0 2px var(--vibe-focus);
+  outline: none;
+}
+
+.vibe-skin-list-trigger,
+.vibe-skin-session {
+  color: var(--vibe-text);
+}
+
+.vibe-skin-danger {
+  background: var(--vibe-danger-background-layer, var(--vibe-danger-background));
+  background-position: var(--vibe-danger-background-position, center);
+  background-repeat: var(--vibe-danger-background-repeat, no-repeat);
+  background-size: var(--vibe-danger-background-size, cover);
+  border-color: var(--vibe-danger-border, var(--vibe-border));
+  border-radius: var(--vibe-danger-border-radius);
+  color: var(--vibe-danger-color, var(--vibe-danger-text));
+  box-shadow: var(--vibe-danger-shadow);
+  padding: var(--vibe-danger-padding);
+}
+
+.vibe-skin-showcase-orb {
+  background: var(--vibe-showcase-orb-background-layer, radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.92), rgba(195, 226, 251, 0.82) 40%, rgba(113, 177, 230, 0.8) 100%));
+  background-position: var(--vibe-showcase-orb-background-position, center);
+  background-repeat: var(--vibe-showcase-orb-background-repeat, no-repeat);
+  background-size: var(--vibe-showcase-orb-background-size, cover);
+  border-color: var(--vibe-showcase-orb-border, var(--vibe-border));
+  box-shadow: var(--vibe-showcase-orb-shadow);
+  color: var(--vibe-showcase-orb-color, var(--vibe-text));
+}
+
+.vibe-scrollbar-skin.vibe-scrollbar-active {
+  scrollbar-color: color-mix(in srgb, var(--vibe-accent) 52%, transparent) transparent;
+}
+
+.vibe-scrollbar-skin.vibe-scrollbar-active::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--vibe-accent) 52%, transparent);
+}
+
+/* Starship cockpit skin: CSS-only HUD visuals selected by safe manifest templates. */
+.vibe-skin--starship-cockpit.vibe-skin {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  font-family: "Cascadia Mono", "Fira Code", Consolas, monospace;
+  text-shadow: 0 0 10px rgba(46, 232, 255, 0.16);
+}
+
+.vibe-skin--starship-cockpit.vibe-skin::before,
+.vibe-skin--starship-cockpit.vibe-skin::after {
+  position: absolute;
+  inset: -12%;
+  z-index: 0;
+  pointer-events: none;
+  content: "";
+}
+
+.vibe-skin--starship-cockpit.vibe-skin::before {
+  background:
+    radial-gradient(ellipse at 50% 52%, rgba(255, 255, 255, 0.28), rgba(46, 232, 255, 0.16) 4.5rem, transparent 12rem),
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.95) 0 1px, transparent 2.4px),
+    radial-gradient(circle at 72% 14%, rgba(163, 251, 255, 0.88) 0 1.2px, transparent 2.8px),
+    radial-gradient(circle at 46% 62%, rgba(248, 199, 106, 0.74) 0 1px, transparent 2.5px),
+    radial-gradient(circle at 86% 76%, rgba(255, 255, 255, 0.86) 0 1.2px, transparent 2.8px),
+    radial-gradient(circle at 25% 84%, rgba(163, 251, 255, 0.72) 0 1.1px, transparent 2.7px),
+    radial-gradient(circle at 60% 34%, rgba(255, 255, 255, 0.68) 0 0.8px, transparent 2.2px);
+  background-size:
+    100% 100%,
+    240px 320px,
+    360px 420px,
+    300px 360px,
+    460px 520px,
+    520px 380px,
+    180px 220px;
+  opacity: 0.78;
+  filter: blur(0.15px);
+  transform: perspective(900px) rotateX(58deg) scale(1.28);
+  animation: vibe-space-starflow 3.6s linear infinite;
+}
+
+.vibe-skin--starship-cockpit.vibe-skin::after {
+  background:
+    radial-gradient(ellipse at 50% -8%, rgba(46, 232, 255, 0.24), transparent 36%),
+    radial-gradient(ellipse at 50% 112%, rgba(248, 199, 106, 0.13), transparent 36%),
+    linear-gradient(115deg, transparent 0 18%, rgba(46, 232, 255, 0.1) 18.5% 19.5%, transparent 20.5% 79.5%, rgba(46, 232, 255, 0.1) 80.5% 81.5%, transparent 82%),
+    linear-gradient(90deg, rgba(46, 232, 255, 0.18), transparent 10% 90%, rgba(46, 232, 255, 0.18));
+  opacity: 0.78;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-frame {
+  position: relative;
+  z-index: 1;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-frame::before {
+  position: absolute;
+  inset: 3.25rem 0.75rem 3.05rem;
+  z-index: 0;
+  border: 1px solid rgba(46, 232, 255, 0.16);
+  border-top-color: rgba(163, 251, 255, 0.34);
+  border-radius: 2.2rem 2.2rem 1.2rem 1.2rem;
+  background:
+    linear-gradient(100deg, rgba(46, 232, 255, 0.08), transparent 18% 82%, rgba(46, 232, 255, 0.08)),
+    radial-gradient(ellipse at 50% 0%, rgba(163, 251, 255, 0.16), transparent 32%);
+  clip-path: polygon(7% 0, 93% 0, 100% 42%, 98% 100%, 2% 100%, 0 42%);
+  pointer-events: none;
+  content: "";
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-titlebar,
+.vibe-skin--starship-cockpit .vibe-skin-body,
+.vibe-skin--starship-cockpit .vibe-skin-taskbar,
+.vibe-skin--starship-cockpit .vibe-skin-status-bar {
+  position: relative;
+  z-index: 1;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-body {
+  overflow: hidden;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-body::before,
+.vibe-skin--starship-cockpit .vibe-skin-body::after {
+  position: absolute;
+  pointer-events: none;
+  content: "";
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-body::before {
+  inset: -38%;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse at 50% 52%, rgba(255, 255, 255, 0.12) 0 4%, transparent 8% 15%, rgba(46, 232, 255, 0.12) 18% 19%, transparent 22% 100%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.54) 0 1px, transparent 2px),
+    radial-gradient(circle at 48% 54%, rgba(163, 251, 255, 0.36) 0 1px, transparent 2.4px),
+    radial-gradient(circle at 54% 46%, rgba(248, 199, 106, 0.34) 0 1px, transparent 2.4px);
+  background-size:
+    100% 100%,
+    120px 160px,
+    180px 220px,
+    260px 260px;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 52%, #000 0 72%, transparent 79%);
+  mask-image: radial-gradient(ellipse at 50% 52%, #000 0 72%, transparent 79%);
+  opacity: 0.54;
+  transform-origin: 50% 52%;
+  animation: vibe-space-warp-tunnel 6.5s ease-in-out infinite alternate;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-body::after {
+  inset: -12%;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.34) 0 0.7%, rgba(46, 232, 255, 0.14) 1.8%, transparent 11%),
+    radial-gradient(circle at 49% 49%, rgba(255, 255, 255, 0.82) 0 1px, transparent 2.2px),
+    radial-gradient(circle at 54% 52%, rgba(163, 251, 255, 0.72) 0 1px, transparent 2.4px),
+    radial-gradient(circle at 45% 57%, rgba(248, 199, 106, 0.58) 0 1px, transparent 2.3px),
+    radial-gradient(ellipse at 50% 50%, rgba(163, 251, 255, 0.18) 0 2px, transparent 5px),
+    radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.16) 0 1.5px, transparent 4px);
+  background-size:
+    100% 100%,
+    150px 130px,
+    230px 190px,
+    310px 260px,
+    180px 240px,
+    280px 340px;
+  mix-blend-mode: screen;
+  opacity: 0.46;
+  animation: vibe-space-warp-streaks 2.6s linear infinite;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-space-planets {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-space-planet {
+  position: absolute;
+  display: block;
+  width: var(--vibe-space-planet-size);
+  height: var(--vibe-space-planet-size);
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.92) 0 6%, transparent 8%),
+    radial-gradient(circle at 34% 30%, var(--vibe-space-planet-glow) 0 20%, transparent 34%),
+    repeating-linear-gradient(var(--vibe-space-planet-band-angle), transparent 0 12%, var(--vibe-space-planet-band) 13% 16%, transparent 18% 28%),
+    radial-gradient(circle at 62% 68%, var(--vibe-space-planet-core) 0 58%, var(--vibe-space-planet-shadow) 78%, rgba(0, 0, 0, 0.82) 100%);
+  box-shadow:
+    0 0 calc(var(--vibe-space-planet-size) * 0.42) var(--vibe-space-planet-halo),
+    inset calc(var(--vibe-space-planet-size) * -0.16) calc(var(--vibe-space-planet-size) * -0.1) calc(var(--vibe-space-planet-size) * 0.28) rgba(0, 0, 0, 0.6),
+    inset calc(var(--vibe-space-planet-size) * 0.06) calc(var(--vibe-space-planet-size) * 0.04) calc(var(--vibe-space-planet-size) * 0.18) rgba(255, 255, 255, 0.28);
+  opacity: var(--vibe-space-planet-opacity);
+  transform: translate3d(0, 0, 0);
+  animation: vibe-space-planet-drift var(--vibe-space-planet-duration) ease-in-out infinite alternate;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-space-planet::after {
+  position: absolute;
+  inset: -18%;
+  border: 1px solid var(--vibe-space-planet-ring);
+  border-radius: 50%;
+  opacity: var(--vibe-space-planet-ring-opacity);
+  transform: rotate(-16deg) scaleY(0.36);
+  content: "";
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-space-planet-large {
+  --vibe-space-planet-size: clamp(9.5rem, 15vw, 16rem);
+  --vibe-space-planet-glow: rgba(159, 231, 255, 0.88);
+  --vibe-space-planet-core: rgba(26, 115, 176, 0.78);
+  --vibe-space-planet-shadow: rgba(3, 28, 58, 0.9);
+  --vibe-space-planet-band: rgba(163, 251, 255, 0.2);
+  --vibe-space-planet-band-angle: 18deg;
+  --vibe-space-planet-halo: rgba(46, 232, 255, 0.24);
+  --vibe-space-planet-ring: rgba(163, 251, 255, 0.42);
+  --vibe-space-planet-ring-opacity: 0.58;
+  --vibe-space-planet-opacity: 0.86;
+  --vibe-space-planet-duration: 13s;
+  top: 8%;
+  right: 3%;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-space-planet-medium {
+  --vibe-space-planet-size: clamp(5.8rem, 8.5vw, 9rem);
+  --vibe-space-planet-glow: rgba(255, 231, 163, 0.86);
+  --vibe-space-planet-core: rgba(168, 78, 37, 0.82);
+  --vibe-space-planet-shadow: rgba(51, 13, 24, 0.9);
+  --vibe-space-planet-band: rgba(248, 199, 106, 0.24);
+  --vibe-space-planet-band-angle: -10deg;
+  --vibe-space-planet-halo: rgba(248, 199, 106, 0.22);
+  --vibe-space-planet-ring: rgba(248, 199, 106, 0.36);
+  --vibe-space-planet-ring-opacity: 0.36;
+  --vibe-space-planet-opacity: 0.78;
+  --vibe-space-planet-duration: 16s;
+  bottom: 7%;
+  left: 2.5%;
+  animation-delay: -4s;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-space-planet-small {
+  --vibe-space-planet-size: clamp(3.3rem, 5vw, 5.4rem);
+  --vibe-space-planet-glow: rgba(193, 178, 255, 0.8);
+  --vibe-space-planet-core: rgba(87, 73, 178, 0.72);
+  --vibe-space-planet-shadow: rgba(19, 16, 54, 0.88);
+  --vibe-space-planet-band: rgba(194, 196, 255, 0.18);
+  --vibe-space-planet-band-angle: 34deg;
+  --vibe-space-planet-halo: rgba(185, 140, 255, 0.2);
+  --vibe-space-planet-ring: rgba(194, 196, 255, 0.3);
+  --vibe-space-planet-ring-opacity: 0;
+  --vibe-space-planet-opacity: 0.64;
+  --vibe-space-planet-duration: 11s;
+  top: 35%;
+  left: 50%;
+  filter: blur(0.2px);
+  animation-delay: -7s;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-titlebar {
+  clip-path: polygon(0 0, 100% 0, 98.5% 100%, 1.5% 100%);
+  text-transform: uppercase;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-titlebar::before,
+.vibe-skin--starship-cockpit .vibe-skin-launch-panel::before,
+.vibe-skin--starship-cockpit .vibe-skin-right-card::before,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell::before,
+.vibe-skin--starship-cockpit .vibe-skin-taskbar::before {
+  position: absolute;
+  right: 0.85rem;
+  left: 0.85rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(163, 251, 255, 0.52), transparent);
+  pointer-events: none;
+  content: "";
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-titlebar::before,
+.vibe-skin--starship-cockpit .vibe-skin-launch-panel::before,
+.vibe-skin--starship-cockpit .vibe-skin-right-card::before,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell::before {
+  top: 0.45rem;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-taskbar::before {
+  top: 0;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-titlebar::before,
+.vibe-skin--starship-cockpit .vibe-skin-launch-panel::before,
+.vibe-skin--starship-cockpit .vibe-skin-right-card::before,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell::before,
+.vibe-skin--starship-cockpit .vibe-skin-taskbar::before,
+.vibe-skin--starship-cockpit .vibe-skin-sidebar-header::after,
+.vibe-skin--starship-cockpit .vibe-skin-control-panel::after,
+.vibe-skin--starship-cockpit .vibe-skin-group-panel::after,
+.vibe-skin--starship-cockpit .vibe-skin-launch-panel::after,
+.vibe-skin--starship-cockpit .vibe-skin-right-card::after,
+.vibe-skin--starship-cockpit .vibe-skin-showcase-stage::after,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell::after {
+  z-index: 0;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-titlebar > *,
+.vibe-skin--starship-cockpit .vibe-skin-taskbar > *,
+.vibe-skin--starship-cockpit .vibe-skin-sidebar-header > *,
+.vibe-skin--starship-cockpit .vibe-skin-control-panel > *,
+.vibe-skin--starship-cockpit .vibe-skin-group-panel > *,
+.vibe-skin--starship-cockpit .vibe-skin-launch-panel > *,
+.vibe-skin--starship-cockpit .vibe-skin-right-card > *,
+.vibe-skin--starship-cockpit .vibe-skin-showcase-stage > *,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-titlebar-controls {
+  border-width: 1px;
+  border-radius: 999px;
+  padding: 0.18rem 0.25rem;
+  background: rgba(1, 10, 19, 0.42);
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-window-button {
+  border-radius: 999px;
+  color: rgba(230, 251, 255, 0.94);
+  text-shadow: 0 0 8px currentColor;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-sidebar,
+.vibe-skin--starship-cockpit .vibe-skin-workspace,
+.vibe-skin--starship-cockpit .vibe-skin-right-rail {
+  position: relative;
+  z-index: 1;
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-right-rail {
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(46, 232, 255, 0.46) transparent;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-right-rail::-webkit-scrollbar-thumb {
+  background-color: rgba(46, 232, 255, 0.42);
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-sidebar-header,
+.vibe-skin--starship-cockpit .vibe-skin-control-panel,
+.vibe-skin--starship-cockpit .vibe-skin-group-panel,
+.vibe-skin--starship-cockpit .vibe-skin-launch-panel,
+.vibe-skin--starship-cockpit .vibe-skin-right-card,
+.vibe-skin--starship-cockpit .vibe-skin-showcase-stage,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell {
+  position: relative;
+  overflow: hidden;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-right-card {
+  flex-shrink: 0;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-sidebar-header::after,
+.vibe-skin--starship-cockpit .vibe-skin-control-panel::after,
+.vibe-skin--starship-cockpit .vibe-skin-group-panel::after,
+.vibe-skin--starship-cockpit .vibe-skin-launch-panel::after,
+.vibe-skin--starship-cockpit .vibe-skin-right-card::after,
+.vibe-skin--starship-cockpit .vibe-skin-showcase-stage::after,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(135deg, rgba(163, 251, 255, 0.12), transparent 28% 70%, rgba(248, 199, 106, 0.08)),
+    repeating-linear-gradient(0deg, transparent 0 13px, rgba(46, 232, 255, 0.035) 14px, transparent 15px);
+  pointer-events: none;
+  content: "";
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-avatar {
+  border-radius: 1rem;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-avatar::after {
+  position: absolute;
+  right: 0.45rem;
+  bottom: 0.45rem;
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: #70ffb5;
+  box-shadow: 0 0 12px rgba(112, 255, 181, 0.84);
+  content: "";
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-session-list {
+  border: 1px solid rgba(46, 232, 255, 0.18);
+  border-radius: 1.35rem;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(46, 232, 255, 0.12), transparent 9rem),
+    linear-gradient(180deg, rgba(1, 12, 24, 0.34), rgba(1, 8, 17, 0.2));
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-list-trigger {
+  border: 1px solid rgba(46, 232, 255, 0.16);
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-list-trigger:hover,
+.vibe-skin--starship-cockpit .vibe-skin-session:hover,
+.vibe-skin--starship-cockpit .vibe-skin-taskbar-menu-item:hover:not(:disabled) {
+  border-color: rgba(46, 232, 255, 0.46);
+  box-shadow: inset 0 0 16px rgba(46, 232, 255, 0.08);
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-tabbar {
+  padding-top: 0.28rem;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-tab,
+.vibe-skin--starship-cockpit .vibe-skin-tab-active {
+  align-self: flex-end;
+  background: transparent !important;
+  height: calc(100% - 0.28rem);
+  border: 1px solid var(--vibe-tab-border, var(--vibe-border));
+  border-bottom: 0;
+  border-radius: 0.95rem 0.95rem 0 0;
+  clip-path: polygon(0.55rem 0, calc(100% - 0.35rem) 0, 100% 100%, 0 100%);
+  color: #ffffff;
+  transition:
+    background-color var(--motion-duration-control, 180ms) var(--motion-ease-standard),
+    border-color var(--motion-duration-control, 180ms) var(--motion-ease-standard),
+    color var(--motion-duration-control, 180ms) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-control, 180ms) var(--motion-ease-standard);
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-tab:hover {
+  background: transparent !important;
+  border-color: rgba(46, 232, 255, 0.38);
+  color: #ffffff;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-tab-active {
+  box-shadow: 0 0 18px rgba(46, 232, 255, 0.1);
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-tab-close {
+  border-radius: 0;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-tab-close:hover {
+  color: #a3fbff;
+  filter: drop-shadow(0 0 8px rgba(46, 232, 255, 0.78));
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(46, 232, 255, 0.1), transparent 14rem),
+    linear-gradient(180deg, rgba(1, 9, 18, 0.18), rgba(1, 6, 12, 0.04)) !important;
+  /* backdrop-filter: blur(3px); */
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-launch-panel {
+  clip-path: polygon(1rem 0, calc(100% - 1.4rem) 0, 100% 1.1rem, 100% 100%, 0 100%, 0 1rem);
+  padding: 1rem 1.15rem 1.1rem;
+  text-shadow: 0 0 10px rgba(46, 232, 255, 0.2);
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-launch-panel::after {
+  background:
+    linear-gradient(120deg, transparent 0 34%, rgba(163, 251, 255, 0.12) 42%, transparent 50%),
+    repeating-linear-gradient(90deg, transparent 0 28px, rgba(46, 232, 255, 0.035) 29px, transparent 30px);
+  animation: vibe-space-console-scan 4.8s linear infinite;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-agent-strip {
+  padding: 0.8rem 0.9rem;
+  text-transform: uppercase;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-composer {
+  padding: 0.75rem;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-composer-meta-bar {
+  padding: 0.75rem;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-agent-option:hover,
+.vibe-skin--starship-cockpit .vibe-skin-composer-send-button:hover {
+  border-color: rgba(163, 251, 255, 0.58);
+  box-shadow:
+    0 0 18px rgba(46, 232, 255, 0.22),
+    inset 0 0 16px rgba(46, 232, 255, 0.1);
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-composer-input {
+  caret-color: #f8c76a;
+  padding: 0.9rem 1rem 1rem;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell .xterm-pane,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell .xterm,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell .xterm-viewport,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell .xterm-scrollable-element,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell .xterm-screen,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell .xterm-screen canvas,
+.vibe-skin--starship-cockpit .vibe-skin-terminal-shell canvas {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-taskbar {
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+
+.vibe-skin--starship-cockpit .vibe-skin-taskbar-start-button {
+  border-radius: 0.9rem;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 0 20px rgba(46, 232, 255, 0.26);
+}
+
+.vibe-skin-space-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.vibe-skin-space-led {
+  border-color: rgba(46, 232, 255, 0.32);
+  background: rgba(46, 232, 255, 0.1);
+  color: #a3fbff;
+  box-shadow: inset 0 0 12px rgba(46, 232, 255, 0.08);
+}
+
+.vibe-skin-space-ai-core,
+.vibe-skin-space-ship,
+.vibe-skin-space-radar,
+.vibe-skin-space-starmap {
+  position: relative;
+  display: block;
+  width: 8.75rem;
+  height: 8.75rem;
+  overflow: hidden;
+  border: 1px solid rgba(46, 232, 255, 0.34);
+  border-radius: 2rem;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(46, 232, 255, 0.24), transparent 3.2rem),
+    linear-gradient(180deg, rgba(3, 25, 46, 0.86), rgba(1, 7, 14, 0.72));
+  box-shadow:
+    inset 0 0 24px rgba(46, 232, 255, 0.1),
+    0 16px 30px rgba(0, 0, 0, 0.25);
+}
+
+.vibe-skin-space-ai-core::before,
+.vibe-skin-space-ship::before,
+.vibe-skin-space-radar::before,
+.vibe-skin-space-starmap::before {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.72) 0 1px, transparent 2px),
+    radial-gradient(circle at 74% 66%, rgba(163, 251, 255, 0.66) 0 1px, transparent 2px),
+    repeating-linear-gradient(90deg, transparent 0 12px, rgba(46, 232, 255, 0.04) 13px, transparent 14px);
+  pointer-events: none;
+  content: "";
+}
+
+.vibe-skin-space-ai-core {
+  width: 100%;
+  height: 100%;
+  min-height: 3.5rem;
+  border-radius: 1rem;
+}
+
+.vibe-skin-space-ai-core-ring,
+.vibe-skin-space-ai-core-eye,
+.vibe-skin-space-ai-core-pulse {
+  position: absolute;
+  border-radius: 999px;
+}
+
+.vibe-skin-space-ai-core-ring {
+  inset: 18%;
+  border: 2px solid rgba(46, 232, 255, 0.72);
+  box-shadow:
+    0 0 18px rgba(46, 232, 255, 0.45),
+    inset 0 0 18px rgba(46, 232, 255, 0.25);
+}
+
+.vibe-skin-space-ai-core-eye {
+  inset: 34%;
+  background: radial-gradient(circle, #ffffff 0 16%, #a3fbff 17% 40%, rgba(46, 232, 255, 0.16) 41% 100%);
+  box-shadow: 0 0 18px rgba(163, 251, 255, 0.72);
+}
+
+.vibe-skin-space-ai-core-pulse {
+  inset: 8%;
+  border: 1px dashed rgba(248, 199, 106, 0.48);
+  animation: vibe-space-radar-spin 8s linear infinite;
+}
+
+.vibe-skin-space-ship {
+  perspective: 760px;
+  background:
+    radial-gradient(ellipse at 50% 38%, rgba(163, 251, 255, 0.28), transparent 4.8rem),
+    radial-gradient(ellipse at 50% 78%, rgba(248, 199, 106, 0.18), transparent 4.2rem),
+    linear-gradient(180deg, rgba(3, 25, 46, 0.9), rgba(1, 7, 14, 0.78));
+  box-shadow:
+    inset 0 0 30px rgba(46, 232, 255, 0.13),
+    inset 0 -34px 48px rgba(0, 0, 0, 0.28),
+    0 18px 34px rgba(0, 0, 0, 0.28);
+}
+
+.vibe-skin-space-ship::before {
+  z-index: 0;
+}
+
+.vibe-skin-space-ship::after {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background:
+    linear-gradient(100deg, transparent 0 28%, rgba(255, 255, 255, 0.2) 48%, transparent 66%),
+    radial-gradient(ellipse at 50% 50%, transparent 0 54%, rgba(0, 0, 0, 0.34) 100%),
+    repeating-linear-gradient(0deg, transparent 0 9px, rgba(163, 251, 255, 0.04) 10px, transparent 11px);
+  mix-blend-mode: screen;
+  opacity: 0.76;
+  pointer-events: none;
+  content: "";
+}
+
+.vibe-skin-space-ship-webgl-host {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity var(--motion-duration-surface, 240ms) var(--motion-ease-standard);
+}
+
+.vibe-skin-space-ship-webgl-ready .vibe-skin-space-ship-webgl-host {
+  opacity: 1;
+}
+
+.vibe-skin-space-ship-webgl-canvas {
+  cursor: grab;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.vibe-skin-space-ship-webgl-canvas-dragging {
+  cursor: grabbing;
+}
+
+.vibe-skin-space-ship-fallback {
+  transition: opacity var(--motion-duration-control, 180ms) var(--motion-ease-standard);
+}
+
+.vibe-skin-space-ship-webgl-ready .vibe-skin-space-ship-fallback {
+  opacity: 0;
+}
+
+.vibe-skin-space-ship-webgl-failed .vibe-skin-space-ship-fallback {
+  opacity: 1;
+}
+
+.vibe-skin-space-ship-halo,
+.vibe-skin-space-ship-model,
+.vibe-skin-space-ship-shadow,
+.vibe-skin-space-ship-body,
+.vibe-skin-space-ship-nose,
+.vibe-skin-space-ship-spine,
+.vibe-skin-space-ship-wing,
+.vibe-skin-space-ship-core,
+.vibe-skin-space-ship-engine,
+.vibe-skin-space-ship-thruster {
+  position: absolute;
+}
+
+.vibe-skin-space-ship-halo {
+  top: 11%;
+  left: 50%;
+  z-index: 1;
+  width: 8.6rem;
+  height: 8.1rem;
+  border: 1px solid rgba(46, 232, 255, 0.34);
+  border-radius: 999px;
+  background: radial-gradient(circle, transparent 0 58%, rgba(46, 232, 255, 0.08) 59% 62%, transparent 64%);
+  box-shadow:
+    inset 0 0 22px rgba(46, 232, 255, 0.1),
+    0 0 20px rgba(46, 232, 255, 0.12);
+  transform: translateX(-50%) rotateX(68deg) rotateZ(-8deg);
+}
+
+.vibe-skin-space-ship-halo::before,
+.vibe-skin-space-ship-halo::after {
+  position: absolute;
+  border: 1px dashed rgba(163, 251, 255, 0.28);
+  border-radius: 999px;
+  content: "";
+}
+
+.vibe-skin-space-ship-halo::before {
+  inset: 12%;
+}
+
+.vibe-skin-space-ship-halo::after {
+  inset: 27%;
+  border-color: rgba(248, 199, 106, 0.24);
+}
+
+.vibe-skin-space-ship-model {
+  inset: -2% -8% -4%;
+  z-index: 2;
+  transform-style: preserve-3d;
+  transform-origin: 50% 56%;
+  animation: vibe-space-ship-orbit 18s ease-in-out infinite;
+}
+
+.vibe-skin-space-ship-model::before,
+.vibe-skin-space-ship-model::after {
+  position: absolute;
+  left: 50%;
+  pointer-events: none;
+  content: "";
+}
+
+.vibe-skin-space-ship-model::before {
+  top: 1%;
+  z-index: 0;
+  width: 8.6rem;
+  height: 8.9rem;
+  border: 1.6px solid rgba(184, 252, 255, 0.72);
+  background:
+    linear-gradient(90deg, transparent 0 49%, rgba(255, 255, 255, 0.72) 49.5% 50.5%, transparent 51%),
+    radial-gradient(circle at 50% 28%, rgba(248, 199, 106, 0.42) 0 3%, transparent 4%),
+    linear-gradient(135deg, transparent 0 42%, rgba(46, 232, 255, 0.22) 43% 45%, transparent 46%),
+    linear-gradient(225deg, transparent 0 42%, rgba(46, 232, 255, 0.22) 43% 45%, transparent 46%),
+    linear-gradient(180deg, rgba(46, 232, 255, 0.12), rgba(46, 232, 255, 0.03) 58%, rgba(248, 199, 106, 0.1));
+  clip-path: polygon(50% 0, 63% 17%, 95% 59%, 69% 69%, 59% 100%, 50% 86%, 41% 100%, 31% 69%, 5% 59%, 37% 17%);
+  filter:
+    drop-shadow(0 0 10px rgba(46, 232, 255, 0.42))
+    drop-shadow(0 0 22px rgba(46, 232, 255, 0.2));
+  opacity: 0.95;
+  transform: translateX(-50%) translateZ(6px);
+}
+
+.vibe-skin-space-ship-model::after {
+  top: 19%;
+  z-index: 0;
+  width: 6.2rem;
+  height: 5.5rem;
+  background:
+    linear-gradient(90deg, transparent 0 11%, rgba(163, 251, 255, 0.58) 12% 13%, transparent 14% 86%, rgba(163, 251, 255, 0.58) 87% 88%, transparent 89%),
+    repeating-linear-gradient(180deg, transparent 0 0.68rem, rgba(184, 252, 255, 0.22) 0.72rem 0.78rem, transparent 0.82rem 1.18rem);
+  clip-path: polygon(50% 0, 91% 58%, 63% 68%, 56% 100%, 44% 100%, 37% 68%, 9% 58%);
+  mix-blend-mode: screen;
+  opacity: 0.68;
+  transform: translateX(-50%) translateZ(34px);
+}
+
+.vibe-skin-space-ship-body,
+.vibe-skin-space-ship-nose,
+.vibe-skin-space-ship-spine,
+.vibe-skin-space-ship-core,
+.vibe-skin-space-ship-shadow,
+.vibe-skin-space-ship-thruster {
+  left: 50%;
+  transform-style: preserve-3d;
+}
+
+.vibe-skin-space-ship-body::before,
+.vibe-skin-space-ship-body::after,
+.vibe-skin-space-ship-wing::before,
+.vibe-skin-space-ship-wing::after,
+.vibe-skin-space-ship-engine::before {
+  position: absolute;
+  pointer-events: none;
+  content: "";
+}
+
+.vibe-skin-space-ship-shadow {
+  top: 76%;
+  width: 8.1rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  background: radial-gradient(ellipse, rgba(46, 232, 255, 0.38), rgba(46, 232, 255, 0.08) 46%, transparent 72%);
+  filter: blur(5px);
+  opacity: 0.76;
+  transform: translateX(-50%) rotateX(74deg) translateZ(-28px);
+}
+
+.vibe-skin-space-ship-body {
+  top: 7%;
+  width: 2.75rem;
+  height: 7.15rem;
+  border: 1.7px solid transparent;
+  background:
+    linear-gradient(90deg, transparent 0 44%, rgba(184, 252, 255, 0.88) 48% 52%, transparent 56%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(46, 232, 255, 0.1) 42%, rgba(1, 12, 24, 0.08)) padding-box,
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(46, 232, 255, 0.92) 44%, rgba(248, 199, 106, 0.76)) border-box;
+  clip-path: polygon(50% 0, 78% 15%, 68% 74%, 57% 92%, 50% 100%, 43% 92%, 32% 74%, 22% 15%);
+  filter: drop-shadow(0 0 14px rgba(46, 232, 255, 0.36));
+  transform: translateX(-50%) translateZ(28px);
+}
+
+.vibe-skin-space-ship-body::before {
+  inset: 17% 28% 12%;
+  border-right: 1px solid rgba(163, 251, 255, 0.48);
+  border-left: 1px solid rgba(163, 251, 255, 0.48);
+  background: linear-gradient(90deg, transparent 0 47%, rgba(255, 255, 255, 0.72) 49% 51%, transparent 53%);
+  opacity: 0.72;
+}
+
+.vibe-skin-space-ship-body::after {
+  top: 31%;
+  right: 18%;
+  left: 18%;
+  height: 54%;
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0 0.58rem,
+    rgba(163, 251, 255, 0.42) 0.62rem 0.68rem,
+    transparent 0.72rem 1.05rem
+  );
+  opacity: 0.72;
+}
+
+.vibe-skin-space-ship-nose {
+  top: 2.5%;
+  width: 0.78rem;
+  height: 1.26rem;
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-bottom: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(46, 232, 255, 0.08));
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  box-shadow: 0 0 12px rgba(163, 251, 255, 0.46);
+  transform: translateX(-50%) translateZ(30px);
+}
+
+.vibe-skin-space-ship-spine {
+  top: 16%;
+  width: 1px;
+  height: 5.7rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(46, 232, 255, 0.74), rgba(248, 199, 106, 0.62));
+  box-shadow:
+    0 0 10px rgba(163, 251, 255, 0.62),
+    0 0 18px rgba(46, 232, 255, 0.32);
+  transform: translateX(-50%) translateZ(36px);
+}
+
+.vibe-skin-space-ship-wing {
+  top: 33%;
+  width: 4.85rem;
+  height: 3.9rem;
+  border: 1.55px solid transparent;
+  background:
+    linear-gradient(138deg, rgba(46, 232, 255, 0.14), rgba(46, 232, 255, 0.02) 46%, rgba(248, 199, 106, 0.06)) padding-box,
+    linear-gradient(132deg, rgba(255, 255, 255, 0.88), rgba(46, 232, 255, 0.84) 52%, rgba(248, 199, 106, 0.6)) border-box;
+  clip-path: polygon(5% 2%, 100% 28%, 74% 100%, 16% 70%);
+  filter: drop-shadow(0 0 12px rgba(46, 232, 255, 0.28));
+  transform-origin: 100% 28%;
+}
+
+.vibe-skin-space-ship-wing-left {
+  left: -0.08rem;
+  transform: rotateZ(-4deg) translateZ(16px);
+}
+
+.vibe-skin-space-ship-wing-right {
+  right: -0.08rem;
+  transform: scaleX(-1) rotateZ(-4deg) translateZ(16px);
+}
+
+.vibe-skin-space-ship-wing::before {
+  inset: 20% 19% 19% 24%;
+  border-top: 1px solid rgba(163, 251, 255, 0.5);
+  border-left: 1px solid rgba(163, 251, 255, 0.42);
+  transform: skewY(18deg);
+}
+
+.vibe-skin-space-ship-wing::after {
+  top: 58%;
+  left: 14%;
+  width: 74%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), rgba(46, 232, 255, 0.28));
+  transform: rotate(13deg);
+}
+
+.vibe-skin-space-ship-core {
+  top: 30%;
+  width: 1rem;
+  height: 1.22rem;
+  border: 1px solid rgba(248, 199, 106, 0.82);
+  border-radius: 999px 999px 0.65rem 0.65rem;
+  background: radial-gradient(circle at 50% 34%, rgba(255, 255, 255, 0.98) 0 16%, #f8c76a 17% 44%, rgba(46, 232, 255, 0.16) 45% 100%);
+  box-shadow:
+    0 0 18px rgba(248, 199, 106, 0.72),
+    inset 0 0 10px rgba(255, 255, 255, 0.28);
+  transform: translateX(-50%) translateZ(42px);
+}
+
+.vibe-skin-space-ship-engine {
+  top: 69%;
+  width: 0.78rem;
+  height: 1.38rem;
+  border: 1px solid rgba(163, 251, 255, 0.62);
+  border-radius: 0.24rem 0.24rem 0.44rem 0.44rem;
+  background:
+    linear-gradient(180deg, rgba(46, 232, 255, 0.1), rgba(46, 232, 255, 0.24)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.54), transparent 28% 72%, rgba(255, 255, 255, 0.42));
+  box-shadow:
+    inset 0 0 10px rgba(46, 232, 255, 0.18),
+    0 0 10px rgba(46, 232, 255, 0.22);
+}
+
+.vibe-skin-space-ship-engine::before {
+  right: 18%;
+  bottom: 0.16rem;
+  left: 18%;
+  height: 1px;
+  background: rgba(248, 199, 106, 0.72);
+  box-shadow: 0 0 8px rgba(248, 199, 106, 0.62);
+}
+
+.vibe-skin-space-ship-engine-left {
+  left: 38%;
+  transform: translateX(-50%) rotateZ(4deg) translateZ(18px);
+}
+
+.vibe-skin-space-ship-engine-right {
+  left: 62%;
+  transform: translateX(-50%) rotateZ(-4deg) translateZ(18px);
+}
+
+.vibe-skin-space-ship-thruster {
+  top: 80%;
+  width: 0.56rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  background:
+    radial-gradient(ellipse at 50% 0, rgba(255, 255, 255, 0.98) 0 10%, transparent 18%),
+    linear-gradient(180deg, rgba(46, 232, 255, 0.95), rgba(248, 199, 106, 0.54), transparent);
+  filter: blur(0.45px);
+  opacity: 0.88;
+  transform: translateX(-50%) scaleY(0.92);
+  animation: vibe-space-thruster 1.8s ease-in-out infinite;
+}
+
+.vibe-skin-space-ship-thruster-left {
+  left: 38%;
+  animation-delay: -0.25s;
+}
+
+.vibe-skin-space-ship-thruster-right {
+  left: 62%;
+}
+
+.vibe-skin-space-radar-grid,
+.vibe-skin-space-radar-sweep,
+.vibe-skin-space-radar-blip,
+.vibe-skin-space-starmap-orbit,
+.vibe-skin-space-starmap-node,
+.vibe-skin-space-starmap-route {
+  position: absolute;
+}
+
+.vibe-skin-space-radar-grid {
+  inset: 12%;
+  border: 1px solid rgba(46, 232, 255, 0.45);
+  border-radius: 999px;
+  background:
+    linear-gradient(rgba(46, 232, 255, 0.18), rgba(46, 232, 255, 0.18)) 50% 0 / 1px 100% no-repeat,
+    linear-gradient(90deg, rgba(46, 232, 255, 0.18), rgba(46, 232, 255, 0.18)) 0 50% / 100% 1px no-repeat,
+    radial-gradient(circle, transparent 0 34%, rgba(46, 232, 255, 0.2) 35% 36%, transparent 37% 67%, rgba(46, 232, 255, 0.2) 68% 69%, transparent 70%);
+}
+
+.vibe-skin-space-radar-sweep {
+  inset: 12%;
+  border-radius: 999px;
+  background: conic-gradient(from 0deg, rgba(46, 232, 255, 0.58), rgba(46, 232, 255, 0.2) 28deg, transparent 82deg);
+  mix-blend-mode: screen;
+  animation: vibe-space-radar-spin 4s linear infinite;
+}
+
+.vibe-skin-space-radar-blip {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: #f8c76a;
+  box-shadow: 0 0 12px rgba(248, 199, 106, 0.82);
+}
+
+.vibe-skin-space-radar-blip-a {
+  top: 32%;
+  left: 58%;
+}
+
+.vibe-skin-space-radar-blip-b {
+  top: 62%;
+  left: 36%;
+}
+
+.vibe-skin-space-radar-blip-c {
+  top: 48%;
+  left: 72%;
+}
+
+.vibe-skin-space-telemetry-lines {
+  background: rgba(1, 9, 18, 0.48);
+  border-color: rgba(46, 232, 255, 0.2);
+  box-shadow: inset 0 0 18px rgba(46, 232, 255, 0.06);
+}
+
+.vibe-skin-space-telemetry-line {
+  display: flex;
+  gap: 0.45rem;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--vibe-text);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.vibe-skin-space-telemetry-line:last-child::after {
+  width: 0.45rem;
+  margin-left: 0.15rem;
+  color: var(--vibe-accent);
+  content: "_";
+  animation: vibe-space-cursor 1s steps(2, end) infinite;
+}
+
+.vibe-skin-space-starmap-orbit {
+  border: 1px solid rgba(46, 232, 255, 0.28);
+  border-radius: 999px;
+}
+
+.vibe-skin-space-starmap-orbit-a {
+  inset: 20% 10%;
+  transform: rotate(-18deg);
+}
+
+.vibe-skin-space-starmap-orbit-b {
+  inset: 28% 18%;
+  transform: rotate(24deg);
+}
+
+.vibe-skin-space-starmap-node {
+  width: 0.58rem;
+  height: 0.58rem;
+  border-radius: 999px;
+  background: #a3fbff;
+  box-shadow: 0 0 12px rgba(46, 232, 255, 0.75);
+}
+
+.vibe-skin-space-starmap-node-a {
+  top: 34%;
+  left: 22%;
+}
+
+.vibe-skin-space-starmap-node-b {
+  top: 52%;
+  left: 48%;
+  background: #f8c76a;
+  box-shadow: 0 0 14px rgba(248, 199, 106, 0.78);
+}
+
+.vibe-skin-space-starmap-node-c {
+  top: 28%;
+  left: 74%;
+}
+
+.vibe-skin-space-starmap-route {
+  top: 40%;
+  left: 24%;
+  width: 4.9rem;
+  height: 2.7rem;
+  border-top: 1px dashed rgba(248, 199, 106, 0.72);
+  border-right: 1px dashed rgba(248, 199, 106, 0.72);
+  border-radius: 0 2rem 0 0;
+  transform: rotate(-8deg);
+  animation: vibe-space-route 2.6s linear infinite;
+}
+
+@keyframes vibe-space-starflow {
+  from {
+    background-position:
+      0 0,
+      0 0,
+      0 0,
+      0 0,
+      0 0,
+      0 0,
+      0 0;
+  }
+  to {
+    background-position:
+      0 0,
+      260px 580px,
+      -300px 460px,
+      190px 520px,
+      -240px 620px,
+      0 520px,
+      0 -420px;
+  }
+}
+
+@keyframes vibe-space-warp-tunnel {
+  from {
+    transform: scale(0.96) rotate(0deg);
+  }
+  to {
+    transform: scale(1.08) rotate(3deg);
+  }
+}
+
+@keyframes vibe-space-warp-streaks {
+  from {
+    background-position:
+      0 0,
+      0 0,
+      0 0,
+      0 0,
+      40px 60px,
+      -30px -50px;
+    transform: scale(0.98);
+  }
+  to {
+    background-position:
+      0 0,
+      0 360px,
+      -120px 420px,
+      160px 520px,
+      260px 600px,
+      -220px 560px;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes vibe-space-planet-drift {
+  from {
+    transform: translate3d(-0.35rem, 0.25rem, 0) scale(0.98);
+  }
+  to {
+    transform: translate3d(0.55rem, -0.45rem, 0) scale(1.02);
+  }
+}
+
+@keyframes vibe-space-radar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes vibe-space-ship-orbit {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 16px rgba(46, 232, 255, 0.42));
+    transform: rotateX(42deg) rotateY(-14deg) rotateZ(-8deg) translateY(0) scale(1.02);
+  }
+  50% {
+    filter: drop-shadow(0 0 28px rgba(248, 199, 106, 0.36));
+    transform: rotateX(38deg) rotateY(16deg) rotateZ(8deg) translateY(-0.25rem) scale(1.06);
+  }
+}
+
+@keyframes vibe-space-thruster {
+  0%,
+  100% {
+    opacity: 0.68;
+    transform: translateX(-50%) scaleY(0.86);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) scaleY(1.08);
+  }
+}
+
+@keyframes vibe-space-route {
+  50% {
+    opacity: 0.42;
+  }
+}
+
+@keyframes vibe-space-cursor {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes vibe-space-console-scan {
+  from {
+    background-position:
+      -180px 0,
+      0 0;
+  }
+  to {
+    background-position:
+      420px 0,
+      160px 0;
+  }
+}
+
+@media (max-width: 1023px) {
+  .vibe-skin--starship-cockpit .vibe-skin-frame::before {
+    inset: 3.25rem 0.35rem 3.05rem;
+    border-radius: 1.4rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vibe-skin--starship-cockpit.vibe-skin::before,
+  .vibe-skin--starship-cockpit .vibe-skin-body::before,
+  .vibe-skin--starship-cockpit .vibe-skin-body::after,
+  .vibe-skin--starship-cockpit .vibe-skin-launch-panel::after,
+  .vibe-skin-space-ai-core-pulse,
+  .vibe-skin-space-radar-sweep,
+  .vibe-skin-space-ship-model,
+  .vibe-skin-space-ship-thruster,
+  .vibe-skin-space-planet,
+  .vibe-skin-space-starmap-route,
+  .vibe-skin-space-telemetry-line:last-child::after {
+    animation-duration: 60s;
+    animation-iteration-count: 1;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Motion system                                                               */
+/* -------------------------------------------------------------------------- */
+:root {
+  --motion-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --motion-duration-instant: 120ms;
+  --motion-duration-control: 180ms;
+  --motion-duration-surface: 240ms;
+  --motion-duration-page: 320ms;
+  --motion-focus-ring: 0 0 0 3px rgba(96, 165, 250, 0.18);
+}
+
+.motion-control {
+  transition:
+    transform var(--motion-duration-control) var(--motion-ease-standard),
+    color var(--motion-duration-control) var(--motion-ease-standard),
+    background-color var(--motion-duration-control) var(--motion-ease-standard),
+    border-color var(--motion-duration-control) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-control) var(--motion-ease-standard),
+    opacity var(--motion-duration-control) var(--motion-ease-standard),
+    filter var(--motion-duration-control) var(--motion-ease-standard);
+  transform-origin: center;
+}
+
+.motion-page {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  transform-origin: center top;
+  will-change: transform, opacity;
+}
+
+.vibe-host {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+
+.vibe-host--inactive {
+  pointer-events: none;
+}
+
+.app-shell {
+  transition: grid-template-columns var(--motion-duration-page) var(--motion-ease-standard);
+}
+
+.motion-layout {
+  transition: grid-template-rows var(--motion-duration-page) var(--motion-ease-standard);
+}
+
+.app-sidebar {
+  transition:
+    padding var(--motion-duration-page) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-surface) var(--motion-ease-standard),
+    background-color var(--motion-duration-surface) var(--motion-ease-standard);
+}
+
+/* Every interactive control gets a small, physically legible press/release. */
+:where(button, [role="button"], summary) {
+  transition:
+    transform var(--motion-duration-control) var(--motion-ease-standard),
+    color var(--motion-duration-control) var(--motion-ease-standard),
+    background-color var(--motion-duration-control) var(--motion-ease-standard),
+    border-color var(--motion-duration-control) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-control) var(--motion-ease-standard),
+    opacity var(--motion-duration-control) var(--motion-ease-standard),
+    filter var(--motion-duration-control) var(--motion-ease-standard);
+  transform-origin: center;
+  will-change: transform;
+}
+
+@media (hover: hover) {
+  :where(button, [role="button"]):not(:disabled):not([aria-disabled="true"]):hover {
+    transform: translateY(-1px);
+  }
+}
+
+:where(button, [role="button"]):not(:disabled):active {
+  transform: translateY(0) scale(0.985);
+  transition-duration: var(--motion-duration-instant);
+}
+
+:where(button, [role="button"]):focus-visible,
+summary:focus-visible {
+  outline: none;
+  box-shadow: var(--motion-focus-ring);
+}
+
+:where(input, select, textarea) {
+  transition:
+    border-color var(--motion-duration-control) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-control) var(--motion-ease-standard),
+    background-color var(--motion-duration-control) var(--motion-ease-standard),
+    color var(--motion-duration-control) var(--motion-ease-standard);
+}
+
+:where(input, select, textarea):focus-visible {
+  outline: none;
+  box-shadow: var(--motion-focus-ring);
+}
+
+:where(input[type="checkbox"], input[type="radio"]) {
+  accent-color: #d97706;
+  transition: transform var(--motion-duration-instant) var(--motion-ease-standard), filter var(--motion-duration-control) var(--motion-ease-standard);
+}
+
+:where(input[type="checkbox"], input[type="radio"]):active {
+  transform: scale(0.92);
+}
+
+:where(.motion-dialog, .motion-menu, [role="dialog"], [role="menu"]) {
+  transform-origin: center top;
+}
+
+:where([role="alert"], [role="status"]) {
+  animation: motion-surface-enter var(--motion-duration-surface) var(--motion-ease-standard) both;
+}
+
+.motion-menu {
+  will-change: transform, opacity;
+}
+
+.motion-surface,
+.motion-page article,
+.motion-page [data-testid^="account-card-"],
+.motion-page [data-testid^="credential-"] {
+  animation: motion-surface-enter var(--motion-duration-surface) var(--motion-ease-standard) both;
+  will-change: transform, opacity;
+}
+
+.motion-collapse {
+  min-height: 0;
+  will-change: height, opacity;
+}
+
+.motion-overlay:not(.motion-runtime-overlay),
+.app-sidebar-drawer-backdrop,
+.vibe-session-drawer-backdrop {
+  animation: motion-backdrop-enter var(--motion-duration-surface) var(--motion-ease-standard) both;
+}
+
+.app-sidebar-drawer,
+.vibe-session-drawer {
+  animation: motion-drawer-enter var(--motion-duration-surface) var(--motion-ease-standard) both;
+  transform-origin: left center;
+}
+
+/* Native conditional surfaces still receive a graceful entry even when a local
+   component does not need the full MotionOverlay wrapper. */
+[role="menu"] {
+  animation: motion-menu-enter var(--motion-duration-control) var(--motion-ease-standard) both;
+}
+
+[role="dialog"]:not(.motion-dialog) {
+  animation: motion-dialog-enter var(--motion-duration-surface) var(--motion-ease-standard) both;
+}
+
+@keyframes motion-surface-enter {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes motion-menu-enter {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes motion-dialog-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes motion-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes motion-drawer-enter {
+  from { opacity: 0; transform: translateX(-18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+
+  :where(button, [role="button"], summary, input, select, textarea) {
+    transition-duration: 0.01ms !important;
+  }
+
+  :where(button, [role="button"]):not(:disabled):hover,
+  :where(button, [role="button"]):not(:disabled):active {
+    transform: none;
+  }
+
+  .motion-page,
+  .vibe-host,
+  .motion-layout,
+  .app-shell,
+  .app-sidebar,
+  .motion-dialog,
+  .motion-menu,
+  .motion-collapse {
+    transition-duration: 0.01ms !important;
+  }
+
+  :where([role="alert"], [role="status"], [role="menu"], [role="dialog"], .app-sidebar-drawer, .app-sidebar-drawer-backdrop, .vibe-session-drawer, .vibe-session-drawer-backdrop),
+  .motion-surface,
+  .motion-page article,
+  .motion-page [data-testid^="account-card-"],
+  .motion-page [data-testid^="credential-"],
+  .vibe-skin *,
+  .vibe-skin::before,
+  .vibe-skin::after,
+  .vibe-skin *::before,
+  .vibe-skin *::after,
+  [data-testid="vibe-body-grid"] *,
+  [data-testid="vibe-body-grid"]::before,
+  [data-testid="vibe-body-grid"]::after,
+  [data-testid="vibe-body-grid"] *::before,
+  [data-testid="vibe-body-grid"] *::after {
+    animation: none !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-play-state: paused !important;
+  }
+}

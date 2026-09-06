@@ -1,0 +1,7 @@
+{
+  "name": "dsh-plugin-ai-switch-webview",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "//": "The panel reads `version` from here (src/lib/appVersion.ts, a copied file that imports ../../package.json) and shows it on the About screen. Keep it equal to the plugin's own version; the ported upstream release is recorded in the README instead."
+}

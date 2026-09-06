@@ -11,6 +11,9 @@ plugins/.pack
 # 鲨鱼数据库插件在 `check` 时临时保存已构建的面板产物，构建结束即删
 plugins/dsh-plugin-otools-dbm/.webview-cache
 
+# ai-switch 插件同理：面板产物在 `check` 时先挪到一边，再放回去
+plugins/dsh-plugin-ai-switch/.webview-cache
+
 # tauri-build 在每次构建时重新生成
 src-tauri/gen/schemas
 

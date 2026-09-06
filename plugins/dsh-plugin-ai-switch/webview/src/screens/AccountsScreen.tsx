@@ -1,0 +1,9166 @@
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion } from "motion/react";
+import { MotionMenu } from "../components/motion/MotionPrimitives";
+import { open } from "@tauri-apps/plugin-dialog";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import {
+  ArrowRight,
+  Archive,
+  ArchiveRestore,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Download,
+  Edit3,
+  ExternalLink,
+  FileCode2,
+  GripVertical,
+  KeyRound,
+  LayoutGrid,
+  List,
+  MessageSquareText,
+  MoreVertical,
+  Play,
+  Plug,
+  Plus,
+  RefreshCw,
+  ScanText,
+  ScrollText,
+  Send,
+  SlidersHorizontal,
+  Square,
+  Trash2,
+  Wallet,
+  Wand2,
+  X,
+} from "lucide-react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from "react";
+import { DismissButton } from "../components/ui/DismissButton";
+import { PlatformSupportBadge } from "../components/platform/PlatformSupportBadge";
+import { baselineModelsForPlatform, expandDisplayModelMappings, ModelMappingSummary, modelSummaryLine } from "../components/accounts/ModelMappingSummary";
+import {
+  ExternalClientImportPanel,
+  EXTERNAL_IMPORT_CLIENT_LABELS,
+  isImportableExternalItem,
+  useExternalClientImportPreview,
+} from "../components/accounts/ExternalClientImportPanel";
+import { ConfigWriteTargetsDialog } from "../components/accounts/ConfigWriteTargetsDialog";
+import { FormTabs, type FormTab } from "../components/accounts/FormTabs";
+import { RouteCredentialExportDialog } from "../components/accounts/RouteCredentialExportDialog";
+import { CopyRouteCredentialDialog } from "../components/accounts/CopyRouteCredentialDialog";
+import { UsageOverviewPanel } from "../components/accounts/UsageOverviewPanel";
+import { QuickEditDialog } from "../components/accounts/QuickEditDialog";
+import { neighborsForDrop } from "../lib/accountReorder";
+import {
+  loadAccountListLayout,
+  saveAccountListLayout,
+  type AccountListLayout,
+} from "../lib/accountListLayout";
+import { useDragSort } from "../lib/useDragSort";
+import {
+  loadAccountDisplayPreferences,
+  saveAccountDisplayPreferences,
+  type AccountDisplayPreferences,
+} from "../lib/accountDisplayPreferences";
+import {
+  claudeAliasSupportsOneM,
+  CLAUDE_FALLBACK_ALIAS,
+  CLAUDE_MENU_ROLES,
+  CLAUDE_ROLES,
+  CLAUDE_SUBAGENT_ALIAS,
+} from "../lib/claude-roles";
+import {
+  parseFetchedModelsFromConfig,
+  writeFetchedModelsToConfig,
+} from "../lib/accountFetchedModels";
+import {
+  codexContextWindowLabel,
+  codexDefaultContextWindow,
+  codexEffectiveReasoningLevels,
+  normalizeCodexContextWindow,
+  normalizeCodexReasoningLevels,
+  usesCodexBaselineReasoning,
+  CODEX_CONTEXT_WINDOW_OPTIONS,
+  CODEX_REASONING_LEVEL_OPTIONS,
+} from "../lib/codexModelCapability";
+import {
+  createBatch,
+  copyRouteCredential,
+  clearRouteCredentialFailureState,
+  clearRouteCredentialModelState,
+  setRouteCredentialCooldown,
+  setRouteCredentialModelStatus,
+  setRouteCredentialRecovery,
+  createApiRouteCredential,
+  archiveRouteCredentials,
+  deleteRouteCredential,
+  fetchRouteModels,
+  getRoutePool,
+  getRouteProxyKey,
+  getRouteProxyStatus,
+  importExternalClientAccounts,
+  importOfficialRouteCredentialsFromFiles,
+  importOfficialRouteCredentialsFromText,
+  listConfigWriteClients,
+  listRouteCredentials,
+  listRouteCredentialPage,
+  reorderRouteCredentials,
+  refreshRouteCredentialQuota,
+  refreshRouteCredentialRelayBalance,
+  refreshRouteCredentialsQuota,
+  refreshRouteCredentialsRelayBalance,
+  restoreRouteCredentials,
+  getSettings,
+  routePoolTestModel,
+  saveSettings,
+  setRouteCredentialStatuses,
+  setRoutePoolMembers,
+  setRoutePoolModelMode,
+  startRouteProxy,
+  stopRouteProxy,
+  subscribeRouteProxyLiveLog,
+  unsubscribeRouteProxyLiveLog,
+  updateRouteCredential,
+  routeConfigWriteIsStale,
+  writeRouteProxyConfigs,
+} from "../lib/api/client";
+import type {
+  AccountStatus,
+  AnthropicApiKeyField,
+  ConfigWriteClientStatus,
+  ConfigWriteOutcome,
+  CopyRouteCredentialInput,
+  ExternalClientImportOutcome,
+  ExternalImportClient,
+  FetchedRouteModel,
+  InterfaceFormat,
+  ModelMapping,
+  PlatformId,
+  QuotaRefreshOutcome,
+  RelayBalanceProvider,
+  RelayBalanceSnapshot,
+  RouteCredential,
+  RouteCredentialActivityEvent,
+  RouteCredentialFailurePolicy,
+  RouteCredentialModelState,
+  RouteCredentialModelStatus,
+  RouteCredentialPage,
+  RouteCredentialPoolScope,
+  RouteCredentialSelectionContext,
+  RecoveryMode,
+  RecoveryRule,
+  RouteModelsFetchRequest,
+  RoutePoolModelMode,
+  RoutePoolModelTestOutcome,
+  RoutePoolModelTestRequest,
+  RouteProxyLiveLogEntry,
+} from "../lib/api/types";
+import {
+  capabilityReason,
+  credentialKindAllowed,
+  findPlatformCapability,
+  operationEnabled,
+} from "../lib/platformCapabilities";
+import { usePlatformCapabilities } from "../lib/query/platformCapabilities";
+import {
+  loadModelTestModels,
+  type ModelTestModelMap,
+  poolModelTestKey,
+  pruneModelTestModelMap,
+  pruneModelTestModels,
+  saveModelTestModel,
+} from "../lib/modelTestModels";
+import {
+  type AccountPreset,
+  matchPresetByBaseUrl,
+  presetsForPlatform,
+} from "../lib/accountPresets";
+import {
+  matchUserAgentPreset,
+  readUserAgentFromConfig,
+  USER_AGENT_PRESETS,
+  writeUserAgentToConfig,
+} from "../lib/accountUserAgent";
+import { getTransport, isDesktop, isTauriRuntime } from "../lib/transport";
+import { fetchRouteProxyModels } from "../lib/routeProxyModels";
+import { openExternal } from "../lib/openExternal";
+import { copySensitiveText } from "../lib/routeCredentialTransfer";
+import {
+  codexModelTestInterfaceFormat,
+  loadCodexModelTestEndpoint,
+  saveCodexModelTestEndpoint,
+  type CodexModelTestEndpoint,
+} from "../lib/codexModelTestEndpoint";
+import {
+  ClipboardImageReadError,
+  readClipboardImageBlob,
+  recognizeApiKeysFromImageBlob,
+} from "../lib/ocr/apiKeyOcr";
+
+/**
+ * Concurrency ceiling a new account is created with, mirroring
+ * `DEFAULT_ROUTE_CREDENTIAL_MAX_CONCURRENCY` on the Rust side. Only used as a
+ * fallback when a loaded row somehow lacks the column.
+ */
+const DEFAULT_MAX_CONCURRENCY = 5;
+
+type PlatformKey = PlatformId;
+type CreateMode = "api" | "official" | "external";
+type AccountView = "in_pool" | "out_of_pool" | "archived" | "stats";
+type CreateTab = "basic" | "advanced";
+type EditTab = "basic" | "advanced" | "failure" | "other";
+type RowAction = {
+  key: string;
+  ariaLabel: string;
+  menuLabel: string;
+  title?: string;
+  disabled?: boolean;
+  onClick: () => void;
+  icon: ReactNode;
+  inlineLabel?: string;
+  inlineToneClass: string;
+};
+type RoutePoolAction = "add" | "remove" | "sync";
+type RoutePoolFeedback = {
+  type: "success" | "error";
+  message: string;
+} | null;
+type RoutePoolMutationInput = {
+  platform: string;
+  account_ids: string[];
+  action: RoutePoolAction;
+  affectedCount: number;
+};
+
+const DEFAULT_ROUTE_CREDENTIAL_COOLDOWN_SECONDS = 10;
+const MAX_ROUTE_CREDENTIAL_COOLDOWN_SECONDS = 86_400;
+// One-click steps offered by the cooldown dialog. Both directions, because the
+// interesting adjustment is usually "wait less" — a rate-limit window that turned
+// out to be shorter than the configured one.
+const COOLDOWN_ADJUST_STEPS = [-300, -60, 60, 300, 1800];
+
+// How long a finished 真实生成测试 stays on screen before tidying itself away.
+// Long enough to read the verdict and the routing chain, and the × is still
+// there for anyone who wants it gone sooner.
+const MODEL_TEST_AUTO_CLOSE_SECONDS = 30;
+
+const defaultRouteCredentialFailurePolicy: RouteCredentialFailurePolicy = {
+  retry_count: 2,
+  retry_interval_ms: 200,
+  semantic_error_threshold: 10,
+  cooldown_enabled: false,
+  cooldown_seconds: DEFAULT_ROUTE_CREDENTIAL_COOLDOWN_SECONDS,
+  error_status_enabled: true,
+};
+
+const createTabs: Array<FormTab<CreateTab>> = [
+  { value: "basic", label: "基础" },
+  { value: "advanced", label: "高级" },
+];
+
+const editTabs: Array<FormTab<EditTab>> = [
+  { value: "basic", label: "基础" },
+  { value: "advanced", label: "高级" },
+  { value: "failure", label: "故障处理" },
+  { value: "other", label: "其他" },
+];
+
+function formatApiError(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  if (error && typeof error === "object") {
+    const record = error as {
+      message?: unknown;
+      details?: unknown;
+      code?: unknown;
+    };
+    const message =
+      typeof record.message === "string" ? record.message.trim() : "";
+    const details =
+      typeof record.details === "string" ? record.details.trim() : "";
+    if (message && details) {
+      return `${message} (${details})`;
+    }
+    if (message) {
+      return message;
+    }
+    if (details) {
+      return details;
+    }
+    if (typeof record.code === "string" && record.code.trim()) {
+      return record.code;
+    }
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  return fallback;
+}
+
+/**
+ * Chinese copy for config-write failures whose backend message does not convey
+ * the consequence. Keyed by error code so the wording stays with the reason.
+ */
+const configWriteErrorMessages: Record<string, string> = {
+  // A failed parse makes a client fall back to its defaults and end up with an
+  // empty provider list, so "we did not touch it" is the load-bearing part.
+  "validation.route_config_existing_invalid":
+    "现有配置文件无法解析，已拒绝覆盖以免丢失你的 provider 配置。请先修复该文件再重试。",
+  "config.concurrent_modification":
+    "配置文件在写入期间被其他程序修改，未做改动。请重试。",
+  "config.pool_models_empty": "算力池中没有可用模型，请先向池中加入账号。",
+  "config.client_unavailable": "所选客户端不支持当前平台。",
+};
+
+/** Prefers a code-specific Chinese message over the backend's raw text. */
+function formatConfigWriteError(error: unknown): string {
+  const code =
+    error && typeof error === "object" && typeof (error as { code?: unknown }).code === "string"
+      ? (error as { code: string }).code
+      : "";
+  return configWriteErrorMessages[code] ?? formatApiError(error, "配置写入失败。");
+}
+
+function accountStatusLabel(status: string): string {
+  switch (status) {
+    case "ok":
+      return "正常";
+    case "warning":
+      return "警告";
+    case "error":
+      return "异常";
+    case "revoked":
+      return "已失效";
+    case "paused":
+      return "暂停";
+    default:
+      return status || "未知";
+  }
+}
+
+function accountStatusClass(status: string): string {
+  switch (status) {
+    case "ok":
+      return "bg-emerald-50 text-emerald-800";
+    case "warning":
+      return "bg-amber-50 text-amber-800";
+    case "error":
+      return "bg-red-50 text-red-800";
+    case "revoked":
+      return "bg-rose-100 text-rose-900 ring-1 ring-rose-200";
+    case "paused":
+      return "bg-red-50 text-red-800";
+    default:
+      return "bg-stone-100 text-stone-600";
+  }
+}
+
+// Terminal statuses describe a durable account state, so they keep their own
+// label even while transient retry failures are being counted.
+const terminalAccountStatuses = new Set(["error", "revoked", "paused"]);
+
+function transientFailureTag(
+  status: string,
+  transientFailureCount: number | null | undefined,
+): { label: string; className: string } | null {
+  const count = transientFailureCount ?? 0;
+  if (count <= 0 || terminalAccountStatuses.has(status)) {
+    return null;
+  }
+  return {
+    label: `错误 ${count} 次`,
+    className: "bg-orange-50 text-orange-800",
+  };
+}
+
+type ModelIssue = {
+  state: RouteCredentialModelState;
+  reason: "cooling" | "error" | "paused";
+  remaining: number | null;
+};
+
+// A model is unavailable when it is paused, marked unhealthy, or still cooling.
+// Cooling is time-based so it needs `now`; the other two are verdicts.
+function credentialModelIssues(credential: RouteCredential, now: number): ModelIssue[] {
+  if (terminalAccountStatuses.has(credential.status)) {
+    return [];
+  }
+  const issues: ModelIssue[] = [];
+  for (const state of credential.model_states ?? []) {
+    if (state.status === "paused") {
+      issues.push({ state, reason: "paused", remaining: null });
+      continue;
+    }
+    if (state.status === "error") {
+      issues.push({ state, reason: "error", remaining: null });
+      continue;
+    }
+    if (!state.cooldown_until) {
+      continue;
+    }
+    const deadline = new Date(state.cooldown_until).getTime();
+    if (!Number.isFinite(deadline) || deadline <= now) {
+      continue;
+    }
+    issues.push({ state, reason: "cooling", remaining: deadline - now });
+  }
+  return issues;
+}
+
+function modelIssueLabel(issue: ModelIssue): string {
+  switch (issue.reason) {
+    case "paused":
+      return "已暂停";
+    case "error":
+      return "异常";
+    default:
+      return `冷却 ${formatCooldownRemaining(issue.remaining ?? 0)}`;
+  }
+}
+
+// Whether "解除" has anything to do for this model. A paused model is the user's
+// own decision, and a healthy model with no bookkeeping has no row to delete, so
+// clearing either would be a wasted round trip.
+function modelStateIsClearable(state: RouteCredentialModelState): boolean {
+  if (state.status === "paused") {
+    return false;
+  }
+  return (
+    state.status === "error" ||
+    Boolean(state.cooldown_until) ||
+    state.transient_failure_count > 0 ||
+    state.semantic_failure_streak_count > 0
+  );
+}
+
+const accountViewOptions: Array<{ key: AccountView; label: string }> = [
+  { key: "in_pool", label: "算力池" },
+  { key: "out_of_pool", label: "未入池" },
+  { key: "archived", label: "已归档" },
+  { key: "stats", label: "统计" },
+];
+
+const accountLayoutOptions: Array<{ key: AccountListLayout; label: string }> = [
+  { key: "list", label: "列表模式" },
+  { key: "card", label: "卡片模式" },
+];
+
+function formatUsageTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
+}
+
+function liveLogStagesIdentical(entry: RouteProxyLiveLogEntry): boolean {
+  return (entry.upstream_response ?? null) === (entry.final_response ?? null);
+}
+
+function LiveLogStage({ title, body }: { title: string; body: string | null | undefined }) {
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-stone-500">{title}</p>
+      <pre className="mt-1 max-h-48 overflow-auto rounded-lg border border-stone-200 bg-white p-2 font-mono text-[11px] leading-relaxed text-stone-700">
+        {body && body.trim() ? prettyJsonOrText(body) : "（空）"}
+      </pre>
+    </div>
+  );
+}
+
+type AccountsScreenProps = {
+  platform?: PlatformKey;
+  onOpenSessions?: (platform: PlatformKey) => void;
+  sidebarCollapsed?: boolean;
+  onPoolScopeFocusConsumed?: (nonce: number) => void;
+  poolScopeFocus?: {
+    platform: string;
+    scope: "in_pool" | "out_of_pool";
+    nonce: number;
+  } | null;
+};
+
+const platformLabels: Record<PlatformKey, string> = {
+  codex: "Codex",
+  claude: "Claude",
+  grok: "Grok",
+  gemini: "Gemini",
+  opencode: "OpenCode",
+  openclaw: "OpenClaw",
+  hermes: "Hermes",
+};
+
+const routeInterfaceFormats: InterfaceFormat[] = ["openai", "openai-responses", "anthropic", "gemini"];
+
+const interfaceFormatLabels: Record<InterfaceFormat, string> = {
+  openai: "OpenAI Chat Completions",
+  "openai-responses": "OpenAI Responses",
+  anthropic: "Claude Messages",
+  gemini: "Gemini",
+};
+
+function interfaceFormatLabel(value: InterfaceFormat | string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+  if (value in interfaceFormatLabels) {
+    return interfaceFormatLabels[value as InterfaceFormat];
+  }
+  return value;
+}
+
+const anthropicApiKeyFields: Array<{ value: AnthropicApiKeyField; label: string; description: string }> = [
+  {
+    value: "ANTHROPIC_AUTH_TOKEN",
+    label: "ANTHROPIC_AUTH_TOKEN",
+    description: "Authorization: Bearer，兼容 cc-switch / Sub2API 常见配置",
+  },
+  {
+    value: "ANTHROPIC_API_KEY",
+    label: "ANTHROPIC_API_KEY",
+    description: "x-api-key，Anthropic 官方 API Key 默认方式",
+  },
+];
+
+// Role definitions live in src/lib/claude-roles.ts so the account-list summary
+// reads the same table instead of keeping its own copy of the aliases.
+const claudeModelTemplates = CLAUDE_MENU_ROLES.map((role) => ({
+  value: role.alias,
+  label: role.label,
+  keywords: role.keywords,
+  supportsOneM: role.supportsOneM,
+}));
+
+const claudeRoleTemplates = CLAUDE_ROLES.map((role) => ({
+  value: role.alias,
+  label: role.label,
+  editableLabel: role.editableLabel,
+  supportsOneM: role.supportsOneM,
+  hint: role.hint,
+}));
+
+const claudeModelSources = [
+  ...claudeModelTemplates.map((template) => ({
+    value: template.value,
+    label: `${template.label}（默认角色）`,
+  })),
+  { value: CLAUDE_SUBAGENT_ALIAS, label: "Subagent（子代理角色）" },
+  { value: CLAUDE_FALLBACK_ALIAS, label: "其他所有模型（兜底）" },
+  { value: "claude-opus", label: "Claude Opus（旧版）" },
+  { value: "claude-sonnet", label: "Claude Sonnet（旧版）" },
+  { value: "claude-haiku", label: "Claude Haiku（旧版）" },
+  { value: "claude-opus-4-20250514", label: "Claude Opus 4" },
+  { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
+  { value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku" },
+];
+
+function defaultOfficialJson(platform: PlatformKey) {
+  return `{
+  "type": "${platform}",
+  "email": "name@example.com",
+  "access_token": "access-token",
+  "refresh_token": "refresh-token"
+}`;
+}
+
+function shortId(id: string) {
+  return id.length > 8 ? id.slice(0, 8) : id;
+}
+
+const SINGLE_ACCOUNT_FILTER = "__single__";
+
+function credentialBatchFilterKey(credential: RouteCredential): string {
+  return credential.batch_id || SINGLE_ACCOUNT_FILTER;
+}
+
+function credentialBatchFilterLabel(key: string): string {
+  return key === SINGLE_ACCOUNT_FILTER ? "单账号" : key;
+}
+
+/**
+ * Width of the stats line under an account name in the list layout.
+ *
+ * `basis-64` would match the name above it exactly, but that hard 16rem clips the
+ * longest real lines — six-digit counts with a batch name, or the dot-separated
+ * model list this line swaps to — so the floor is a minimum instead: short lines
+ * still land 耗时 in the same column as the name's badges, longer ones push it
+ * along rather than losing characters.
+ *
+ * The floor is dropped below 600px. Nothing may force this line wider than its
+ * grid track, which is `minmax(0,1fr)` and goes well under 16rem as the window
+ * approaches its 320px minimum; the scroll container hides overflow-x, so the
+ * text would run under the action buttons with no way to reach it. 599/600px is
+ * the same seam the 成功/失败 breakdown hides at.
+ */
+const STATS_LINE_WIDTH = "min-[600px]:min-w-64";
+
+function kindLabel(kind: RouteCredential["kind"]) {
+  return kind === "api" ? "API" : "官方";
+}
+
+function parseJsonPreview(value: string, fallback: string) {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return fallback;
+  }
+}
+
+function decodeBase64Text(value: string) {
+  const normalized = value.trim().replace(/-/g, "+").replace(/_/g, "/");
+  if (!normalized) {
+    throw new Error("empty");
+  }
+
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function apiKeyLines(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function defaultInterfaceFormat(platform: PlatformKey): InterfaceFormat {
+  if (platform === "claude") {
+    return "anthropic";
+  }
+  if (platform === "gemini") {
+    return "gemini";
+  }
+  // CLIProxyAPI xAI Grok uses OpenAI-compatible endpoints under api.x.ai/v1.
+  if (platform === "grok") {
+    return "openai";
+  }
+  return "openai";
+}
+
+function interfaceFormatsForPlatform(platform: PlatformKey): InterfaceFormat[] {
+  // Gemini CLI's inbound traffic is never bridged, so its pool can only hold
+  // gemini accounts.
+  if (platform === "gemini") {
+    return ["gemini"];
+  }
+  // Grok is the one platform whose upstream is fixed by the vendor: xAI serves
+  // OpenAI-compatible endpoints and nothing else.
+  if (platform === "grok") {
+    return ["openai"];
+  }
+  // Everything else reaches its upstream through a bridge, so any of the four
+  // dialects works. For opencode/openclaw/hermes this is the load-bearing part:
+  // they have no default dialect at all, so a wrong or missing value is the
+  // difference between a working pool and `validation.api_dialect_required`.
+  return routeInterfaceFormats;
+}
+
+function shouldShowInterfaceFormatSelect(platform: PlatformKey) {
+  return interfaceFormatsForPlatform(platform).length > 1;
+}
+
+function isAnthropicInterfaceFormat(value: InterfaceFormat | string) {
+  return value === "anthropic";
+}
+
+function shouldShowResponsesCustomToolCompat(platform: PlatformKey) {
+  return platform === "codex";
+}
+
+function shouldShowResponsesCustomToolCompatForFormat(
+  platform: PlatformKey,
+  interfaceFormat: InterfaceFormat,
+) {
+  return shouldShowResponsesCustomToolCompat(platform) && interfaceFormat === "openai-responses";
+}
+
+/// The four upstream dialects a per-turn reminder can be written into are all
+/// reachable from these three platforms. Grok and the OpenCode-family platforms
+/// are excluded by scope, not by any technical limit — the writers cover every
+/// dialect, so widening this is a one-line change.
+function shouldShowTurnReminder(platform: PlatformKey) {
+  return platform === "codex" || platform === "claude" || platform === "gemini";
+}
+
+function defaultAnthropicApiKeyFieldForCreate(platform: PlatformKey): AnthropicApiKeyField {
+  return platform === "claude" ? "ANTHROPIC_AUTH_TOKEN" : "ANTHROPIC_API_KEY";
+}
+
+function anthropicApiKeyFieldFromConfig(
+  config: Record<string, unknown>,
+  fallback: AnthropicApiKeyField,
+): AnthropicApiKeyField {
+  const value = stringFromRecord(config, "api_key_field");
+  return value === "ANTHROPIC_AUTH_TOKEN" || value === "ANTHROPIC_API_KEY" ? value : fallback;
+}
+
+function apiKeyFieldForPayload(
+  interfaceFormat: InterfaceFormat,
+  apiKeyField: AnthropicApiKeyField,
+) {
+  return isAnthropicInterfaceFormat(interfaceFormat) ? apiKeyField : undefined;
+}
+
+function anthropicApiKeyFieldDescription(value: AnthropicApiKeyField) {
+  return anthropicApiKeyFields.find((field) => field.value === value)?.description ?? "";
+}
+
+function defaultModelMappings(_platform: PlatformKey): ModelMapping[] {
+  return [];
+}
+
+function defaultRequestedModel(platform: PlatformKey, interfaceFormat?: InterfaceFormat | string) {
+  if (platform === "claude" || interfaceFormat === "anthropic") {
+    return "claude-sonnet-4-20250514";
+  }
+  if (platform === "gemini" || interfaceFormat === "gemini") {
+    return "gemini-2.5-flash";
+  }
+  if (platform === "grok") {
+    return "grok-4.5";
+  }
+  return "gpt-5.5";
+}
+
+function isClaudeTemplateSource(value: string) {
+  return claudeRoleTemplates.some((template) => template.value === value.trim());
+}
+
+function modelIdList(models: FetchedRouteModel[]) {
+  return models.map((model) => model.id).filter(Boolean);
+}
+
+function pickModelByKeywords(models: FetchedRouteModel[], keywords: readonly string[]) {
+  const ids = modelIdList(models);
+  for (const keyword of keywords) {
+    const model = ids.find((id) => id.toLowerCase().includes(keyword));
+    if (model) {
+      return model;
+    }
+  }
+  return null;
+}
+
+/// Whether a role should be pre-flagged as 1M-capable during one-click setup.
+///
+/// An upstream that positively advertises 1M (or names it in the model id) is
+/// taken at its word. Silence is *not* treated as "no": most third-party relays
+/// omit `supports_1m` from `/v1/models` entirely, and reading that omission as a
+/// denial meant one-click setup never flagged 1M for anyone on such a relay —
+/// leaving users to tick every role by hand. So an unknown model on a role that
+/// has a 1M tier gets the flag; the proxy only sends the `context-1m` beta
+/// marker when a request actually asks for `[1M]`, and an upstream that cannot
+/// serve it says so.
+function shouldPreflagOneM(
+  models: FetchedRouteModel[],
+  id: string,
+  roleSupportsOneM: boolean,
+) {
+  if (!roleSupportsOneM) {
+    return false;
+  }
+  // Only an explicit `false` is a denial; `null`/`undefined` means unknown, and
+  // unknown defaults to flagged.
+  return models.find((model) => model.id === id)?.supports_1m !== false;
+}
+
+function pickGeneralModel(platform: PlatformKey, models: FetchedRouteModel[]) {
+  const ids = modelIdList(models);
+  if (ids.length === 0) {
+    return null;
+  }
+  if (platform === "gemini") {
+    return pickModelByKeywords(models, ["gemini", "flash", "pro"]) ?? ids[0];
+  }
+  if (platform === "grok") {
+    return (
+      pickModelByKeywords(models, ["grok-4.5", "grok-4", "grok-3", "grok"]) ??
+      ids.find((id) => !id.toLowerCase().includes("embedding")) ??
+      ids[0]
+    );
+  }
+  return (
+    pickModelByKeywords(models, ["gpt-5.5", "gpt-5", "gpt-4o", "gpt", "claude", "sonnet"]) ??
+    ids.find((id) => !id.toLowerCase().includes("embedding")) ??
+    ids[0]
+  );
+}
+
+function buildOneClickMappings(
+  platform: PlatformKey,
+  models: FetchedRouteModel[],
+  interfaceFormat?: InterfaceFormat | string,
+) {
+  if (platform === "claude") {
+    const fallback = pickGeneralModel(platform, models);
+    return claudeModelTemplates
+      .map((template) => {
+        const target = pickModelByKeywords(models, template.keywords) ?? fallback ?? "";
+        return {
+          from: template.value,
+          to: target,
+          label: template.label,
+          ...(target && shouldPreflagOneM(models, target, template.supportsOneM)
+            ? { supports_1m: true }
+            : {}),
+        };
+      })
+      .filter((mapping) => mapping.to.trim());
+  }
+
+  const model = pickGeneralModel(platform, models);
+  return model
+    ? [
+        {
+          from: defaultRequestedModel(platform, interfaceFormat),
+          to: model,
+        },
+      ]
+    : [];
+}
+
+function parseModelMappingsFromConfig(configJson: string): ModelMapping[] {
+  try {
+    const parsed = JSON.parse(configJson) as { model_mappings?: unknown };
+    if (!Array.isArray(parsed.model_mappings)) {
+      return [];
+    }
+    return parsed.model_mappings
+      .filter((item): item is ModelMapping => {
+        if (!item || typeof item !== "object") {
+          return false;
+        }
+        const candidate = item as Partial<ModelMapping>;
+        return typeof candidate.from === "string" && typeof candidate.to === "string";
+      })
+      .map((item) => {
+        const reasoningLevels = normalizeCodexReasoningLevels(
+          Array.isArray(item.reasoning_levels) ? item.reasoning_levels : null,
+        );
+        return {
+          from: item.from,
+          to: item.to,
+          label: item.label ?? null,
+          supports_1m:
+            item.supports_1m === true || (item as { supports1m?: unknown }).supports1m === true
+              ? true
+              : null,
+          context_window: normalizeCodexContextWindow(item.context_window),
+          reasoning_levels: reasoningLevels.length > 0 ? reasoningLevels : null,
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+function normalizeModelMappings(mappings: ModelMapping[], platform: PlatformKey) {
+  const normalized: ModelMapping[] = [];
+  for (const mapping of mappings) {
+    const from = mapping.from.trim();
+    const to = mapping.to.trim();
+    const label = mapping.label?.trim() ?? "";
+    if (!from && !to) {
+      continue;
+    }
+    if (platform === "claude" && isClaudeTemplateSource(from) && !to) {
+      continue;
+    }
+    if (!from || !to) {
+      return {
+        error: "模型映射需要同时填写请求模型和上游模型。",
+        mappings: [],
+      };
+    }
+    if (from === "upstream-model" || to === "upstream-model") {
+      return {
+        error: "upstream-model 只是示例占位，请填写真实上游模型名或删除该映射。",
+        mappings: [],
+      };
+    }
+    const normalizedMapping: ModelMapping = label ? { from, to, label } : { from, to };
+    // Gate on the role, not just the checkbox: a stored flag from before Haiku
+    // and the Subagent/fallback rows lost their checkbox would otherwise survive
+    // every save, since a hidden checkbox can never clear it.
+    if (platform === "claude" && mapping.supports_1m === true && claudeAliasSupportsOneM(from)) {
+      normalizedMapping.supports_1m = true;
+    }
+    // Codex advertises these two per alias; Claude states its context tier
+    // through `supports_1m` instead, so carrying them for other platforms would
+    // only leave dead keys in the config.
+    if (platform === "codex") {
+      const contextWindow = normalizeCodexContextWindow(mapping.context_window);
+      if (contextWindow !== null) {
+        normalizedMapping.context_window = contextWindow;
+      }
+      const reasoningLevels = normalizeCodexReasoningLevels(mapping.reasoning_levels);
+      // An empty list is stored as "absent" so the row keeps following the
+      // baseline profile rather than advertising no effort at all.
+      if (reasoningLevels.length > 0) {
+        normalizedMapping.reasoning_levels = reasoningLevels;
+      }
+    }
+    normalized.push(normalizedMapping);
+  }
+
+  return { error: null, mappings: normalized };
+}
+
+function numberFromRecord(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function officialSubscriptionType(credential: RouteCredential): string | null {
+  if (credential.kind !== "official") {
+    return null;
+  }
+  const direct =
+    typeof credential.subscription_type === "string"
+      ? credential.subscription_type.trim()
+      : "";
+  if (direct) {
+    return direct;
+  }
+  const config = parseJsonObject(credential.config_json);
+  const value = stringFromRecord(config, "subscription_type");
+  return value || null;
+}
+
+function officialPrimaryRemain(credential: RouteCredential): number | null {
+  if (credential.kind !== "official") {
+    return null;
+  }
+  if (typeof credential.primary_remain === "number" && Number.isFinite(credential.primary_remain)) {
+    return credential.primary_remain;
+  }
+  if (typeof credential.quota_remaining === "number" && Number.isFinite(credential.quota_remaining)) {
+    return credential.quota_remaining;
+  }
+  const config = parseJsonObject(credential.config_json);
+  return numberFromRecord(config, "primary_remain") ?? numberFromRecord(config, "quota_remaining");
+}
+
+function officialWeeklyRemain(credential: RouteCredential): number | null {
+  if (credential.kind !== "official") {
+    return null;
+  }
+  if (typeof credential.weekly_remain === "number" && Number.isFinite(credential.weekly_remain)) {
+    return credential.weekly_remain;
+  }
+  const config = parseJsonObject(credential.config_json);
+  return numberFromRecord(config, "weekly_remain");
+}
+
+function officialLatestResetLabel(credential: RouteCredential): string | null {
+  if (credential.kind !== "official") {
+    return null;
+  }
+  const config = parseJsonObject(credential.config_json);
+  const candidates = [
+    typeof credential.reset_primary === "string" ? credential.reset_primary : null,
+    typeof credential.reset_weekly === "string" ? credential.reset_weekly : null,
+    typeof credential.quota_updated_at === "string" ? credential.quota_updated_at : null,
+    stringFromRecord(config, "reset_primary") || null,
+    stringFromRecord(config, "reset_weekly") || null,
+    stringFromRecord(config, "quota_updated_at") || null,
+  ]
+    .map((value) => (value ? value.trim() : ""))
+    .filter(Boolean);
+  if (candidates.length === 0) {
+    return null;
+  }
+  // RFC3339 strings compare lexicographically for latest time.
+  const latest = candidates.reduce((best, current) => (current > best ? current : best));
+  return latest;
+}
+
+function parseJsonObject(value: string) {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function recoveryRuleFromConfig(config: Record<string, unknown>): RecoveryRule {
+  const raw = config.recovery;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { mode: "off", times: [], probe_interval_minutes: null };
+  }
+  const record = raw as Record<string, unknown>;
+  const mode =
+    record.mode === "scheduled" || record.mode === "healthcheck" ? record.mode : "off";
+  const times = Array.isArray(record.times)
+    ? record.times.filter((value): value is string => typeof value === "string")
+    : [];
+  const interval =
+    typeof record.probe_interval_minutes === "number" && Number.isFinite(record.probe_interval_minutes)
+      ? Math.trunc(record.probe_interval_minutes)
+      : null;
+  return {
+    mode,
+    times,
+    probe_interval_minutes: interval,
+  };
+}
+
+function failurePolicyFromConfig(config: Record<string, unknown>): RouteCredentialFailurePolicy {
+  const raw = config.failure_policy;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ...defaultRouteCredentialFailurePolicy };
+  }
+  const record = raw as Record<string, unknown>;
+  const integerOrDefault = (
+    key:
+      | "retry_count"
+      | "retry_interval_ms"
+      | "semantic_error_threshold"
+      | "cooldown_seconds",
+  ) => {
+    const value = record[key];
+    return typeof value === "number" && Number.isInteger(value)
+      ? value
+      : defaultRouteCredentialFailurePolicy[key];
+  };
+  const booleanOrDefault = (key: "cooldown_enabled" | "error_status_enabled") => {
+    const value = record[key];
+    return typeof value === "boolean" ? value : defaultRouteCredentialFailurePolicy[key];
+  };
+  return {
+    retry_count: integerOrDefault("retry_count"),
+    retry_interval_ms: integerOrDefault("retry_interval_ms"),
+    semantic_error_threshold: integerOrDefault("semantic_error_threshold"),
+    cooldown_enabled: booleanOrDefault("cooldown_enabled"),
+    cooldown_seconds: integerOrDefault("cooldown_seconds"),
+    error_status_enabled: booleanOrDefault("error_status_enabled"),
+  };
+}
+
+function writeFailurePolicyToConfig(
+  config: Record<string, unknown>,
+  failurePolicy: RouteCredentialFailurePolicy,
+) {
+  return {
+    ...config,
+    failure_policy: failurePolicy,
+  };
+}
+
+function stringFromRecord(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/// Extract the domain (origin) from a credential's configured base_url so the
+/// account row can offer a clickable link. Returns null when there is no valid
+/// http(s) base_url (e.g. most official credentials).
+function credentialBaseUrlLink(credential: RouteCredential): { href: string; host: string } | null {
+  const baseUrl = stringFromRecord(parseJsonObject(credential.config_json), "base_url");
+  if (!baseUrl) {
+    return null;
+  }
+  try {
+    const url = new URL(baseUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    return { href: url.origin, host: url.host };
+  } catch {
+    return null;
+  }
+}
+
+function interfaceFormatFromConfig(config: Record<string, unknown>): InterfaceFormat {
+  const value = stringFromRecord(config, "interface_format");
+  return routeInterfaceFormats.includes(value as InterfaceFormat) ? (value as InterfaceFormat) : "openai";
+}
+
+function apiSecretJsonWithKey(
+  secretJson: string,
+  apiKey: string,
+  panelAccount?: RelayBalancePanelAccount,
+) {
+  const secret = parseJsonObject(secretJson);
+  secret.api_key = apiKey.trim();
+  // Left out by the preview path, which only ever reads the api_key and must not
+  // touch credentials it was never shown.
+  if (panelAccount) {
+    for (const [key, value] of [
+      ["relay_balance_access_token", panelAccount.accessToken],
+      ["relay_balance_access_token_user_id", panelAccount.userId],
+    ] as const) {
+      const trimmed = value.trim();
+      if (trimmed) {
+        secret[key] = trimmed;
+      } else {
+        // Emptying the box removes the stored value; merging would make it
+        // impossible to take back.
+        delete secret[key];
+      }
+    }
+  }
+  return JSON.stringify(secret, null, 2);
+}
+
+function responsesCustomToolCompatFromConfig(config: Record<string, unknown>): boolean {
+  return config.responses_custom_tool_compat === true;
+}
+
+function inlineRemoteImagesFromConfig(config: Record<string, unknown>): boolean {
+  return config.inline_remote_images === true;
+}
+
+function turnReminderFromConfig(config: Record<string, unknown>): boolean {
+  return config.turn_reminder === true;
+}
+
+function turnReminderTextFromConfig(config: Record<string, unknown>): string {
+  const value = config.turn_reminder_text;
+  return typeof value === "string" ? value : "";
+}
+
+/// Form shape for `config_json.relay_balance`. "none" is a UI-only value: an
+/// account with querying off carries no `relay_balance` key at all.
+type RelayBalanceFormState = {
+  provider: RelayBalanceProvider | "none";
+  endpoint: string;
+  remainingPath: string;
+  usedPath: string;
+  limitPath: string;
+  planPath: string;
+  unit: string;
+  divisor: string;
+};
+
+const relayBalanceProviderOptions: Array<{
+  value: RelayBalanceFormState["provider"];
+  label: string;
+  hint: string;
+}> = [
+  { value: "none", label: "关闭", hint: "不查询余额" },
+  {
+    value: "new_api",
+    label: "new-api",
+    hint: "用账号自己的 API Key 查 /api/usage/token/，无需额外填写；选错了会自动改按 sub2api 再试一次",
+  },
+  {
+    value: "sub2api",
+    label: "sub2api",
+    hint: "用账号自己的 API Key 查 /v1/usage，无需额外填写；选错了会自动改按 new-api 再试一次",
+  },
+  { value: "custom", label: "自定义", hint: "自己填请求 URL 与取值路径" },
+];
+
+const emptyRelayBalanceForm: RelayBalanceFormState = {
+  provider: "none",
+  endpoint: "",
+  remainingPath: "",
+  usedPath: "",
+  limitPath: "",
+  planPath: "",
+  unit: "",
+  divisor: "",
+};
+
+/// The relay panel account's own credentials, used to read a balance that an
+/// uncapped new-api key cannot report. Both live in `secret_payload_json` rather
+/// than the `relay_balance` config block, so they are tracked apart from the form
+/// above.
+type RelayBalancePanelAccount = {
+  accessToken: string;
+  userId: string;
+};
+
+const emptyRelayBalancePanelAccount: RelayBalancePanelAccount = {
+  accessToken: "",
+  userId: "",
+};
+
+function relayBalancePanelAccountFromSecret(
+  secret: Record<string, unknown>,
+): RelayBalancePanelAccount {
+  return {
+    accessToken: stringFromRecord(secret, "relay_balance_access_token"),
+    userId: stringFromRecord(secret, "relay_balance_access_token_user_id"),
+  };
+}
+
+function relayBalanceFormFromConfig(config: Record<string, unknown>): RelayBalanceFormState {
+  const raw = config.relay_balance;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return emptyRelayBalanceForm;
+  }
+  const block = raw as Record<string, unknown>;
+  const provider = stringFromRecord(block, "provider");
+  if (provider !== "new_api" && provider !== "sub2api" && provider !== "custom") {
+    return emptyRelayBalanceForm;
+  }
+  const divisor = block.divisor;
+  return {
+    provider,
+    endpoint: stringFromRecord(block, "endpoint"),
+    remainingPath: stringFromRecord(block, "remaining_path"),
+    usedPath: stringFromRecord(block, "used_path"),
+    limitPath: stringFromRecord(block, "limit_path"),
+    planPath: stringFromRecord(block, "plan_path"),
+    unit: stringFromRecord(block, "unit"),
+    divisor: typeof divisor === "number" && Number.isFinite(divisor) ? String(divisor) : "",
+  };
+}
+
+function writeRelayBalanceToConfig(
+  config: Record<string, unknown>,
+  form: RelayBalanceFormState,
+  snapshot: RelayBalanceSnapshot | null,
+): Record<string, unknown> {
+  const next = { ...config };
+  if (form.provider === "none") {
+    // Turning querying off also drops the stale reading, so the badge disappears
+    // with the setting instead of freezing at its last value.
+    delete next.relay_balance;
+    delete next.relay_balance_snapshot;
+    return next;
+  }
+  const block: Record<string, unknown> = { provider: form.provider };
+  if (form.provider === "custom") {
+    block.endpoint = form.endpoint.trim();
+    block.remaining_path = form.remainingPath.trim();
+    for (const [key, value] of [
+      ["used_path", form.usedPath],
+      ["limit_path", form.limitPath],
+      ["plan_path", form.planPath],
+      ["unit", form.unit],
+    ] as const) {
+      const trimmed = value.trim();
+      if (trimmed) {
+        block[key] = trimmed;
+      }
+    }
+    const divisor = Number(form.divisor.trim());
+    if (form.divisor.trim() && Number.isFinite(divisor) && divisor > 0) {
+      block.divisor = divisor;
+    }
+  }
+  next.relay_balance = block;
+  // The drawer's reading can be newer than the config text the form was
+  // hydrated from: a query started from inside the drawer stores the snapshot
+  // server-side without touching that text, so saving it verbatim would erase
+  // the number the user just fetched.
+  if (snapshot) {
+    next.relay_balance_snapshot = snapshot;
+  }
+  return next;
+}
+
+/// Client-side mirror of `RelayBalanceConfig::validate`, so a bad custom setup
+/// is caught before the round trip and can point at the offending tab.
+function relayBalanceFormError(form: RelayBalanceFormState): string | null {
+  if (form.provider !== "custom") {
+    return null;
+  }
+  const endpoint = form.endpoint.trim();
+  if (!endpoint) {
+    return "自定义余额查询需要填写请求 URL";
+  }
+  if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) {
+    return "自定义余额查询的请求 URL 必须以 http:// 或 https:// 开头";
+  }
+  if (!form.remainingPath.trim()) {
+    return "自定义余额查询需要填写剩余额度的取值路径";
+  }
+  for (const path of [form.remainingPath, form.usedPath, form.limitPath, form.planPath]) {
+    const trimmed = path.trim();
+    if (trimmed && trimmed.split(".").some((segment) => !segment.trim())) {
+      return `取值路径 ${trimmed} 不合法：用点号分隔字段名，例如 data.total_available`;
+    }
+  }
+  const divisor = form.divisor.trim();
+  if (divisor && !(Number(divisor) > 0)) {
+    return "额度换算除数必须是大于 0 的数字";
+  }
+  return null;
+}
+
+function relayBalanceSnapshotFromConfig(
+  config: Record<string, unknown>,
+): RelayBalanceSnapshot | null {
+  const raw = config.relay_balance_snapshot;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  return raw as RelayBalanceSnapshot;
+}
+
+/// Whether the drawer's balance settings still differ from what the server stores.
+///
+/// 立即查询 asks the backend to query the account as saved, so a panel access token
+/// that was typed but not saved yet comes back as "余额 不限" — the exact reading the
+/// token exists to replace, which reads like the feature is broken rather than like
+/// an unsaved form.
+function relayBalanceSettingsDirty(
+  credential: RouteCredential,
+  form: RelayBalanceFormState,
+  panelAccount: RelayBalancePanelAccount,
+): boolean {
+  const stored = relayBalanceFormFromConfig(parseJsonObject(credential.config_json));
+  const storedAccount = relayBalancePanelAccountFromSecret(
+    parseJsonObject(credential.secret_payload_json),
+  );
+  return (
+    JSON.stringify(stored) !== JSON.stringify(form) ||
+    storedAccount.accessToken !== panelAccount.accessToken.trim() ||
+    storedAccount.userId !== panelAccount.userId.trim()
+  );
+}
+
+function formatRelayBalanceAmount(value: number, unit: string): string {
+  const amount = Math.abs(value) >= 1000 ? value.toFixed(0) : value.toFixed(2);
+  return unit === "USD" ? `$${amount}` : `${amount} ${unit}`.trim();
+}
+
+function formatRelayBalanceCheckedAt(checkedAt: string): string {
+  const date = new Date(checkedAt);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString() : checkedAt;
+}
+
+/// A request duration for the account row.
+///
+/// Sub-second calls read better in milliseconds — "0.4s" hides the difference
+/// between 380ms and 440ms — while anything longer is easier to compare in seconds,
+/// which is also the scale a slow account announces itself on.
+function formatRequestDuration(milliseconds: number): string {
+  return milliseconds < 1000
+    ? `${Math.round(milliseconds)}ms`
+    : `${(milliseconds / 1000).toFixed(1)}s`;
+}
+
+/// The account row's balance badge: what it says, how alarming it looks, and the
+/// detail that belongs in the tooltip.
+///
+/// `amount` is the reading without the 余额 prefix, for the badge's accessible name:
+/// the badge is also the refresh button, so its name has to spell out the amount it
+/// visibly shows, in exactly the same wording.
+function relayBalanceBadge(
+  snapshot: RelayBalanceSnapshot,
+): { amount: string; label: string; toneClass: string; title: string } {
+  const unit = snapshot.unit || "USD";
+  // An account-level reading is the panel account's money, shared by every account
+  // pointing at that panel. Labelling it plain "余额" would read as this key's own.
+  const prefix = snapshot.account_level ? "账户余额" : "余额";
+  const details: string[] = [`来源 ${snapshot.source_url}`];
+  if (snapshot.plan_name) {
+    details.unshift(`套餐 ${snapshot.plan_name}`);
+  }
+  if (typeof snapshot.used === "number") {
+    details.push(`已用 ${formatRelayBalanceAmount(snapshot.used, unit)}`);
+  }
+  if (typeof snapshot.limit === "number") {
+    details.push(`总额 ${formatRelayBalanceAmount(snapshot.limit, unit)}`);
+  }
+  if (typeof snapshot.expires_at === "string" && snapshot.expires_at) {
+    details.push(`到期 ${snapshot.expires_at}`);
+  }
+  for (const note of snapshot.notes ?? []) {
+    details.push(note);
+  }
+  const checkedAt = new Date(snapshot.checked_at);
+  if (Number.isFinite(checkedAt.getTime())) {
+    details.push(`更新于 ${checkedAt.toLocaleString()}`);
+  }
+
+  if (snapshot.unlimited) {
+    return {
+      amount: "不限",
+      label: "余额 不限",
+      toneClass: "bg-teal-50 text-teal-800",
+      title: details.join("\n"),
+    };
+  }
+  if (typeof snapshot.remaining !== "number") {
+    return {
+      amount: "未知",
+      label: `${prefix} 未知`,
+      toneClass: "bg-stone-100 text-stone-600",
+      title: details.join("\n"),
+    };
+  }
+  return {
+    amount: formatRelayBalanceAmount(snapshot.remaining, unit),
+    label: `${prefix} ${formatRelayBalanceAmount(snapshot.remaining, unit)}`,
+    toneClass:
+      snapshot.remaining <= 0 ? "bg-rose-50 text-rose-700" : "bg-teal-50 text-teal-800",
+    title: details.join("\n"),
+  };
+}
+
+function apiConfigJsonWithFields(
+  configJson: string,
+  baseUrl: string,
+  interfaceFormat: InterfaceFormat,
+  mappings: ModelMapping[],
+  apiKeyField: AnthropicApiKeyField,
+  responsesCustomToolCompat = false,
+  userAgent = "",
+  inlineRemoteImages = false,
+  turnReminder = false,
+  turnReminderText = "",
+) {
+  const config = parseJsonObject(configJson);
+  config.base_url = baseUrl.trim();
+  config.interface_format = interfaceFormat;
+  config.model_mappings = mappings;
+  config.responses_custom_tool_compat = responsesCustomToolCompat;
+  config.inline_remote_images = inlineRemoteImages;
+  // Omitted rather than written as `false`/`""`, so an account that never opts in
+  // carries no trace of the feature in its config.
+  if (turnReminder) {
+    config.turn_reminder = true;
+    const text = turnReminderText.trim();
+    if (text) {
+      config.turn_reminder_text = text;
+    } else {
+      delete config.turn_reminder_text;
+    }
+  } else {
+    delete config.turn_reminder;
+    delete config.turn_reminder_text;
+  }
+  if (isAnthropicInterfaceFormat(interfaceFormat)) {
+    config.api_key_field = apiKeyField;
+  } else {
+    delete config.api_key_field;
+  }
+  return JSON.stringify(writeUserAgentToConfig(config, userAgent), null, 2);
+}
+
+function credentialRetryLabel(credential: RouteCredential): string | null {
+  const raw = credential.cooldown_until || credential.next_retry_at;
+  if (!raw) {
+    return null;
+  }
+  const date = new Date(raw);
+  if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) {
+    return null;
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// Keeps a hand-typed or stepped cooldown inside the range the backend accepts,
+// so the dialog never submits a value it already knows will be rejected.
+function clampCooldownSeconds(seconds: number): number {
+  if (!Number.isFinite(seconds)) {
+    return 1;
+  }
+  return Math.min(MAX_ROUTE_CREDENTIAL_COOLDOWN_SECONDS, Math.max(1, Math.round(seconds)));
+}
+
+function formatCooldownRemaining(milliseconds: number): string {
+  const totalSeconds = Math.ceil(milliseconds / 1000);
+  if (totalSeconds < 60) {
+    return `${totalSeconds} 秒`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) {
+    return seconds > 0 ? `${minutes} 分 ${seconds} 秒` : `${minutes} 分`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours} 小时 ${remainingMinutes} 分` : `${hours} 小时`;
+}
+
+// Ticks every second while an account is cooling down, so the countdown stays
+// live between query refetches instead of freezing at the last fetched value.
+function useCooldownCountdown(credentials: RouteCredential[]) {
+  const nextDeadline = useMemo(() => {
+    const deadlines = credentials
+      .flatMap((credential) => [
+        credential.cooldown_until || credential.next_retry_at,
+        // Model-level cooldowns tick on the same timer: one interval covers both.
+        ...(credential.model_states ?? []).map((state) => state.cooldown_until),
+      ])
+      .filter((raw): raw is string => Boolean(raw))
+      .map((raw) => new Date(raw).getTime())
+      .filter((time) => Number.isFinite(time));
+    return deadlines.length > 0 ? Math.max(...deadlines) : null;
+  }, [credentials]);
+
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (nextDeadline === null || nextDeadline <= Date.now()) {
+      return;
+    }
+    setNow(Date.now());
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [nextDeadline]);
+
+  return now;
+}
+
+function credentialCooldownState(credential: RouteCredential, now: number) {
+  const raw = credential.cooldown_until || credential.next_retry_at;
+  if (!raw) {
+    return null;
+  }
+  const deadline = new Date(raw).getTime();
+  if (!Number.isFinite(deadline)) {
+    return null;
+  }
+  const remaining = deadline - now;
+  if (remaining <= 0) {
+    return { active: false as const, deadline };
+  }
+  return { active: true as const, deadline, remaining };
+}
+
+function credentialRequestStats(credential: RouteCredential) {
+  const requestCount = credential.request_count ?? 0;
+  if (requestCount <= 0) {
+    return {
+      requestCount: 0,
+      successCount: 0,
+      failureCount: 0,
+      rateLabel: "-",
+    };
+  }
+  const successCount = credential.success_count ?? 0;
+  const failureCount = credential.failure_count ?? Math.max(0, requestCount - successCount);
+  const successRate = credential.success_rate ?? (successCount / requestCount) * 100;
+  const rateLabel = Number.isFinite(successRate) ? `${successRate.toFixed(1).replace(/\.0$/, "")}%` : "-";
+  return { requestCount, successCount, failureCount, rateLabel };
+}
+
+function apiPreviewJsonFromPayloads(platform: PlatformKey, secretJson: string, configJson: string) {
+  const secret = parseJsonObject(secretJson);
+  const config = parseJsonObject(configJson);
+  const baseUrl = stringFromRecord(config, "base_url") || null;
+  const interfaceFormat = stringFromRecord(config, "interface_format") || null;
+
+  if (platform === "codex") {
+    const configToml = `model_provider = "ai-switch"\n\n[model_providers.ai-switch]\nbase_url = "${baseUrl ?? "http://127.0.0.1:43111/v1"}"\n`;
+    return JSON.stringify(
+      {
+        auth_json: {
+          api_key: stringFromRecord(secret, "api_key") || "<api-key>",
+        },
+        config_toml: configToml,
+      },
+      null,
+      2,
+    );
+  }
+
+  // Every other platform is described by the same generic API fields. Mirrors
+  // `route_preview_service.rs`'s catch-all arm, so a preview never comes back
+  // empty just because the platform is not one of the four named CLIs.
+  const apiKeyField = stringFromRecord(config, "api_key_field") || null;
+  return JSON.stringify(
+    {
+      settings_json: JSON.stringify({
+        aiSwitch: {
+          kind: "api",
+          baseUrl,
+          interfaceFormat,
+          apiKeyField,
+        },
+      }),
+    },
+    null,
+    2,
+  );
+}
+
+function apiPreviewJsonWithFields(
+  platform: PlatformKey,
+  secretJson: string,
+  apiKey: string,
+  configJson: string,
+  baseUrl: string,
+  interfaceFormat: InterfaceFormat,
+  mappings: ModelMapping[],
+  apiKeyField: AnthropicApiKeyField,
+  responsesCustomToolCompat = false,
+  userAgent = "",
+) {
+  return apiPreviewJsonFromPayloads(
+    platform,
+    apiSecretJsonWithKey(secretJson, apiKey),
+    apiConfigJsonWithFields(
+      configJson,
+      baseUrl,
+      interfaceFormat,
+      mappings,
+      apiKeyField,
+      responsesCustomToolCompat,
+      userAgent,
+    ),
+  );
+}
+
+type ModelMappingsEditorProps = {
+  error?: string | null;
+  fetchError?: string | null;
+  fetchedModels?: FetchedRouteModel[];
+  interfaceFormat?: InterfaceFormat | string;
+  isFetchingModels?: boolean;
+  label: string;
+  onChange: (mappings: ModelMapping[]) => void;
+  onFetchModels?: () => void;
+  platform: PlatformKey;
+  value: ModelMapping[];
+};
+
+/**
+ * Codex-only extras for one mapping row: the context window the catalog will
+ * advertise, and which reasoning efforts the client may pick.
+ *
+ * Both are stored as "absent means baseline" so an untouched row keeps behaving
+ * exactly as it did before these fields existed — and so a row whose selection
+ * happens to match its model's baseline keeps tracking that baseline instead of
+ * freezing today's list into the config.
+ */
+function CodexMappingCapabilityFields({
+  index,
+  mapping,
+  onPatch,
+}: {
+  index: number;
+  mapping: ModelMapping;
+  onPatch: (patch: Partial<ModelMapping>) => void;
+}) {
+  const contextWindow = normalizeCodexContextWindow(mapping.context_window);
+  const declaredLevels = normalizeCodexReasoningLevels(mapping.reasoning_levels);
+  const effectiveLevels = codexEffectiveReasoningLevels(mapping.from, declaredLevels);
+  const followsBaseline = usesCodexBaselineReasoning(declaredLevels);
+  // Efforts the bridges cannot express are dropped during normalization, so the
+  // choice list is exactly what this build can advertise.
+  const levelChoices = CODEX_REASONING_LEVEL_OPTIONS;
+  // Same story for the window: an imported size gets its own option so the
+  // select can show what the row really declares instead of reading "default".
+  const unlistedContextWindow =
+    contextWindow !== null &&
+    !CODEX_CONTEXT_WINDOW_OPTIONS.some((option) => option.value === contextWindow)
+      ? contextWindow
+      : null;
+
+  const toggleLevel = (level: string, checked: boolean) => {
+    const next = levelChoices.filter((choice) =>
+      choice === level ? checked : effectiveLevels.includes(choice),
+    );
+    // Matching the baseline is stored as "no list" so the row keeps following it.
+    const baseline = codexEffectiveReasoningLevels(mapping.from, null);
+    const matchesBaseline =
+      next.length === baseline.length && next.every((choice, at) => choice === baseline[at]);
+    onPatch({ reasoning_levels: next.length === 0 || matchesBaseline ? null : next });
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-stone-100 pt-2">
+      <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-stone-500">
+        上下文
+        <select
+          aria-label={`上下文长度 ${index + 1}`}
+          className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[12px] font-medium text-stone-800 outline-none motion-control focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+          onChange={(event) =>
+            onPatch({
+              context_window: event.target.value ? Number(event.target.value) : null,
+            })
+          }
+          value={contextWindow === null ? "" : String(contextWindow)}
+        >
+          <option value="">
+            默认 {codexContextWindowLabel(codexDefaultContextWindow(mapping.to))}
+          </option>
+          {CODEX_CONTEXT_WINDOW_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+          {unlistedContextWindow !== null ? (
+            <option value={unlistedContextWindow}>
+              {codexContextWindowLabel(unlistedContextWindow)}
+            </option>
+          ) : null}
+        </select>
+      </label>
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <span className="text-[11px] font-semibold text-stone-500">推理程度</span>
+        {levelChoices.map((level) => {
+          const checked = effectiveLevels.includes(level);
+          return (
+            <label
+              className={`inline-flex cursor-pointer items-center rounded-lg border px-2 py-1 text-[11px] font-semibold motion-control ${
+                checked
+                  ? "border-violet-300 bg-violet-100 text-violet-900"
+                  : "border-stone-200 bg-white text-stone-500 hover:bg-stone-50"
+              } ${checked && effectiveLevels.length === 1 ? "cursor-not-allowed opacity-70" : ""}`}
+              key={level}
+            >
+              <input
+                aria-label={`推理程度 ${level} ${index + 1}`}
+                checked={checked}
+                className="sr-only"
+                // The catalog needs at least one effort, so the last one standing
+                // cannot be cleared — unticking it would advertise an empty menu.
+                disabled={checked && effectiveLevels.length === 1}
+                onChange={(event) => toggleLevel(level, event.target.checked)}
+                type="checkbox"
+              />
+              {level}
+            </label>
+          );
+        })}
+        <span className="text-[11px] font-medium text-stone-400">
+          {followsBaseline ? "跟随基准模型" : "自定义"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ModelMappingsEditor({
+  error,
+  fetchError,
+  fetchedModels = [],
+  interfaceFormat,
+  isFetchingModels = false,
+  label,
+  onChange,
+  onFetchModels,
+  platform,
+  value,
+}: ModelMappingsEditorProps) {
+  const isClaude = platform === "claude";
+  // Codex is the only client that reads a per-model context window and effort
+  // ladder out of the catalog we write, so it is the only editor that offers
+  // them. Claude keeps its single 1M checkbox.
+  const isCodex = platform === "codex";
+  const templateValues = new Set<string>(claudeRoleTemplates.map((template) => template.value));
+  const rows = isClaude
+    ? [
+        ...claudeRoleTemplates.map((template) => {
+          const existing = value.find((mapping) => mapping.from.trim() === template.value);
+          return {
+            from: template.value,
+            to: existing?.to ?? "",
+            label: template.editableLabel ? existing?.label ?? template.label : null,
+            supports_1m: existing?.supports_1m ?? false,
+          };
+        }),
+        ...value.filter((mapping) => !templateValues.has(mapping.from.trim())),
+      ]
+    : value;
+  // `value` holds every synthesized row once any of them is touched, so counting
+  // it would claim "共 6 条" for a single configured role.
+  const configuredCount = rows.filter(
+    (mapping) => mapping.from.trim() && mapping.to.trim(),
+  ).length;
+  const modelListId = `${platform}-${label}-fetched-models`.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const sourceOptions =
+    isClaude
+      ? [
+          ...claudeModelSources,
+          ...value
+            .filter(
+              (mapping) =>
+                mapping.from.trim() &&
+                !claudeModelSources.some((option) => option.value === mapping.from.trim()),
+            )
+            .map((mapping) => ({
+              value: mapping.from.trim(),
+              label: `${mapping.from.trim()}（已有）`,
+            })),
+        ]
+      : [];
+
+  const updateRow = (index: number, patch: Partial<ModelMapping>) => {
+    const next = rows.map((mapping, rowIndex) =>
+      rowIndex === index ? { ...mapping, ...patch } : mapping,
+    );
+    onChange(next);
+  };
+
+  const removeRow = (index: number) => {
+    const next = rows.filter((_, rowIndex) => rowIndex !== index);
+    onChange(next);
+  };
+
+  const addRow = () => {
+    onChange([...rows, { from: "", to: "", label: null }]);
+  };
+
+  const oneClickSetup = () => {
+    onChange(buildOneClickMappings(platform, fetchedModels, interfaceFormat));
+  };
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-[12px] font-semibold text-stone-600">{label}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          {onFetchModels ? (
+            <button
+              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[12px] font-semibold text-blue-900 motion-control hover:bg-blue-100 disabled:opacity-50"
+              disabled={isFetchingModels}
+              onClick={onFetchModels}
+              type="button"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetchingModels ? "animate-spin" : ""}`} />
+              {isFetchingModels ? "获取中..." : "获取模型列表"}
+            </button>
+          ) : null}
+          <button
+            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[12px] font-semibold text-emerald-900 motion-control hover:bg-emerald-100 disabled:opacity-50"
+            disabled={fetchedModels.length === 0}
+            onClick={oneClickSetup}
+            type="button"
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            一键设置
+          </button>
+          <button
+            className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-stone-700 motion-control hover:bg-stone-50"
+            onClick={addRow}
+            type="button"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            新增映射
+          </button>
+        </div>
+      </div>
+      <p className="text-[11px] font-medium leading-5 text-stone-500">
+        留空表示不改写模型；获取列表只用于辅助选择，只有保存账号时才写入映射。
+        {isClaude ? " 勾选 1M 会声明该 Claude 角色支持 1M 上下文。" : ""}
+        {isClaude
+          ? " 配置 Subagent 后需要重新写入客户端配置才会生效；默认兜底模型让未匹配的请求也能落到该账号。"
+          : ""}
+        {isCodex
+          ? " 上下文与推理程度会写进 Codex 模型清单：不选就跟随基准（上下文按上游模型判断，deepseek-v4 / glm-5.2 / glm-5.3 / qwen-3.8 / kimi-k3 开头的自动 1M，其余 256K；推理程度 GPT 基准模型用各自的档位，其他模型用 low/medium/high）。"
+          : ""}
+        {fetchedModels.length > 0 ? ` 已获取 ${fetchedModels.length} 个模型。` : ""}
+      </p>
+      {configuredCount === 0 ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-5 text-amber-900">
+          如果上游只支持有限模型，建议先获取模型列表并配置模型映射；配置后算力池只会把该账号匹配到映射别名。
+        </p>
+      ) : (
+        <p className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[11px] font-medium leading-5 text-blue-900">
+          当前账号仅按已配置的本地模型别名参与匹配，共 {configuredCount} 条。
+        </p>
+      )}
+      {fetchError ? <p className="text-[12px] font-semibold text-red-700">{fetchError}</p> : null}
+      {fetchedModels.length > 0 ? (
+        <datalist id={modelListId}>
+          {fetchedModels.map((model) => (
+            <option key={model.id} value={model.id}>
+              {model.owned_by ?? model.id}
+            </option>
+          ))}
+        </datalist>
+      ) : null}
+
+      <div className="space-y-2 rounded-xl border border-stone-200 bg-stone-50/70 p-2">
+        {rows.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-stone-200 bg-white px-3 py-3 text-[12px] font-medium text-stone-500">
+            暂无模型映射。需要改写上游模型时或者该上游模型有限时再新增。
+          </div>
+        ) : (
+          rows.map((mapping, index) => {
+            const isTemplateRow = isClaude && isClaudeTemplateSource(mapping.from);
+            const roleTemplate = isClaude
+              ? claudeRoleTemplates.find((template) => template.value === mapping.from.trim())
+              : undefined;
+            // Only the /model-menu roles get a display name and a 1M flag; the
+            // Subagent and fallback rows get neither.
+            const editableLabel = !isTemplateRow || roleTemplate?.editableLabel !== false;
+            const supportsOneM = !isTemplateRow || roleTemplate?.supportsOneM !== false;
+            const rowKey = isTemplateRow
+              ? `claude-template-${mapping.from}`
+              : `model-mapping-${index}`;
+            const rowControls = (
+              <div
+                className={`grid gap-2 sm:items-center ${
+                  isClaude
+                    ? "sm:grid-cols-[0.7fr_minmax(0,1fr)_auto_minmax(0,1fr)_auto_auto]"
+                    : "sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto]"
+                }`}
+              >
+                {isClaude ? (
+                  <>
+                    <input
+                      aria-label={`显示名称 ${index + 1}`}
+                      className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-[13px] text-stone-900 outline-none motion-control focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-stone-100 disabled:text-stone-500"
+                      disabled={!editableLabel}
+                      onChange={(event) => updateRow(index, { label: event.target.value })}
+                      placeholder={editableLabel ? "Sonnet" : roleTemplate?.hint ?? ""}
+                      value={editableLabel ? mapping.label ?? "" : ""}
+                    />
+                    <select
+                      aria-label={`请求模型 ${index + 1}`}
+                      className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-[13px] text-stone-900 outline-none motion-control focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      disabled={isTemplateRow}
+                      onChange={(event) => updateRow(index, { from: event.target.value })}
+                      value={mapping.from}
+                    >
+                      <option value="">选择请求模型</option>
+                      {sourceOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                ) : (
+                  <input
+                    aria-label={`请求模型 ${index + 1}`}
+                    className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-[13px] text-stone-900 outline-none motion-control focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    list={modelListId}
+                    onChange={(event) => updateRow(index, { from: event.target.value })}
+                    placeholder="gpt-5.5"
+                    value={mapping.from}
+                  />
+                )}
+                <ArrowRight className="hidden h-4 w-4 text-stone-400 sm:block" />
+                <input
+                  aria-label={`上游模型 ${index + 1}`}
+                  className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-[13px] text-stone-900 outline-none motion-control focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  list={modelListId}
+                  onChange={(event) => updateRow(index, { to: event.target.value })}
+                  placeholder="例如：gpt-4o"
+                  value={mapping.to}
+                />
+                {isClaude ? (
+                  supportsOneM ? (
+                    <label className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white px-2.5 text-[12px] font-semibold text-stone-600">
+                      <input
+                        aria-label={`声明支持 1M ${index + 1}`}
+                        checked={mapping.supports_1m === true}
+                        className="h-3.5 w-3.5 accent-blue-600"
+                        onChange={(event) =>
+                          updateRow(index, { supports_1m: event.target.checked })
+                        }
+                        type="checkbox"
+                      />
+                      1M
+                    </label>
+                  ) : (
+                    // Unlabelled spacer: an aria-labelled checkbox here would
+                    // imply these roles can declare 1M support.
+                    <span className="hidden h-9 sm:block" />
+                  )
+                ) : null}
+                <button
+                  aria-label={`删除模型映射 ${index + 1}`}
+                  className="grid h-9 w-9 place-items-center rounded-xl border border-stone-200 bg-white text-stone-500 motion-control hover:bg-red-50 hover:text-red-700"
+                  onClick={() => removeRow(index)}
+                  type="button"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+            if (!isCodex) {
+              return <Fragment key={rowKey}>{rowControls}</Fragment>;
+            }
+            return (
+              <div
+                className="grid gap-2 rounded-lg border border-stone-200 bg-white p-2"
+                key={rowKey}
+              >
+                {rowControls}
+                <CodexMappingCapabilityFields
+                  index={index}
+                  mapping={mapping}
+                  onPatch={(patch) => updateRow(index, patch)}
+                />
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {error && <p className="text-[12px] font-semibold text-red-700">{error}</p>}
+    </div>
+  );
+}
+
+function modelTestStatusLine(outcome: RoutePoolModelTestOutcome) {
+  const status = outcome.response_status ? `HTTP ${outcome.response_status}` : "无 HTTP 状态";
+  return `${status} · ${outcome.duration_ms} ms`;
+}
+
+function modelTestTargetText(outcome: RoutePoolModelTestOutcome) {
+  if (outcome.target_url) {
+    return outcome.target_url;
+  }
+  if (outcome.base_url) {
+    return `${outcome.base_url.replace(/\/$/, "")}${outcome.request_path}`;
+  }
+  return outcome.request_path;
+}
+
+/// Mirrors `turn_reminder::DEFAULT_TURN_REMINDER` on the Rust side. Shown as the
+/// placeholder so an empty field reads as "this is what you'll get" rather than
+/// "nothing will be sent".
+const DEFAULT_TURN_REMINDER_PLACEHOLDER = "请用简体中文回复。";
+
+const modelTestPrompt = "Reply with exactly: ai-switch-ok";
+
+function modelTestProxyPath(platform: PlatformKey, interfaceFormat: string, model: string) {
+  if (interfaceFormat === "openai-responses") {
+    return "/responses";
+  }
+  if (interfaceFormat === "openai") {
+    return "/chat/completions";
+  }
+  if (interfaceFormat === "anthropic") {
+    return "/v1/messages";
+  }
+  if (interfaceFormat === "gemini") {
+    return "/v1beta/models/" + encodeURIComponent(model) + ":generateContent";
+  }
+  return platform === "gemini" ? "/v1beta/models/" + encodeURIComponent(model) + ":generateContent" : "/chat/completions";
+}
+
+function modelTestRequestBody(interfaceFormat: string, model: string) {
+  if (interfaceFormat === "openai-responses") {
+    return {
+      model,
+      input: modelTestPrompt,
+      temperature: 0,
+      max_output_tokens: 16,
+    };
+  }
+  if (interfaceFormat === "anthropic") {
+    return {
+      model,
+      messages: [{ role: "user", content: modelTestPrompt }],
+      max_tokens: 16,
+    };
+  }
+  if (interfaceFormat === "gemini") {
+    return {
+      contents: [{ role: "user", parts: [{ text: modelTestPrompt }] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 16 },
+    };
+  }
+  return {
+    model,
+    messages: [{ role: "user", content: modelTestPrompt }],
+    temperature: 0,
+    max_tokens: 16,
+  };
+}
+
+function windowsDoubleQuote(value: string) {
+  return '"' + value.replace(/"/g, '""') + '"';
+}
+
+function shellSingleQuote(value: string) {
+  return "'" + value.replace(/'/g, "'\"'\"'") + "'";
+}
+
+/// PowerShell's own single-quoted string: `''` is the literal escape, and the
+/// content is never subject to the native-argument mangling below.
+function powerShellSingleQuote(value: string) {
+  return "'" + value.replace(/'/g, "''") + "'";
+}
+
+function compactJsonForCurl(value: string) {
+  try {
+    const compact = JSON.stringify(JSON.parse(value));
+    return typeof compact === "string" ? compact : value;
+  } catch {
+    return value.replace(/\r?\n/g, " ").trim();
+  }
+}
+
+function joinUrl(baseUrl: string, path: string) {
+  return baseUrl.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
+}
+
+type ModelTestCurlShell = "posix" | "powershell" | "cmd";
+
+/// Builds the copy-paste connectivity probe for one shell.
+///
+/// The three forms are genuinely different, not cosmetic variants. Windows
+/// PowerShell 5.1 — still what Win+X and the Start menu open on Windows 11 —
+/// strips quotes out of arguments it hands to a native `.exe`, so BOTH the POSIX
+/// form (`'{"a":1}'`) and the CMD form (`"{""a"":1}"`) arrive as `{a:1}` and the
+/// gateway answers `invalid character 'a' looking for beginning of object key
+/// string`. `--%` and backslash-escaping each fix 5.1 while breaking 7, so
+/// neither is usable. Assigning the body to a PowerShell single-quoted variable
+/// and piping it to `--data-binary '@-'` is the one shape verified to work on
+/// both 5.1 and 7: stdin never passes through argument parsing at all.
+function modelTestCurlCommand({
+  activePlatform,
+  codexEndpoint,
+  outcome,
+  proxyKey,
+  proxyBaseUrl,
+  requestedModel,
+  shell = "posix",
+}: {
+  activePlatform: PlatformKey;
+  codexEndpoint: CodexModelTestEndpoint;
+  outcome: RoutePoolModelTestOutcome | null;
+  proxyBaseUrl: string;
+  proxyKey: string;
+  requestedModel: string;
+  shell?: ModelTestCurlShell;
+}) {
+  const interfaceFormat =
+    outcome?.interface_format ||
+    (activePlatform === "codex" ? codexModelTestInterfaceFormat(codexEndpoint) : defaultInterfaceFormat(activePlatform));
+  const model = requestedModel.trim() || defaultRequestedModel(activePlatform, interfaceFormat);
+  const requestPath =
+    outcome?.route_proxy_entry_path || modelTestProxyPath(activePlatform, interfaceFormat, model);
+  const requestBody =
+    outcome?.request_body_json?.trim() || JSON.stringify(modelTestRequestBody(interfaceFormat, model), null, 2);
+  const url = joinUrl(proxyBaseUrl.trim(), requestPath);
+  const tlsOptions = url.toLowerCase().startsWith("https://") ? ["--ssl-no-revoke"] : [];
+  const body = compactJsonForCurl(requestBody);
+  const quote =
+    shell === "cmd"
+      ? windowsDoubleQuote
+      : shell === "powershell"
+        ? powerShellSingleQuote
+        : shellSingleQuote;
+  // Git Bash resolves plain `curl`; on Windows shells `curl` is a PowerShell
+  // alias for Invoke-WebRequest, so the `.exe` suffix is required there.
+  const program = shell === "posix" ? "curl" : "curl.exe";
+
+  const request = [
+    program + " " + quote(url),
+    ...tlsOptions,
+    "-X POST",
+    "-H " + quote("Content-Type: application/json"),
+    "-H " + quote("Authorization: Bearer " + proxyKey),
+    "-H " + quote("x-ai-switch-platform: " + activePlatform),
+  ];
+
+  if (shell === "powershell") {
+    // $OutputEncoding governs how the pipe encodes text for the native command;
+    // its default in 5.1 mangles non-ASCII bodies into `?`.
+    return [
+      "$OutputEncoding = [System.Text.UTF8Encoding]::new($false);",
+      "$body = " + quote(body) + ";",
+      "$body |",
+      ...request,
+      "--data-binary " + quote("@-"),
+    ].join(" ");
+  }
+
+  return [...request, "--data-raw " + quote(body)].join(" ");
+}
+
+function modelTestRouteChainItems(outcome: RoutePoolModelTestOutcome) {
+  const entry =
+    outcome.route_proxy_entry_url ?? outcome.route_proxy_entry_path ?? outcome.request_path;
+  return [
+    {
+      label: "算力池入口",
+      value: entry,
+    },
+    {
+      label: "命中账号",
+      value: `${outcome.selected_account_name} · ${outcome.selected_account_id}`,
+    },
+    {
+      label: "上游接口",
+      value: modelTestTargetText(outcome),
+    },
+  ].filter((item) => item.value.trim().length > 0);
+}
+
+function prettyJsonOrText(value: string) {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
+const SENSITIVE_WORDS_ERROR_CODE = "sensitive_words_detected";
+/**
+ * How a relay opens `error.message` once the **shared** budget pool behind the
+ * account runs dry. Worth calling out because the wording reads like a personal
+ * quota problem, so users go looking for a top-up that would not help.
+ *
+ * Lowercase because it is compared case-insensitively, the way the backend's own
+ * `quota has been exhausted` rule treats this string family. Matched anywhere in
+ * the stored failure rather than as a prefix: the phrase reaches this row both
+ * verbatim in `last_failure_message` and nested inside the raw body, whose shape
+ * varies (plain JSON, an SSE frame, truncated at 8 KiB) too much to re-parse.
+ */
+const BUDGET_POOL_EXHAUSTED_MESSAGE = "budget pool quota has been exhausted";
+
+function CredentialFailureTooltip({
+  credential,
+  children,
+}: {
+  credential: RouteCredential;
+  children: ReactNode;
+}) {
+  const tooltipId = useId();
+  const response = credential.last_failure_response_json?.trim();
+  if (!response) {
+    return <>{children}</>;
+  }
+  const sensitiveWords = [response, credential.last_failure_message].some((value) =>
+    value?.includes(SENSITIVE_WORDS_ERROR_CODE),
+  );
+  const budgetPoolExhausted = [response, credential.last_failure_message].some((value) =>
+    value?.toLowerCase().includes(BUDGET_POOL_EXHAUSTED_MESSAGE),
+  );
+
+  return (
+    <span
+      aria-describedby={tooltipId}
+      className="group relative inline-flex max-w-full outline-none focus:ring-2 focus:ring-red-300"
+      tabIndex={0}
+    >
+      {children}
+      {/* pt-1 instead of mt-1: a margin gap would drop :hover mid-travel and
+          close the panel before the pointer could reach it to select text. */}
+      <span
+        className="absolute left-0 top-full z-50 hidden pt-1 group-hover:block group-focus-within:block"
+        id={tooltipId}
+        role="tooltip"
+      >
+        <span className="block max-h-80 w-[min(36rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] select-text overflow-auto whitespace-normal break-words rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-left text-[11px] font-medium leading-5 text-white shadow-xl">
+          <span className="block text-stone-300">
+            失败类型：{credential.last_failure_kind?.trim() || "未知"}
+          </span>
+          {credential.last_failure_message?.trim() ? (
+            <span className="mt-1 block break-words">
+              失败消息：{credential.last_failure_message.trim()}
+            </span>
+          ) : null}
+          {sensitiveWords ? (
+            <span
+              className="mt-2 block rounded-md border border-amber-400/60 bg-amber-500/15 px-2 py-1.5 text-amber-100"
+              data-testid={`credential-sensitive-words-hint-${credential.id}`}
+            >
+              友情提醒：当前中转站似乎对项目存在关键词检测，您的项目可能存在敏感词，也不排除是中转站误判。
+            </span>
+          ) : null}
+          {budgetPoolExhausted ? (
+            <span
+              className="mt-2 block rounded-md border border-sky-400/60 bg-sky-500/15 px-2 py-1.5 text-sky-100"
+              data-testid={`credential-budget-pool-hint-${credential.id}`}
+            >
+              友情提醒：当前中转站公共池额度耗尽，并非你个人额度耗尽，请等待下一次公共池补充额度。
+            </span>
+          ) : null}
+          <pre className="mt-2 select-text whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-stone-100">
+            {prettyJsonOrText(response)}
+          </pre>
+        </span>
+      </span>
+    </span>
+  );
+}
+
+function PresetFields({
+  baseUrl,
+  fieldClass,
+  idPrefix,
+  labelClass,
+  onApply,
+  platform,
+}: {
+  baseUrl: string;
+  fieldClass: string;
+  idPrefix: string;
+  labelClass: string;
+  onApply: (preset: AccountPreset) => void;
+  platform: PlatformKey;
+}) {
+  const presets = presetsForPlatform(platform);
+  if (presets.length === 0) {
+    return null;
+  }
+  const matched = matchPresetByBaseUrl(platform, baseUrl);
+  return (
+    <label className={labelClass}>
+      账号预设
+      <select
+        aria-label={`${idPrefix} 账号预设`}
+        className={fieldClass}
+        onChange={(event) => {
+          const selected = presets.find((preset) => preset.id === event.target.value);
+          if (!selected) {
+            return;
+          }
+          onApply(selected);
+        }}
+        value={matched?.id ?? ""}
+      >
+        <option value="">自定义</option>
+        {presets.map((preset) => (
+          <option key={preset.id} value={preset.id}>
+            {preset.label}
+          </option>
+        ))}
+      </select>
+      {matched ? (
+        <span className="text-[11px] font-medium text-stone-500">
+          已套用 {matched.provider} 预设，通常只需填写 API Key。
+        </span>
+      ) : null}
+    </label>
+  );
+}
+
+function UserAgentFields({
+  fieldClass,
+  idPrefix,
+  labelClass,
+  onChange,
+  value,
+}: {
+  fieldClass: string;
+  idPrefix: string;
+  labelClass: string;
+  onChange: (next: string) => void;
+  value: string;
+}) {
+  const preset = matchUserAgentPreset(value);
+  return (
+    <div className="grid gap-2">
+      <label className={labelClass}>
+        User-Agent 预设
+        <select
+          aria-label={`${idPrefix} User-Agent 预设`}
+          className={fieldClass}
+          onChange={(event) => {
+            const selected = USER_AGENT_PRESETS.find((item) => item.id === event.target.value);
+            if (!selected) {
+              return;
+            }
+            if (selected.id === "custom") {
+              onChange(value);
+              return;
+            }
+            onChange(selected.value);
+          }}
+          value={preset}
+        >
+          {USER_AGENT_PRESETS.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={labelClass}>
+        User-Agent
+        <input
+          aria-label={`${idPrefix} User-Agent`}
+          className={fieldClass}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="留空则使用默认/内置 UA"
+          value={value}
+        />
+      </label>
+    </div>
+  );
+}
+
+function RelayBalanceFields({
+  allowCustom = true,
+  fieldClass,
+  idPrefix,
+  labelClass,
+  onChange,
+  onPanelAccountChange,
+  panelAccount,
+  value,
+}: {
+  allowCustom?: boolean;
+  fieldClass: string;
+  idPrefix: string;
+  labelClass: string;
+  onChange: (next: RelayBalanceFormState) => void;
+  onPanelAccountChange: (next: RelayBalancePanelAccount) => void;
+  panelAccount: RelayBalancePanelAccount;
+  value: RelayBalanceFormState;
+}) {
+  const options = allowCustom
+    ? relayBalanceProviderOptions
+    : relayBalanceProviderOptions.filter((option) => option.value !== "custom");
+  const active =
+    relayBalanceProviderOptions.find((option) => option.value === value.provider) ?? options[0];
+  return (
+    <fieldset className="grid gap-1.5">
+      <legend className="text-[12px] font-semibold text-stone-600">中转站余额查询</legend>
+      <div
+        className={`mt-1.5 grid gap-1 rounded-lg bg-stone-100 p-1 ${
+          options.length === 4 ? "grid-cols-4" : "grid-cols-3"
+        }`}
+      >
+        {options.map((option) => {
+          const selected = value.provider === option.value;
+          return (
+            <button
+              aria-label={`${idPrefix} 余额查询 ${option.label}`}
+              aria-pressed={selected}
+              className={`h-8 min-w-0 cursor-pointer whitespace-nowrap rounded-md px-1 text-[12px] font-semibold motion-control focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
+                selected ? "bg-white text-stone-950 shadow-sm" : "text-stone-600 hover:text-stone-900"
+              }`}
+              key={option.value}
+              onClick={() => onChange({ ...value, provider: option.value })}
+              title={option.hint}
+              type="button"
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[11px] text-stone-500">{active.hint}</p>
+      {value.provider === "new_api" ? (
+        <div className="grid gap-2">
+          <label className={labelClass}>
+            面板访问令牌
+            <input
+              aria-label={`${idPrefix} 余额查询面板访问令牌`}
+              autoComplete="off"
+              className={fieldClass}
+              onChange={(event) =>
+                onPanelAccountChange({ ...panelAccount, accessToken: event.target.value })
+              }
+              placeholder="可选，面板 个人设置 → 安全设置 → 系统访问令牌"
+              value={panelAccount.accessToken}
+            />
+            <span className="text-[11px] font-medium text-stone-500">
+              new-api
+              面板常把令牌设成「无限额度」，令牌级接口就只有已用、没有剩余，徽标只能显示「不限」。填上面板账户的访问令牌后改查账户剩余额度——那才是真正会用完的钱。同一面板下的多个账号会显示同一个数。
+            </span>
+          </label>
+          <label className={labelClass}>
+            面板用户 ID
+            <input
+              aria-label={`${idPrefix} 余额查询面板用户 ID`}
+              autoComplete="off"
+              className={fieldClass}
+              inputMode="numeric"
+              // The panel parses it with strconv.Atoi, so anything but digits is a
+              // 401 waiting to happen.
+              onChange={(event) =>
+                onPanelAccountChange({
+                  ...panelAccount,
+                  userId: event.target.value.replace(/\D/g, ""),
+                })
+              }
+              placeholder="例如 114514"
+              value={panelAccount.userId}
+            />
+            <span className="text-[11px] font-medium text-stone-500">
+              现有稳定版 new-api 都要求随访问令牌一起发送这个 ID，和令牌在同一个页面能看到；只有很新的版本可以不填。
+            </span>
+          </label>
+        </div>
+      ) : null}
+      {value.provider === "custom" && allowCustom ? (
+        <div className="grid gap-2">
+          <label className={labelClass}>
+            请求 URL
+            <input
+              aria-label={`${idPrefix} 余额查询请求 URL`}
+              className={fieldClass}
+              onChange={(event) => onChange({ ...value, endpoint: event.target.value })}
+              placeholder="https://panel.example.com/api/billing"
+              value={value.endpoint}
+            />
+          </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className={labelClass}>
+              剩余额度路径
+              <input
+                aria-label={`${idPrefix} 余额查询剩余额度路径`}
+                className={fieldClass}
+                onChange={(event) => onChange({ ...value, remainingPath: event.target.value })}
+                placeholder="data.total_available"
+                value={value.remainingPath}
+              />
+            </label>
+            <label className={labelClass}>
+              已用额度路径
+              <input
+                aria-label={`${idPrefix} 余额查询已用额度路径`}
+                className={fieldClass}
+                onChange={(event) => onChange({ ...value, usedPath: event.target.value })}
+                placeholder="可选，如 data.total_used"
+                value={value.usedPath}
+              />
+            </label>
+            <label className={labelClass}>
+              总额度路径
+              <input
+                aria-label={`${idPrefix} 余额查询总额度路径`}
+                className={fieldClass}
+                onChange={(event) => onChange({ ...value, limitPath: event.target.value })}
+                placeholder="可选，如 data.total_granted"
+                value={value.limitPath}
+              />
+            </label>
+            <label className={labelClass}>
+              套餐名路径
+              <input
+                aria-label={`${idPrefix} 余额查询套餐名路径`}
+                className={fieldClass}
+                onChange={(event) => onChange({ ...value, planPath: event.target.value })}
+                placeholder="可选，如 data.group"
+                value={value.planPath}
+              />
+            </label>
+            <label className={labelClass}>
+              单位
+              <input
+                aria-label={`${idPrefix} 余额查询单位`}
+                className={fieldClass}
+                onChange={(event) => onChange({ ...value, unit: event.target.value })}
+                placeholder="留空按 USD"
+                value={value.unit}
+              />
+            </label>
+            <label className={labelClass}>
+              换算除数
+              <input
+                aria-label={`${idPrefix} 余额查询换算除数`}
+                className={fieldClass}
+                onChange={(event) => onChange({ ...value, divisor: event.target.value })}
+                placeholder="留空按 1；new-api 类面板常见 500000"
+                value={value.divisor}
+              />
+            </label>
+          </div>
+        </div>
+      ) : null}
+    </fieldset>
+  );
+}
+
+/**
+ * Poll interval for the route proxy status query. While the proxy is stopped the
+ * interval backs off to 15s: a fixed 1s meant every open tab kept one request
+ * per second going indefinitely.
+ */
+export function routeProxyPollInterval(
+  data: { running?: boolean } | undefined,
+  pollCount: number,
+) {
+  if (data?.running) {
+    return false as const;
+  }
+  return Math.min(1000 * 2 ** Math.min(pollCount, 4), 15000);
+}
+
+export function AccountsScreen({
+  onOpenSessions,
+  platform = "codex",
+  sidebarCollapsed = false,
+  onPoolScopeFocusConsumed,
+  poolScopeFocus = null,
+}: AccountsScreenProps) {
+  const queryClient = useQueryClient();
+  const activePlatform = platform;
+  // Native file pickers come from the Tauri dialog plugin; in a browser they
+  // reject, so the entry points that use them have to be disabled rather than
+  // failing silently.
+  const desktop = isDesktop();
+  const capabilitiesQuery = usePlatformCapabilities();
+  const activeCapability = findPlatformCapability(capabilitiesQuery.data, activePlatform);
+  const capabilityReady = capabilitiesQuery.isSuccess && Boolean(activeCapability);
+  const configWriteRule = activeCapability?.operations.config_write;
+  const officialImportRule = activeCapability?.operations.official_import;
+  const officialQuotaRule = activeCapability?.operations.official_quota;
+  const modelTestRule = activeCapability?.operations.model_test;
+  const configWriteEnabled = capabilityReady && operationEnabled(configWriteRule);
+  const officialImportEnabled = capabilityReady && operationEnabled(officialImportRule);
+  const officialQuotaEnabled = capabilityReady && operationEnabled(officialQuotaRule);
+  const modelTestEnabled = capabilityReady && operationEnabled(modelTestRule);
+  const configWriteReason = capabilityReason(configWriteRule);
+  const officialImportReason = capabilityReason(officialImportRule);
+  const officialQuotaReason = capabilityReason(officialQuotaRule);
+  const modelTestReason = capabilityReason(modelTestRule);
+  const [draftPoolIds, setDraftPoolIds] = useState<Set<string>>(() => new Set());
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(() => new Set());
+  const [batchStatus, setBatchStatus] = useState<AccountStatus | "">("");
+  const [accountFilters, setAccountFilters] = useState<string[]>([]);
+  const [accountPage, setAccountPage] = useState(1);
+  const [accountPageSize, setAccountPageSize] = useState(20);
+  // Keyboard reordering keeps its own "picked up" row; the pointer drag tracks its
+  // own active row inside useDragSort.
+  const [keyboardDragId, setKeyboardDragId] = useState<string | null>(null);
+  const accountEdgeTimerRef = useRef<number | null>(null);
+  const accountScrollRef = useRef<HTMLDivElement | null>(null);
+  const [accountFilterMenuOpen, setAccountFilterMenuOpen] = useState(false);
+  const [refreshMenuOpen, setRefreshMenuOpen] = useState(false);
+  const [modelTestMenuOpen, setModelTestMenuOpen] = useState(false);
+  const [modelTestMenuCopied, setModelTestMenuCopied] = useState<
+    "curl" | "curl-powershell" | "curl-cmd" | null
+  >(null);
+  const [copiedCredentialId, setCopiedCredentialId] = useState<string | null>(null);
+  const [copyingCredential, setCopyingCredential] = useState<RouteCredential | null>(null);
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  // Whether every row's stats line is currently showing its model list instead of
+  // the request numbers. One flag for the whole list rather than a set of row ids:
+  // it is a view mode for the column, and a list where some rows show models and
+  // others show counts is not readable as either.
+  const [statsLineShowsModels, setStatsLineShowsModels] = useState(false);
+  const [compactRowActions, setCompactRowActions] = useState(false);
+  const [accountLayout, setAccountLayout] = useState<AccountListLayout>(() =>
+    loadAccountListLayout(),
+  );
+  const [accountDisplayPreferences, setAccountDisplayPreferences] =
+    useState<AccountDisplayPreferences>(() => loadAccountDisplayPreferences());
+  const cardLayout = accountLayout === "card";
+  const updateAccountDisplayPreference = (
+    key: keyof AccountDisplayPreferences,
+    value: boolean,
+  ) => {
+    setAccountDisplayPreferences((current) => {
+      const next = { ...current, [key]: value };
+      saveAccountDisplayPreferences(next);
+      return next;
+    });
+  };
+  // A card is far narrower than a full row, so its actions always live behind the
+  // overflow menu instead of waiting for the list to be squeezed.
+  const rowActionsInMenu = compactRowActions || cardLayout;
+  const accountListResizeRef = useRef<ResizeObserver | null>(null);
+  const attachAccountList = useCallback((node: HTMLDivElement | null) => {
+    accountListResizeRef.current?.disconnect();
+    accountListResizeRef.current = null;
+    if (!node || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    // 账号列表可用宽度收窄时，把行内操作按钮折叠成三个点下拉，给内容让出空间。
+    const update = () => setCompactRowActions(node.clientWidth < 600);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    accountListResizeRef.current = observer;
+  }, []);
+  const accountFilterMenuRef = useRef<HTMLDivElement | null>(null);
+  const refreshMenuRef = useRef<HTMLDivElement | null>(null);
+  const modelTestMenuRef = useRef<HTMLDivElement | null>(null);
+  const [accountView, setAccountView] = useState<AccountView>("in_pool");
+  const [toolbarAutoHidden, setToolbarAutoHidden] = useState(false);
+  const toolbarHideTimerRef = useRef<number | null>(null);
+  const toolbarHoveredRef = useRef(false);
+  const toolbarAutoHideEligibleRef = useRef(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<CreateMode>("api");
+  const [createTab, setCreateTab] = useState<CreateTab>("basic");
+  const [editTab, setEditTab] = useState<EditTab>("basic");
+  const [joinPoolOnCreate, setJoinPoolOnCreate] = useState(true);
+  // Clearing the form after a successful save is the common case, but importing
+  // several accounts that differ only by key is not: leaving it unchecked keeps
+  // Base URL, mappings and the rest in place for the next round.
+  const [resetFormAfterCreate, setResetFormAfterCreate] = useState(true);
+  const [officialText, setOfficialText] = useState(() => defaultOfficialJson(activePlatform));
+  const [officialBatchName, setOfficialBatchName] = useState("");
+  const [officialFilePaths, setOfficialFilePaths] = useState<string[]>([]);
+  const [filePickerError, setFilePickerError] = useState<string | null>(null);
+  const [externalClient, setExternalClient] = useState<ExternalImportClient>("cc-switch");
+  const [externalSourcePath, setExternalSourcePath] = useState<string | null>(null);
+  const [externalSelectedIds, setExternalSelectedIds] = useState<Set<string>>(() => new Set());
+  const [apiName, setApiName] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [apiKeyDecodeError, setApiKeyDecodeError] = useState<string | null>(null);
+  const [apiKeyOcrError, setApiKeyOcrError] = useState<string | null>(null);
+  const [apiKeyOcrRecognizing, setApiKeyOcrRecognizing] = useState(false);
+  const apiKeyOcrFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [apiBaseUrl, setApiBaseUrl] = useState(() =>
+    activePlatform === "grok" ? "https://api.x.ai/v1" : "https://api.example.com/v1",
+  );
+  const [apiInterfaceFormat, setApiInterfaceFormat] = useState<InterfaceFormat>(() =>
+    defaultInterfaceFormat(activePlatform),
+  );
+  const [apiResponsesCustomToolCompat, setApiResponsesCustomToolCompat] = useState(false);
+  const [apiUserAgent, setApiUserAgent] = useState("");
+  const [apiKeyField, setApiKeyField] = useState<AnthropicApiKeyField>(() =>
+    defaultAnthropicApiKeyFieldForCreate(activePlatform),
+  );
+  const [apiMappings, setApiMappings] = useState<ModelMapping[]>(() => defaultModelMappings(activePlatform));
+  const [apiMappingsError, setApiMappingsError] = useState<string | null>(null);
+  const [apiFetchedModels, setApiFetchedModels] = useState<FetchedRouteModel[]>([]);
+  const [apiFetchModelsError, setApiFetchModelsError] = useState<string | null>(null);
+  const [apiPreviewJson, setApiPreviewJson] = useState("");
+  const [apiRelayBalance, setApiRelayBalance] = useState<RelayBalanceFormState>(
+    emptyRelayBalanceForm,
+  );
+  // Lives in the secret payload rather than the config block, so it is tracked
+  // apart from the rest of the balance form.
+  const [apiRelayBalancePanelAccount, setApiRelayBalancePanelAccount] =
+    useState<RelayBalancePanelAccount>(emptyRelayBalancePanelAccount);
+  const [editingCredential, setEditingCredential] = useState<RouteCredential | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editStatus, setEditStatus] = useState<AccountStatus>("ok");
+  const [editPriority, setEditPriority] = useState(3);
+  const [editMaxConcurrency, setEditMaxConcurrency] = useState(
+    String(DEFAULT_MAX_CONCURRENCY),
+  );
+  const [editRetryCount, setEditRetryCount] = useState("2");
+  const [editRetryIntervalMs, setEditRetryIntervalMs] = useState("200");
+  const [editSemanticErrorThreshold, setEditSemanticErrorThreshold] = useState("10");
+  const [editCooldownEnabled, setEditCooldownEnabled] = useState(false);
+  const [editCooldownSeconds, setEditCooldownSeconds] = useState(
+    String(DEFAULT_ROUTE_CREDENTIAL_COOLDOWN_SECONDS),
+  );
+  const [editErrorStatusEnabled, setEditErrorStatusEnabled] = useState(true);
+  const [editFailurePolicyError, setEditFailurePolicyError] = useState<string | null>(null);
+  const [editRecoveryMode, setEditRecoveryMode] = useState<RecoveryMode>("off");
+  const [editRecoveryTimes, setEditRecoveryTimes] = useState<string[]>([]);
+  const [editRecoveryProbeInterval, setEditRecoveryProbeInterval] = useState("30");
+  const [editApiKey, setEditApiKey] = useState("");
+  const [editApiKeyDecodeError, setEditApiKeyDecodeError] = useState<string | null>(null);
+  const [editApiKeyOcrError, setEditApiKeyOcrError] = useState<string | null>(null);
+  const [editApiKeyOcrRecognizing, setEditApiKeyOcrRecognizing] = useState(false);
+  const editApiKeyOcrFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [editApiBaseUrl, setEditApiBaseUrl] = useState("");
+  const [editApiInterfaceFormat, setEditApiInterfaceFormat] = useState<InterfaceFormat>("openai");
+  const [editResponsesCustomToolCompat, setEditResponsesCustomToolCompat] = useState(false);
+  const [editInlineRemoteImages, setEditInlineRemoteImages] = useState(false);
+  const [editTurnReminder, setEditTurnReminder] = useState(false);
+  const [editTurnReminderText, setEditTurnReminderText] = useState("");
+  const [editUserAgent, setEditUserAgent] = useState("");
+  const [editRelayBalance, setEditRelayBalance] = useState<RelayBalanceFormState>(
+    emptyRelayBalanceForm,
+  );
+  const [editRelayBalancePanelAccount, setEditRelayBalancePanelAccount] =
+    useState<RelayBalancePanelAccount>(emptyRelayBalancePanelAccount);
+  const [editRelayBalanceError, setEditRelayBalanceError] = useState<string | null>(null);
+  /// Held apart from `editingCredential` so pressing 立即查询 in the drawer can
+  /// show the fresh reading without re-hydrating (and discarding) unsaved edits.
+  const [editRelayBalanceSnapshot, setEditRelayBalanceSnapshot] =
+    useState<RelayBalanceSnapshot | null>(null);
+  const [editApiKeyField, setEditApiKeyField] = useState<AnthropicApiKeyField>("ANTHROPIC_API_KEY");
+  const [editSecretJson, setEditSecretJson] = useState("{}");
+  const [editConfigJson, setEditConfigJson] = useState("{}");
+  const [editModelMappings, setEditModelMappings] = useState<ModelMapping[]>([]);
+  const [editModelMappingsError, setEditModelMappingsError] = useState<string | null>(null);
+  const [editFetchedModels, setEditFetchedModels] = useState<FetchedRouteModel[]>([]);
+  const [editFetchModelsError, setEditFetchModelsError] = useState<string | null>(null);
+  const [editPreviewJson, setEditPreviewJson] = useState("{}");
+  const [lastRouteAccount, setLastRouteAccount] = useState<string | null>(null);
+  const [modelTestModels, setModelTestModels] = useState<ModelTestModelMap>(
+    () => loadModelTestModels(),
+  );
+  const [codexModelTestEndpoint, setCodexModelTestEndpoint] =
+    useState<CodexModelTestEndpoint>(() => loadCodexModelTestEndpoint());
+  const [modelTestDialogOpen, setModelTestDialogOpen] = useState(false);
+  const [modelTestToolCall, setModelTestToolCall] = useState(false);
+  const [routePoolModelsDialogOpen, setRoutePoolModelsDialogOpen] = useState(false);
+  const [liveLogOpen, setLiveLogOpen] = useState(false);
+  const [liveLogEntries, setLiveLogEntries] = useState<RouteProxyLiveLogEntry[]>([]);
+  const [expandedLiveLogId, setExpandedLiveLogId] = useState<string | null>(null);
+  const [modelTestAccount, setModelTestAccount] = useState<RouteCredential | null>(null);
+  const [exportRequest, setExportRequest] = useState<{
+    selection_context: RouteCredentialSelectionContext;
+    credential_ids: string[];
+  } | null>(null);
+  const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
+  const [refreshingQuotaId, setRefreshingQuotaId] = useState<string | null>(null);
+  const [quotaRefreshMessage, setQuotaRefreshMessage] = useState<string | null>(null);
+  const [refreshingRelayBalanceId, setRefreshingRelayBalanceId] = useState<string | null>(null);
+  const [relayBalanceMessage, setRelayBalanceMessage] = useState<string | null>(null);
+  const [relayBalanceStatusById, setRelayBalanceStatusById] = useState<
+    Record<string, { snapshot: RelayBalanceSnapshot | null; error: string | null }>
+  >({});
+  const autoQuotaRefreshedPlatform = useRef<string | null>(null);
+  const [modelTestOutcome, setModelTestOutcome] = useState<RoutePoolModelTestOutcome | null>(null);
+  const [modelTestAutoCloseIn, setModelTestAutoCloseIn] = useState<number | null>(null);
+  const [configWriteOutcomes, setConfigWriteOutcomes] = useState<ConfigWriteOutcome[]>([]);
+  const [configWriteError, setConfigWriteError] = useState<string | null>(null);
+  const [configWriteDialogOpen, setConfigWriteDialogOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<
+    { kind: "single"; id: string; name: string } | { kind: "batch"; count: number } | null
+  >(null);
+  const [clientConfigOpen, setClientConfigOpen] = useState(false);
+  const [clientConfigDraft, setClientConfigDraft] = useState("");
+  const [clientConfigError, setClientConfigError] = useState<string | null>(null);
+  const [routePoolFeedback, setRoutePoolFeedback] = useState<RoutePoolFeedback>(null);
+  const [quickEditPriorityCredential, setQuickEditPriorityCredential] = useState<RouteCredential | null>(null);
+  const [quickEditPriorityValue, setQuickEditPriorityValue] = useState("3");
+  const [quickEditPriorityError, setQuickEditPriorityError] = useState<string | null>(null);
+  const [quickEditConcurrencyCredential, setQuickEditConcurrencyCredential] = useState<RouteCredential | null>(null);
+  const [quickEditConcurrencyValue, setQuickEditConcurrencyValue] = useState("");
+  const [quickEditConcurrencyError, setQuickEditConcurrencyError] = useState<string | null>(null);
+  const [cooldownEditCredential, setCooldownEditCredential] = useState<RouteCredential | null>(null);
+  const [cooldownEditValue, setCooldownEditValue] = useState("");
+  const [cooldownEditError, setCooldownEditError] = useState<string | null>(null);
+  const modelTestStorageKey = modelTestAccount?.id ?? poolModelTestKey(activePlatform);
+  const routeTestModel = modelTestModels[modelTestStorageKey]?.model ?? "";
+  const statsOpen = accountView === "stats";
+  const accountScope: RouteCredentialPoolScope =
+    accountView === "archived"
+      ? "archived"
+      : accountView === "out_of_pool"
+        ? "out_of_pool"
+        : "in_pool";
+  const poolMemberKey = useMemo(
+    () => Array.from(draftPoolIds).sort().join(","),
+    [draftPoolIds],
+  );
+
+  const clearToolbarHideTimer = useCallback(() => {
+    if (toolbarHideTimerRef.current != null) {
+      window.clearTimeout(toolbarHideTimerRef.current);
+      toolbarHideTimerRef.current = null;
+    }
+  }, []);
+  const scheduleToolbarHide = useCallback(() => {
+    clearToolbarHideTimer();
+    if (!toolbarAutoHideEligibleRef.current) {
+      return;
+    }
+    toolbarHideTimerRef.current = window.setTimeout(() => {
+      toolbarHideTimerRef.current = null;
+      if (!toolbarHoveredRef.current) {
+        setToolbarAutoHidden(true);
+      }
+    }, 2600);
+  }, [clearToolbarHideTimer]);
+  const revealToolbar = useCallback(() => {
+    clearToolbarHideTimer();
+    setToolbarAutoHidden(false);
+    if (!toolbarHoveredRef.current && toolbarAutoHideEligibleRef.current) {
+      scheduleToolbarHide();
+    }
+  }, [clearToolbarHideTimer, scheduleToolbarHide]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      toolbarAutoHideEligibleRef.current = false;
+      return clearToolbarHideTimer;
+    }
+
+    let disposed = false;
+    const updateEligibility = async () => {
+      try {
+        const tauriInternals = (window as typeof window & {
+          __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } };
+        }).__TAURI_INTERNALS__;
+        const label = tauriInternals?.metadata?.currentWindow?.label ?? "main";
+        const [position, monitor] = await Promise.all([
+          tauriInvoke<{ y: number }>("plugin:window|outer_position", { label }),
+          tauriInvoke<{
+            position?: { y?: number };
+            workArea?: { position?: { y?: number } };
+          } | null>("plugin:window|current_monitor"),
+        ]);
+        if (disposed) {
+          return;
+        }
+        const monitorTop = monitor?.workArea?.position?.y ?? monitor?.position?.y ?? 0;
+        const eligible = position.y <= monitorTop + 12;
+        toolbarAutoHideEligibleRef.current = eligible;
+        if (!eligible) {
+          clearToolbarHideTimer();
+          setToolbarAutoHidden(false);
+        } else if (!toolbarHoveredRef.current) {
+          scheduleToolbarHide();
+        }
+      } catch {
+        if (disposed) {
+          return;
+        }
+        toolbarAutoHideEligibleRef.current = false;
+        clearToolbarHideTimer();
+        setToolbarAutoHidden(false);
+      }
+    };
+
+    void updateEligibility();
+    const positionPoll = window.setInterval(() => {
+      void updateEligibility();
+    }, 500);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(positionPoll);
+      clearToolbarHideTimer();
+    };
+  }, [clearToolbarHideTimer, scheduleToolbarHide]);
+
+  useEffect(() => {
+    setAccountFilters([]);
+    setAccountPage(1);
+    setAccountView("in_pool");
+    setAccountFilterMenuOpen(false);
+    setRefreshMenuOpen(false);
+    setModelTestMenuOpen(false);
+    setModelTestMenuCopied(null);
+    setCopiedCredentialId(null);
+    setConfigWriteError(null);
+    setBatchStatus("");
+    // Source ids are platform-scoped in the preview, so a leftover selection
+    // would submit ids that belong to the platform the user just left.
+    setExternalSelectedIds(new Set());
+  }, [activePlatform]);
+
+  useEffect(() => () => {
+    if (accountEdgeTimerRef.current != null) window.clearTimeout(accountEdgeTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (capabilitiesQuery.isSuccess && !officialImportEnabled && createMode === "official") {
+      setCreateMode("api");
+    }
+  }, [capabilitiesQuery.isSuccess, createMode, officialImportEnabled]);
+
+  const externalImportPreviewQuery = useExternalClientImportPreview({
+    client: externalClient,
+    platform: activePlatform,
+    sourcePath: externalSourcePath,
+    // Only read another app's config while the user is looking at that tab.
+    enabled: createOpen && createMode === "external",
+  });
+  const externalImportPreview = externalImportPreviewQuery.data ?? null;
+
+  // Prune the selection whenever the preview changes, and pre-check every
+  // importable row: the common case is "take everything", and a stale id would
+  // otherwise be submitted and then reported as skipped.
+  useEffect(() => {
+    if (!externalImportPreview) {
+      return;
+    }
+    const importable = externalImportPreview.items
+      .filter(isImportableExternalItem)
+      .map((item) => item.source_id);
+    setExternalSelectedIds((current) => {
+      if (current.size === 0) {
+        return new Set(importable);
+      }
+      const next = new Set(importable.filter((sourceId) => current.has(sourceId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [externalImportPreview]);
+
+  useEffect(() => {
+    if (!accountFilterMenuOpen) {
+      return;
+    }
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && accountFilterMenuRef.current && !accountFilterMenuRef.current.contains(target)) {
+        setAccountFilterMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [accountFilterMenuOpen]);
+
+  useEffect(() => {
+    if (!refreshMenuOpen) {
+      return;
+    }
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && refreshMenuRef.current && !refreshMenuRef.current.contains(target)) {
+        setRefreshMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [refreshMenuOpen]);
+
+  useEffect(() => {
+    if (!modelTestMenuOpen) {
+      return;
+    }
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && modelTestMenuRef.current && !modelTestMenuRef.current.contains(target)) {
+        setModelTestMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [modelTestMenuOpen]);
+
+  useEffect(() => {
+    if (!openActionMenuId) {
+      return;
+    }
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && !target.closest("[data-account-action-menu]")) {
+        setOpenActionMenuId(null);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenActionMenuId(null);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [openActionMenuId]);
+
+  useEffect(() => {
+    if (!rowActionsInMenu) {
+      setOpenActionMenuId(null);
+    }
+  }, [rowActionsInMenu]);
+
+  useEffect(() => {
+    setAccountPage(1);
+    setSelectedAccountIds(new Set());
+    setKeyboardDragId(null);
+    setAccountFilterMenuOpen(false);
+    setRefreshMenuOpen(false);
+    setModelTestMenuOpen(false);
+    setModelTestMenuCopied(null);
+    setBatchStatus("");
+  }, [accountView]);
+
+  const credentialsQuery = useQuery<RouteCredentialPage>({
+    queryKey: [
+      "route-credential-page",
+      activePlatform,
+      accountScope,
+      accountPage,
+      accountPageSize,
+      accountFilters,
+      poolMemberKey,
+    ],
+    queryFn: async () => {
+      if (typeof listRouteCredentialPage === "function") {
+        const page = await listRouteCredentialPage({
+          platform: activePlatform,
+          page: accountPage,
+          page_size: accountPageSize,
+          filters: accountFilters,
+          pool_scope: accountScope,
+        });
+        if (page && Array.isArray(page.items)) {
+          return page;
+        }
+      }
+      const legacy = await listRouteCredentials(activePlatform);
+      const scoped = legacy.filter((item) => {
+        if (accountScope === "archived") {
+          return Boolean(item.archived_at);
+        }
+        return accountScope === "in_pool"
+          ? !item.archived_at && draftPoolIds.has(item.id)
+          : !item.archived_at && !draftPoolIds.has(item.id);
+      });
+      const filtered = accountFilters.length
+        ? scoped.filter((item) => accountFilters.includes(credentialBatchFilterKey(item)))
+        : scoped;
+      const start = (accountPage - 1) * accountPageSize;
+      return {
+        items: filtered.slice(start, start + accountPageSize),
+        total: filtered.length,
+        page: accountPage,
+        page_count: Math.max(1, Math.ceil(filtered.length / accountPageSize)),
+        page_size: accountPageSize,
+        previous_page_account_id: start > 0 ? filtered[start - 1]?.id ?? null : null,
+        next_page_account_id: start + accountPageSize < filtered.length ? filtered[start + accountPageSize]?.id ?? null : null,
+        filter_options: Array.from(
+          new Map(
+            legacy.map((item) => [
+              credentialBatchFilterKey(item),
+              item.batch_name?.trim() || credentialBatchFilterLabel(credentialBatchFilterKey(item)),
+            ]),
+          ),
+        ).map(([key, label]) => ({ key, label })),
+        official_account_count: legacy.filter((item) => item.kind === "official").length,
+      };
+    },
+    placeholderData: keepPreviousData,
+    staleTime: 0,
+    enabled: !statsOpen,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
+  const allCredentialsQuery = useQuery<RouteCredential[]>({
+    queryKey: ["route-credentials-all", activePlatform],
+    queryFn: () => listRouteCredentials(activePlatform),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
+  const allCredentials = allCredentialsQuery.data;
+  useEffect(() => {
+    if (!allCredentials) {
+      return;
+    }
+    const liveIds = allCredentials.map((credential) => credential.id);
+    // The query returns only this platform's non-archived accounts, so pruning
+    // is scoped to that platform and skips pool keys.
+    pruneModelTestModels(liveIds, activePlatform);
+    // Incremental, never a wholesale reload: this effect re-runs on every
+    // window-focus refetch, and reloading from storage would wipe whatever the
+    // user is typing right now. pruneModelTestModelMap returns the same object
+    // when nothing is orphaned, so setState then bails out without a re-render.
+    setModelTestModels((current) => pruneModelTestModelMap(current, liveIds, activePlatform));
+  }, [activePlatform, allCredentials]);
+
+  // Pool membership only. Statistics moved to UsageOverviewPanel, so this key
+  // no longer carries a period filter — which also means the account-data
+  // invalidations keyed on ["route-pool", platform] match it again.
+  const routePoolQuery = useQuery({
+    queryKey: ["route-pool", activePlatform],
+    queryFn: () => getRoutePool(activePlatform, null, null, null),
+    placeholderData: keepPreviousData,
+  });
+  // Counts *consecutive* stopped polls, not total updates. `dataUpdateCount` is
+  // cumulative over the query's whole life and includes every `setQueryData`, so
+  // it never resets: by the time the user stopped the proxy the count was already
+  // high and the very first poll waited 8 or 15 seconds instead of 1. Worse, a
+  // state change made elsewhere — another tab, a crash, the standalone server —
+  // then took up to 15s to show up even though the proxy had only just stopped.
+  const stoppedPollsRef = useRef(0);
+  const routeProxyQuery = useQuery({
+    queryKey: ["route-proxy-status"],
+    queryFn: getRouteProxyStatus,
+    refetchInterval: (query) => {
+      if (query.state.data?.running) {
+        stoppedPollsRef.current = 0;
+      } else {
+        stoppedPollsRef.current += 1;
+      }
+      return routeProxyPollInterval(query.state.data, stoppedPollsRef.current - 1);
+    },
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let activityUnsubscribe: (() => void) | undefined;
+    let statusUnsubscribe: (() => void) | undefined;
+    const transport = getTransport();
+
+    void Promise.all([
+      transport.subscribe<RouteCredentialActivityEvent>(
+        "route-credential-activity",
+        (event) => {
+          if (event.platform !== activePlatform) {
+            return;
+          }
+          queryClient.setQueriesData<RouteCredentialPage>(
+            { queryKey: ["route-credential-page", activePlatform] },
+            (current) => {
+              if (!current) {
+                return current;
+              }
+              return {
+                ...current,
+                items: current.items.map((credential) =>
+                  credential.id === event.credential_id
+                    ? {
+                        ...credential,
+                        active_request_count: event.active_request_count,
+                        max_concurrency: event.max_concurrency,
+                      }
+                    : credential,
+                ),
+              };
+            },
+          );
+          queryClient.setQueryData<RouteCredential[]>(
+            ["route-credentials-all", activePlatform],
+            (current) =>
+              current?.map((credential) =>
+                credential.id === event.credential_id
+                  ? {
+                      ...credential,
+                      active_request_count: event.active_request_count,
+                      max_concurrency: event.max_concurrency,
+                    }
+                  : credential,
+              ),
+          );
+        },
+      ),
+      transport.subscribe<{ platform: string; credential_id: string }>(
+        "route-credential-status",
+        (event) => {
+          if (event.platform !== activePlatform) {
+            return;
+          }
+          void Promise.all([
+            queryClient.invalidateQueries({
+              queryKey: ["route-credential-page", activePlatform],
+            }),
+            queryClient.invalidateQueries({
+              queryKey: ["route-credentials-all", activePlatform],
+            }),
+            queryClient.invalidateQueries({
+              queryKey: ["route-pool", activePlatform],
+            }),
+          ]);
+        },
+      ),
+    ])
+      .then(([nextActivityUnsubscribe, nextStatusUnsubscribe]) => {
+        if (disposed) {
+          nextActivityUnsubscribe();
+          nextStatusUnsubscribe();
+        } else {
+          activityUnsubscribe = nextActivityUnsubscribe;
+          statusUnsubscribe = nextStatusUnsubscribe;
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      activityUnsubscribe?.();
+      statusUnsubscribe?.();
+    };
+  }, [activePlatform, queryClient]);
+
+  // Live request log: seed recent history + tail live events while the modal is
+  // open for the active platform. Subscribing bumps a backend viewer count so
+  // the proxy only pushes events while someone is watching.
+  useEffect(() => {
+    if (!liveLogOpen) {
+      return;
+    }
+    let disposed = false;
+    let liveUnsubscribe: (() => void) | undefined;
+    setLiveLogEntries([]);
+    setExpandedLiveLogId(null);
+    const transport = getTransport();
+
+    void subscribeRouteProxyLiveLog(activePlatform)
+      .then((history) => {
+        if (!disposed) {
+          setLiveLogEntries(history.slice(-200));
+        }
+      })
+      .catch(() => undefined);
+
+    void transport
+      .subscribe<RouteProxyLiveLogEntry>("route-proxy-live-log", (event) => {
+        if (event.platform !== activePlatform) {
+          return;
+        }
+        setLiveLogEntries((current) => {
+          if (current.some((entry) => entry.id === event.id)) {
+            return current;
+          }
+          const next = [...current, event];
+          return next.length > 200 ? next.slice(next.length - 200) : next;
+        });
+      })
+      .then((unsubscribe) => {
+        if (disposed) {
+          unsubscribe();
+        } else {
+          liveUnsubscribe = unsubscribe;
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      liveUnsubscribe?.();
+      void unsubscribeRouteProxyLiveLog().catch(() => undefined);
+    };
+  }, [liveLogOpen, activePlatform]);
+
+  useEffect(() => {
+    setSelectedAccountIds(new Set());
+    setRoutePoolFeedback(null);
+  }, [activePlatform]);
+
+  useEffect(() => {
+    if (routePoolQuery.data) {
+      setDraftPoolIds(new Set(routePoolQuery.data.account_ids));
+    }
+  }, [routePoolQuery.data]);
+
+  // Every field the 新增账号 dialog owns, back to what a fresh open would show.
+  // Also used after a successful save, so anything added to that form belongs
+  // here — a field left out is one that survives into the next account.
+  const resetCreateForm = useCallback(() => {
+    const nextInterfaceFormat = defaultInterfaceFormat(activePlatform);
+    setOfficialText(defaultOfficialJson(activePlatform));
+    setOfficialBatchName("");
+    setOfficialFilePaths([]);
+    setFilePickerError(null);
+    setApiName("");
+    setApiKey("");
+    setApiKeyDecodeError(null);
+    setApiKeyOcrError(null);
+    setApiInterfaceFormat(nextInterfaceFormat);
+    setApiResponsesCustomToolCompat(false);
+    setApiUserAgent("");
+    setApiBaseUrl(activePlatform === "grok" ? "https://api.x.ai/v1" : "https://api.example.com/v1");
+    setApiKeyField(defaultAnthropicApiKeyFieldForCreate(activePlatform));
+    setApiMappings(defaultModelMappings(activePlatform));
+    setApiMappingsError(null);
+    setApiFetchedModels([]);
+    setApiFetchModelsError(null);
+    setApiPreviewJson("");
+    setApiRelayBalance(emptyRelayBalanceForm);
+    setApiRelayBalancePanelAccount(emptyRelayBalancePanelAccount);
+  }, [activePlatform]);
+
+  useEffect(() => {
+    resetCreateForm();
+    // Not part of the form: the test panel is shared with the pool toolbar, and
+    // an outcome from the platform the user just left would be misread as this
+    // platform's.
+    setModelTestOutcome(null);
+  }, [activePlatform, resetCreateForm]);
+
+  useEffect(() => {
+    if (!editingCredential) {
+      return;
+    }
+    setEditName(editingCredential.display_name);
+    setEditEmail(editingCredential.email ?? "");
+    setEditStatus(editingCredential.status);
+    setEditPriority(editingCredential.route_priority ?? 3);
+    setEditMaxConcurrency(
+      String(editingCredential.max_concurrency ?? DEFAULT_MAX_CONCURRENCY),
+    );
+    const secret = parseJsonObject(editingCredential.secret_payload_json);
+    const config = parseJsonObject(editingCredential.config_json);
+    const recovery = recoveryRuleFromConfig(config);
+    const failurePolicy = failurePolicyFromConfig(config);
+    setEditRecoveryMode(recovery.mode);
+    setEditRecoveryTimes(recovery.times.length ? recovery.times : ["00:00"]);
+    setEditRecoveryProbeInterval(String(recovery.probe_interval_minutes ?? 30));
+    setEditRetryCount(String(failurePolicy.retry_count));
+    setEditRetryIntervalMs(String(failurePolicy.retry_interval_ms));
+    setEditSemanticErrorThreshold(String(failurePolicy.semantic_error_threshold));
+    setEditCooldownEnabled(failurePolicy.cooldown_enabled);
+    setEditCooldownSeconds(String(failurePolicy.cooldown_seconds));
+    setEditErrorStatusEnabled(failurePolicy.error_status_enabled);
+    setEditFailurePolicyError(null);
+    setEditSecretJson(parseJsonPreview(editingCredential.secret_payload_json, editingCredential.secret_payload_json));
+    setEditConfigJson(parseJsonPreview(editingCredential.config_json, editingCredential.config_json));
+    setEditUserAgent(readUserAgentFromConfig(config));
+    if (editingCredential.kind === "api") {
+      const interfaceFormat = interfaceFormatFromConfig(config);
+      setEditApiKey(stringFromRecord(secret, "api_key"));
+      setEditApiBaseUrl(stringFromRecord(config, "base_url"));
+      setEditApiInterfaceFormat(interfaceFormat);
+      setEditApiKeyField(anthropicApiKeyFieldFromConfig(config, "ANTHROPIC_API_KEY"));
+      setEditResponsesCustomToolCompat(responsesCustomToolCompatFromConfig(config));
+      setEditInlineRemoteImages(inlineRemoteImagesFromConfig(config));
+      setEditTurnReminder(turnReminderFromConfig(config));
+      setEditTurnReminderText(turnReminderTextFromConfig(config));
+      setEditRelayBalance(relayBalanceFormFromConfig(config));
+      setEditRelayBalancePanelAccount(relayBalancePanelAccountFromSecret(secret));
+      setEditRelayBalanceSnapshot(relayBalanceSnapshotFromConfig(config));
+      setEditApiKeyDecodeError(null);
+      setEditApiKeyOcrError(null);
+    } else {
+      setEditApiKey("");
+      setEditApiBaseUrl("");
+      setEditApiInterfaceFormat("openai");
+      setEditApiKeyField("ANTHROPIC_API_KEY");
+      setEditResponsesCustomToolCompat(false);
+      setEditInlineRemoteImages(false);
+      // Reset here too, or a value read from the previously edited API account
+      // bleeds into an official one that has no such setting.
+      setEditTurnReminder(false);
+      setEditTurnReminderText("");
+      setEditRelayBalance(emptyRelayBalanceForm);
+      setEditRelayBalancePanelAccount(emptyRelayBalancePanelAccount);
+      setEditRelayBalanceSnapshot(null);
+      setEditApiKeyDecodeError(null);
+      setEditApiKeyOcrError(null);
+    }
+    setEditRelayBalanceError(null);
+    setEditModelMappings(parseModelMappingsFromConfig(editingCredential.config_json));
+    setEditModelMappingsError(null);
+    setEditFetchedModels(parseFetchedModelsFromConfig(editingCredential.config_json));
+    setEditFetchModelsError(null);
+    setEditPreviewJson(parseJsonPreview(editingCredential.preview_json, editingCredential.preview_json));
+    // Keyed on the id, not the object: pausing a model replaces
+    // `editingCredential` with a fresh row mid-edit, and re-running this would
+    // overwrite every field the user has typed but not saved yet. The model
+    // list in the drawer reads the new object directly, so it still refreshes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingCredential?.id]);
+
+  useEffect(() => {
+    if (configWriteOutcomes.length === 0) {
+      return;
+    }
+    // Anything the user still has to act on stays on screen. Only a clean run
+    // is safe to tidy away by itself.
+    if (configWriteOutcomes.some((outcome) => outcome.status !== "succeeded")) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      setConfigWriteOutcomes([]);
+    }, 3000);
+
+    return () => window.clearTimeout(timeout);
+  }, [configWriteOutcomes]);
+
+  const accountPageData = credentialsQuery.data;
+  const credentials = accountPageData?.items ?? [];
+  const cooldownNow = useCooldownCountdown(credentials);
+  const modelTestCredentials = allCredentialsQuery.data ?? credentials;
+  const poolModelMappingTargets = useMemo(() => {
+    const targetsByAlias = new Map<string, Set<string>>();
+    for (const credential of modelTestCredentials) {
+      if (credential.archived_at || !draftPoolIds.has(credential.id)) {
+        continue;
+      }
+      const mappings = expandDisplayModelMappings(
+        activePlatform,
+        parseModelMappingsFromConfig(credential.config_json),
+      );
+      for (const mapping of mappings) {
+        const alias = mapping.alias.trim().toLowerCase();
+        const target = mapping.target.trim();
+        if (!alias || !target) {
+          continue;
+        }
+        const targets = targetsByAlias.get(alias) ?? new Set<string>();
+        targets.add(target);
+        targetsByAlias.set(alias, targets);
+      }
+    }
+    return new Map(
+      Array.from(targetsByAlias.entries()).map(([alias, targets]) => [alias, Array.from(targets)]),
+    );
+  }, [activePlatform, draftPoolIds, modelTestCredentials]);
+  const hasEligiblePoolModelTestCredential = modelTestCredentials.some(
+    (credential) =>
+      !credential.archived_at &&
+      draftPoolIds.has(credential.id) &&
+      credentialKindAllowed(modelTestRule, credential.kind),
+  );
+  const modelTestModelOptions = useMemo(() => {
+    // 单账号：仅本账号映射别名 + 平台基线；算力池：合并所有在池账号的映射别名 + 平台基线。
+    const seen = new Map<string, string>();
+    const addAlias = (alias: string) => {
+      const trimmed = alias.trim();
+      // The catch-all is a routing sentinel, not a model name — probing it is
+      // meaningless.
+      if (!trimmed || trimmed === CLAUDE_FALLBACK_ALIAS) {
+        return;
+      }
+      const key = trimmed.toLowerCase();
+      if (!seen.has(key)) {
+        seen.set(key, trimmed);
+      }
+    };
+
+    const collectFrom = (credential: RouteCredential) => {
+      for (const mapping of expandDisplayModelMappings(
+        activePlatform,
+        parseModelMappingsFromConfig(credential.config_json),
+      )) {
+        addAlias(mapping.alias);
+      }
+    };
+
+    if (modelTestAccount) {
+      collectFrom(modelTestAccount);
+    } else {
+      for (const credential of modelTestCredentials) {
+        if (credential.archived_at || !draftPoolIds.has(credential.id)) {
+          continue;
+        }
+        collectFrom(credential);
+      }
+    }
+
+    for (const baseline of baselineModelsForPlatform(activePlatform)) {
+      addAlias(baseline);
+    }
+
+    return Array.from(seen.values());
+  }, [activePlatform, draftPoolIds, modelTestAccount, modelTestCredentials]);
+  const accountFilterOptions = useMemo(
+    () => (accountPageData?.filter_options ?? []).map((option) => option.key),
+    [accountPageData?.filter_options],
+  );
+  const accountFilterLabels = useMemo(
+    () => new Map((accountPageData?.filter_options ?? []).map((option) => [option.key, option.label])),
+    [accountPageData?.filter_options],
+  );
+
+  const generatedEditApiPreviewJson = useMemo(() => {
+    if (editingCredential?.kind !== "api") {
+      return editPreviewJson;
+    }
+    return apiPreviewJsonWithFields(
+      activePlatform,
+      editSecretJson.trim() || "{}",
+      editApiKey,
+      editConfigJson.trim() || "{}",
+      editApiBaseUrl,
+      editApiInterfaceFormat,
+      editModelMappings,
+      editApiKeyField,
+      editResponsesCustomToolCompat,
+      editUserAgent,
+    );
+  }, [
+    activePlatform,
+    editApiBaseUrl,
+    editApiInterfaceFormat,
+    editApiKeyField,
+    editApiKey,
+    editConfigJson,
+    editModelMappings,
+    editPreviewJson,
+    editResponsesCustomToolCompat,
+    editSecretJson,
+    editUserAgent,
+    editingCredential?.kind,
+  ]);
+
+  const invalidateAccountData = async () => {
+    const accountPageQueryPrefix = ["route-credential-page", activePlatform] as const;
+    const allCredentialsQueryKey = ["route-credentials-all", activePlatform] as const;
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: accountPageQueryPrefix,
+        refetchType: "active",
+      }),
+      queryClient.invalidateQueries({
+        queryKey: allCredentialsQueryKey,
+        refetchType: "active",
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["route-pool", activePlatform],
+        refetchType: "active",
+      }),
+    ]);
+    // Force network refetch so status/import changes show immediately.
+    await Promise.all([
+      queryClient.refetchQueries({ queryKey: accountPageQueryPrefix, type: "active" }),
+      queryClient.refetchQueries({ queryKey: allCredentialsQueryKey, type: "active" }),
+      queryClient.refetchQueries({ queryKey: ["route-pool", activePlatform], type: "active" }),
+    ]);
+  };
+
+  // A deep-link import elsewhere in the app switches us to the segment where the
+  // freshly imported account landed, so it never looks like the import failed.
+  // Runs after the platform-change reset effect above, so it wins the segment.
+  useEffect(() => {
+    if (!poolScopeFocus || poolScopeFocus.platform !== activePlatform) {
+      return;
+    }
+    setAccountView(poolScopeFocus.scope);
+    setAccountPage(1);
+    void invalidateAccountData();
+    onPoolScopeFocusConsumed?.(poolScopeFocus.nonce);
+  }, [activePlatform, onPoolScopeFocusConsumed, poolScopeFocus]);
+
+  const mergeCredentialsIntoCache = (imported: RouteCredential[]) => {
+    if (!imported.length) {
+      return;
+    }
+    queryClient.setQueryData<RouteCredential[]>(
+      ["route-credentials-all", activePlatform],
+      (current) => {
+        if (!current) return current;
+        const updates = new Map(imported.map((item) => [item.id, item]));
+        return current.map((item) => updates.get(item.id) ?? item);
+      },
+    );
+    queryClient.setQueryData<RouteCredentialPage>(
+      [
+        "route-credential-page",
+        activePlatform,
+        accountScope,
+        accountPage,
+        accountPageSize,
+        accountFilters,
+        poolMemberKey,
+      ],
+      (current) => {
+        if (!current) return current;
+        const updates = new Map(imported.map((item) => [item.id, item]));
+        return { ...current, items: current.items.map((item) => updates.get(item.id) ?? item) };
+      },
+    );
+  };
+
+  const openExport = () => {
+    if (accountView === "stats" || selectedAccountIds.size === 0) {
+      return;
+    }
+    setExportRequest({
+      selection_context: { platform: activePlatform, pool_scope: accountScope },
+      credential_ids: Array.from(selectedAccountIds),
+    });
+  };
+
+  useEffect(() => {
+    if (capabilitiesQuery.isLoading) {
+      return;
+    }
+    if (!officialQuotaEnabled) {
+      autoQuotaRefreshedPlatform.current = activePlatform;
+      return;
+    }
+    if (credentialsQuery.isLoading || credentialsQuery.isFetching) {
+      return;
+    }
+    if (autoQuotaRefreshedPlatform.current === activePlatform) {
+      return;
+    }
+    if (!(accountPageData?.official_account_count ?? 0)) {
+      autoQuotaRefreshedPlatform.current = activePlatform;
+      return;
+    }
+    autoQuotaRefreshedPlatform.current = activePlatform;
+    void refreshRouteCredentialsQuota(activePlatform)
+      .then(async (outcomes: QuotaRefreshOutcome[]) => {
+        const next = outcomes.map((item) => item.credential).filter((item) => item.id);
+        if (next.length) {
+          mergeCredentialsIntoCache(next);
+          await invalidateAccountData();
+        }
+      })
+      .catch(() => {
+        // Keep page usable when vendor usage endpoints are unavailable.
+      });
+  }, [
+    activePlatform,
+    capabilitiesQuery.isLoading,
+    accountPageData?.official_account_count,
+    credentialsQuery.isFetching,
+    credentialsQuery.isLoading,
+    officialQuotaEnabled,
+  ]);
+
+  const createModelsFetchRequest = (): RouteModelsFetchRequest => {
+    const firstKey = apiKeyLines(apiKey)[0] ?? "";
+    if (!firstKey) {
+      throw new Error("请先填写 API Key，再获取模型列表。");
+    }
+    if (!apiBaseUrl.trim()) {
+      throw new Error("请先填写 Base URL，再获取模型列表。");
+    }
+    const apiKeyFieldPayload = apiKeyFieldForPayload(apiInterfaceFormat, apiKeyField);
+    return {
+      base_url: apiBaseUrl.trim(),
+      api_key: firstKey,
+      interface_format: apiInterfaceFormat,
+      ...(apiKeyFieldPayload ? { api_key_field: apiKeyFieldPayload } : {}),
+    };
+  };
+
+  const editModelsFetchRequest = (): RouteModelsFetchRequest => {
+    const apiKeyValue = editApiKey.trim();
+    const baseUrl = editApiBaseUrl.trim();
+    if (!apiKeyValue) {
+      throw new Error("请先填写 API Key，再获取模型列表。");
+    }
+    if (!baseUrl) {
+      throw new Error("请先填写 Base URL，再获取模型列表。");
+    }
+    const apiKeyFieldPayload = apiKeyFieldForPayload(editApiInterfaceFormat, editApiKeyField);
+    return {
+      base_url: baseUrl,
+      api_key: apiKeyValue,
+      interface_format: editApiInterfaceFormat,
+      ...(apiKeyFieldPayload ? { api_key_field: apiKeyFieldPayload } : {}),
+    };
+  };
+
+  const apiFetchModelsMutation = useMutation({
+    mutationFn: (request: RouteModelsFetchRequest) => fetchRouteModels(request),
+    onMutate: () => {
+      setApiFetchModelsError(null);
+    },
+    onSuccess: (models) => {
+      setApiFetchedModels(models);
+      setApiFetchModelsError(null);
+    },
+    onError: (error) => {
+      setApiFetchModelsError(formatApiError(error, "获取模型列表失败。"));
+    },
+  });
+
+  const editFetchModelsMutation = useMutation({
+    mutationFn: (request: RouteModelsFetchRequest) => fetchRouteModels(request),
+    onMutate: () => {
+      setEditFetchModelsError(null);
+    },
+    onSuccess: (models) => {
+      setEditFetchedModels(models);
+      setEditFetchModelsError(null);
+    },
+    onError: (error) => {
+      setEditFetchModelsError(formatApiError(error, "获取模型列表失败。"));
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      if (createMode === "external") {
+        const sourceIds = Array.from(externalSelectedIds);
+        if (sourceIds.length === 0) {
+          throw new Error("请先勾选要导入的账号。");
+        }
+        const outcome = await importExternalClientAccounts({
+          client: externalClient,
+          platform: activePlatform,
+          source_path: externalSourcePath,
+          source_ids: sourceIds,
+        });
+        return { imported: outcome.imported, failed: [], external: outcome };
+      }
+
+      if (createMode === "official") {
+        if (!officialImportEnabled) {
+          throw new Error(officialImportReason);
+        }
+        const batchName = officialBatchName.trim();
+        if (!batchName) {
+          throw new Error("批量名称不能为空");
+        }
+        if (officialFilePaths.length > 0) {
+          return importOfficialRouteCredentialsFromFiles({
+            platform: activePlatform,
+            file_paths: officialFilePaths,
+            batch_name: batchName,
+          });
+        }
+        if (!officialText.trim()) {
+          throw new Error("请粘贴账号 JSON，或选择 JSON 文件导入。");
+        }
+        return importOfficialRouteCredentialsFromText({
+          platform: activePlatform,
+          text: officialText,
+          batch_name: batchName,
+        });
+      }
+
+      if (!apiName.trim()) {
+        setCreateTab("basic");
+        throw new Error("API 账号名称不能为空");
+      }
+      const apiKeys = apiKeyLines(apiKey);
+      if (apiKeys.length === 0) {
+        setCreateTab("basic");
+        throw new Error("至少需要一个 API Key");
+      }
+      const normalizedMappings = normalizeModelMappings(apiMappings, activePlatform);
+      if (normalizedMappings.error) {
+        setApiMappingsError(normalizedMappings.error);
+        setCreateTab("basic");
+        throw new Error(normalizedMappings.error);
+      }
+      setApiMappingsError(null);
+      const batch =
+        apiKeys.length > 1
+          ? await createBatch({
+              name: `${apiName.trim()} 批量`,
+              source: "api_route_credentials",
+              notes: null,
+            })
+          : null;
+      const imported = [];
+      const selectedApiKeyField = apiKeyFieldForPayload(apiInterfaceFormat, apiKeyField);
+      // Only meaningful for the new-api dialect, and only when actually typed: the
+      // other providers have nowhere to send it.
+      const panelAccount =
+        apiRelayBalance.provider === "new_api"
+          ? {
+              accessToken: apiRelayBalancePanelAccount.accessToken.trim(),
+              userId: apiRelayBalancePanelAccount.userId.trim(),
+            }
+          : emptyRelayBalancePanelAccount;
+      for (const [index, key] of apiKeys.entries()) {
+        const input = {
+          platform: activePlatform,
+          display_name: apiKeys.length > 1 ? `${apiName.trim()} ${index + 1}` : apiName.trim(),
+          api_key: key,
+          base_url: apiBaseUrl,
+          interface_format: apiInterfaceFormat,
+          model_mappings_json: JSON.stringify(normalizedMappings.mappings),
+          fetched_models_json: JSON.stringify(apiFetchedModels),
+          preview_json: apiPreviewJson.trim() || null,
+          batch_id: batch?.id ?? null,
+          responses_custom_tool_compat: apiResponsesCustomToolCompat,
+          user_agent: apiUserAgent.trim() || null,
+          relay_balance_provider:
+            apiRelayBalance.provider === "none" || apiRelayBalance.provider === "custom"
+              ? null
+              : apiRelayBalance.provider,
+          ...(panelAccount.accessToken
+            ? { relay_balance_access_token: panelAccount.accessToken }
+            : {}),
+          ...(panelAccount.userId
+            ? { relay_balance_access_token_user_id: panelAccount.userId }
+            : {}),
+        };
+        imported.push(
+          await createApiRouteCredential(
+            selectedApiKeyField ? { ...input, api_key_field: selectedApiKeyField } : input,
+          ),
+        );
+      }
+      return { imported, failed: [] };
+    },
+    onSuccess: async (result) => {
+      setCreateOpen(false);
+      if (resetFormAfterCreate) {
+        resetCreateForm();
+      }
+      const imported =
+        result && typeof result === "object" && "imported" in result
+          ? ((result as { imported?: RouteCredential[] }).imported ?? [])
+          : [];
+      if (result && typeof result === "object" && "imported" in result) {
+        mergeCredentialsIntoCache(imported);
+      }
+      const external =
+        result && typeof result === "object" && "external" in result
+          ? (result as { external: ExternalClientImportOutcome }).external
+          : null;
+      if (external) {
+        setExternalSelectedIds(new Set());
+        setRoutePoolFeedback({
+          type: "success",
+          message: `已从 ${EXTERNAL_IMPORT_CLIENT_LABELS[externalClient]} 导入：新增 ${external.created} 个，覆盖 ${external.overwritten} 个${
+            external.failed > 0 ? `，失败 ${external.failed} 个` : ""
+          }。`,
+        });
+      }
+      // An overwritten account keeps whatever pool state it already had —
+      // re-importing a key is not a request to move it in or out of the pool.
+      const poolCandidateIds = external
+        ? external.created_ids
+        : imported.map((credential) => credential.id);
+      if (poolCandidateIds.length > 0) {
+        const nextPoolIds = new Set(draftPoolIds);
+        for (const credentialId of poolCandidateIds) {
+          if (joinPoolOnCreate) {
+            nextPoolIds.add(credentialId);
+          } else {
+            nextPoolIds.delete(credentialId);
+          }
+        }
+        setDraftPoolIds(nextPoolIds);
+        try {
+          const state = await setRoutePoolMembers({
+            platform: activePlatform,
+            account_ids: Array.from(nextPoolIds),
+          });
+          setDraftPoolIds(new Set(state.account_ids));
+          if (joinPoolOnCreate && !external) {
+            setRoutePoolFeedback({
+              type: "success",
+              message: `已新增 ${poolCandidateIds.length} 个账号并加入算力池。`,
+            });
+          }
+        } catch (error) {
+          setRoutePoolFeedback({
+            type: "error",
+            message: `算力池同步失败：${formatApiError(error, "请求未成功。")}`,
+          });
+        }
+        setAccountView(joinPoolOnCreate ? "in_pool" : "out_of_pool");
+      }
+      await invalidateAccountData();
+    },
+  });
+
+  const routePoolMutation = useMutation({
+    mutationFn: ({ platform, account_ids }: RoutePoolMutationInput) =>
+      setRoutePoolMembers({ platform, account_ids }),
+    onMutate: () => {
+      setRoutePoolFeedback(null);
+    },
+    onSuccess: (state, variables) => {
+      setDraftPoolIds(new Set(state.account_ids));
+      const message =
+        variables.action === "add"
+          ? `已加入 ${variables.affectedCount} 个账号。`
+          : variables.action === "remove"
+            ? `已移出 ${variables.affectedCount} 个账号。`
+            : "算力池已同步。";
+      setRoutePoolFeedback({ type: "success", message });
+      void invalidateAccountData();
+    },
+    onError: (error) => {
+      if (routePoolQuery.data) {
+        setDraftPoolIds(new Set(routePoolQuery.data.account_ids));
+      }
+      setRoutePoolFeedback({
+        type: "error",
+        message: `算力池更新失败：${formatApiError(error, "请求未成功。")}`,
+      });
+      void invalidateAccountData();
+    },
+  });
+  const modelTestMutation = useMutation({
+    mutationFn: (request: RoutePoolModelTestRequest) => {
+      const credential = request.account_id
+        ? credentials.find((item) => item.id === request.account_id)
+        : null;
+      if (
+        !modelTestEnabled ||
+        (credential && !credentialKindAllowed(modelTestRule, credential.kind))
+      ) {
+        throw new Error(modelTestReason);
+      }
+      return routePoolTestModel(request);
+    },
+    onSuccess: (outcome) => {
+      setModelTestOutcome(outcome);
+      setLastRouteAccount(outcome.selected_account_name);
+      queryClient.setQueryData(
+        ["route-pool", activePlatform],
+        {
+          platform: outcome.platform,
+          account_ids: routePoolQuery.data?.account_ids ?? Array.from(draftPoolIds),
+          stats: outcome.stats,
+        },
+      );
+    },
+    onSettled: () => {
+      setTestingAccountId(null);
+      // Refresh even on OAuth refresh failures so revoked/error badges update.
+      void invalidateAccountData();
+    },
+  });
+
+  const quotaRefreshMutation = useMutation({
+    mutationFn: (id: string) => {
+      if (!officialQuotaEnabled) {
+        throw new Error(officialQuotaReason);
+      }
+      return refreshRouteCredentialQuota(id);
+    },
+    onMutate: (id) => {
+      setRefreshingQuotaId(id);
+      setQuotaRefreshMessage(null);
+    },
+    onSuccess: async (outcome) => {
+      mergeCredentialsIntoCache([outcome.credential]);
+      await invalidateAccountData();
+      if (outcome.message) {
+        setQuotaRefreshMessage(outcome.message);
+      } else if (outcome.updated) {
+        setQuotaRefreshMessage(`已更新额度（${outcome.source}）`);
+      } else {
+        setQuotaRefreshMessage(outcome.source === 'none' ? '暂无可用额度数据' : '额度未变化');
+      }
+    },
+    onError: (error) => {
+      setQuotaRefreshMessage(formatApiError(error, '刷新额度失败'));
+    },
+    onSettled: () => {
+      setRefreshingQuotaId(null);
+    },
+  });
+
+  const quotaRefreshPlatformMutation = useMutation({
+    mutationFn: () => {
+      if (!officialQuotaEnabled) {
+        throw new Error(officialQuotaReason);
+      }
+      return refreshRouteCredentialsQuota(activePlatform);
+    },
+    onMutate: () => {
+      setRefreshingQuotaId('__platform__');
+      setQuotaRefreshMessage(null);
+    },
+    onSuccess: async (outcomes) => {
+      const credentials = outcomes.map((item) => item.credential).filter((item) => item.id);
+      if (credentials.length) {
+        mergeCredentialsIntoCache(credentials);
+      }
+      await invalidateAccountData();
+      const updated = outcomes.filter((item) => item.updated).length;
+      const failed = outcomes.filter((item) => item.source === 'error').length;
+      const parts = [`官方账号 ${outcomes.length} 个`];
+      if (updated) parts.push(`更新 ${updated}`);
+      if (failed) parts.push(`失败 ${failed}`);
+      setQuotaRefreshMessage(parts.join(' · '));
+    },
+    onError: (error) => {
+      setQuotaRefreshMessage(formatApiError(error, '批量刷新额度失败'));
+    },
+    onSettled: () => {
+      setRefreshingQuotaId(null);
+    },
+  });
+
+  const relayBalanceMutation = useMutation({
+    mutationFn: (id: string) => refreshRouteCredentialRelayBalance(id),
+    onMutate: (id) => {
+      setRefreshingRelayBalanceId(id);
+      setRelayBalanceMessage(null);
+      setRelayBalanceStatusById((current) => ({
+        ...current,
+        [id]: { snapshot: current[id]?.snapshot ?? null, error: null },
+      }));
+    },
+    onSuccess: async (outcome) => {
+      mergeCredentialsIntoCache([outcome.credential]);
+      await invalidateAccountData();
+      const snapshot = relayBalanceSnapshotFromConfig(
+        parseJsonObject(outcome.credential.config_json),
+      );
+      setRelayBalanceStatusById((current) => ({
+        ...current,
+        [outcome.credential.id]: { snapshot, error: outcome.message ?? null },
+      }));
+      setEditRelayBalanceSnapshot((current) =>
+        editingCredential?.id === outcome.credential.id ? snapshot : current,
+      );
+    },
+    onError: (error, id) => {
+      const message = formatApiError(error, "查询余额失败");
+      setRelayBalanceStatusById((current) => ({
+        ...current,
+        [id]: { snapshot: current[id]?.snapshot ?? null, error: message },
+      }));
+    },
+    onSettled: () => {
+      setRefreshingRelayBalanceId(null);
+    },
+  });
+
+  const relayBalancePlatformMutation = useMutation({
+    mutationFn: () => refreshRouteCredentialsRelayBalance(activePlatform),
+    onMutate: () => {
+      setRefreshingRelayBalanceId("__platform__");
+      setRelayBalanceMessage(null);
+    },
+    onSuccess: async (outcomes) => {
+      const credentials = outcomes.map((item) => item.credential).filter((item) => item.id);
+      if (credentials.length) {
+        mergeCredentialsIntoCache(credentials);
+      }
+      await invalidateAccountData();
+      // Per-account failures ride back inside the outcomes, not as a thrown
+      // error, so nothing surfaces them unless the batch writes them into the
+      // row state the single-account action uses. Without this a batch refresh
+      // reports "失败 3" and every failing row looks untouched.
+      setRelayBalanceStatusById((current) => {
+        const next = { ...current };
+        for (const outcome of outcomes) {
+          const id = outcome.credential.id;
+          if (!id) continue;
+          next[id] = {
+            snapshot: relayBalanceSnapshotFromConfig(
+              parseJsonObject(outcome.credential.config_json),
+            ),
+            error: outcome.source === "error" ? outcome.message ?? "查询余额失败" : null,
+          };
+        }
+        return next;
+      });
+      if (outcomes.length === 0) {
+        setRelayBalanceMessage("没有开启余额查询的中转站账号");
+        return;
+      }
+      const updated = outcomes.filter((item) => item.updated).length;
+      const failed = outcomes.filter((item) => item.source === "error").length;
+      const parts = [`中转站账号 ${outcomes.length} 个`];
+      if (updated) parts.push(`更新 ${updated}`);
+      if (failed) parts.push(`失败 ${failed}`);
+      setRelayBalanceMessage(parts.join(" · "));
+    },
+    onError: (error) => {
+      setRelayBalanceMessage(formatApiError(error, "批量查询余额失败"));
+    },
+    onSettled: () => {
+      setRefreshingRelayBalanceId(null);
+    },
+  });
+
+  const startProxyMutation = useMutation({
+    mutationFn: startRouteProxy,
+    onSuccess: (status) => queryClient.setQueryData(["route-proxy-status"], status),
+  });
+  const stopProxyMutation = useMutation({
+    mutationFn: stopRouteProxy,
+    onSuccess: (status) => {
+      queryClient.setQueryData(["route-proxy-status"], status);
+      setConfigWriteOutcomes([]);
+    },
+  });
+  // Pool-wide client behavior switches. Claude Code reads these from its own
+  // settings file, which the whole pool shares, so they cannot be per-account.
+  const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  // Kept enabled while outcomes are on screen: the result panel outlives the
+  // dialog and needs these display names to label its rows.
+  const configWriteClientsQuery = useQuery({
+    queryKey: ["config-write-clients", activePlatform],
+    queryFn: () => listConfigWriteClients(activePlatform),
+    enabled: configWriteDialogOpen || configWriteOutcomes.length > 0,
+  });
+  // The dialog also hands out the pool endpoint for clients it cannot write, and
+  // the key is per platform. Only read while the dialog is open: reading creates
+  // the key when it does not exist yet.
+  const routeProxyKeyQuery = useQuery({
+    queryKey: ["route-proxy-key", activePlatform],
+    queryFn: () => getRouteProxyKey(activePlatform),
+    enabled: configWriteDialogOpen,
+  });
+  const clientByTargetKey = useMemo(() => {
+    const map = new Map<string, ConfigWriteClientStatus>();
+    for (const client of configWriteClientsQuery.data ?? []) {
+      map.set(client.target_key, client);
+    }
+    return map;
+  }, [configWriteClientsQuery.data]);
+  /** `null` until the user picks, so the dialog defaults to the native client. */
+  const storedClientSelection = useMemo(() => {
+    const raw = settingsQuery.data?.config_write_clients_json;
+    if (!raw) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(raw) as Record<string, string[]>;
+      const stored = parsed[activePlatform];
+      return Array.isArray(stored) && stored.length > 0 ? stored : null;
+    } catch {
+      // A corrupt preference must not block writing.
+      return null;
+    }
+  }, [settingsQuery.data?.config_write_clients_json, activePlatform]);
+  const writeConfigsMutation = useMutation({
+    mutationFn: async (clientKeys: string[]) => {
+      if (!configWriteEnabled) {
+        throw new Error(configWriteReason);
+      }
+      const outcomes = await writeRouteProxyConfigs(
+        routeProxyQuery.data?.base_url ?? null,
+        activePlatform,
+        clientKeys,
+      );
+      // Remember the choice so the next write does not need re-picking, and so
+      // the staleness nudge covers exactly the clients that were written.
+      const settings = settingsQuery.data;
+      if (settings) {
+        let existing: Record<string, string[]> = {};
+        try {
+          existing = settings.config_write_clients_json
+            ? (JSON.parse(settings.config_write_clients_json) as Record<string, string[]>)
+            : {};
+        } catch {
+          // A corrupt preference must not block writing.
+          existing = {};
+        }
+        const updated = await saveSettings({
+          ...settings,
+          config_write_clients_json: JSON.stringify({
+            ...existing,
+            [activePlatform]: clientKeys,
+          }),
+        });
+        queryClient.setQueryData(["settings"], updated);
+      }
+      return outcomes;
+    },
+    onMutate: () => setConfigWriteError(null),
+    onSuccess: (outcomes) => {
+      setConfigWriteOutcomes(outcomes);
+      setConfigWriteDialogOpen(false);
+      // A group resolves as long as one client succeeded, so a partial failure
+      // arrives here rather than in `onError`. Without this the only trace is
+      // the result panel, which clears itself a few seconds later.
+      const failed = outcomes.filter((outcome) => outcome.status !== "succeeded");
+      if (failed.length > 0) {
+        const names = failed.map((outcome) => {
+          const label =
+            clientByTargetKey.get(outcome.target_key)?.display_name ?? outcome.target_key;
+          return outcome.error_code ? `${label}（${outcome.error_code}）` : label;
+        });
+        setConfigWriteError(`以下客户端没有写入成功：${names.join("、")}`);
+      }
+      void queryClient.invalidateQueries({ queryKey: ["route-config-stale"] });
+    },
+    onError: (error) => setConfigWriteError(formatConfigWriteError(error)),
+  });
+  // The pool's own `/v1/models` changes the moment this is saved, so it is its own
+  // mutation rather than a parameter of the write: a user whose clients discover
+  // models over HTTP never clicks 写入 at all.
+  const setModelModeMutation = useMutation({
+    mutationFn: (mode: RoutePoolModelMode) =>
+      setRoutePoolModelMode({ platform: activePlatform, mode }),
+    onSuccess: (state) => {
+      queryClient.setQueryData(["route-pool", activePlatform], state);
+      // The rendered client config now differs from disk, which is exactly what
+      // the staleness hint is for.
+      void queryClient.invalidateQueries({ queryKey: ["route-config-stale"] });
+    },
+    onError: (error) => setConfigWriteError(formatApiError(error, "切换模型清单模式失败。")),
+  });
+  // Config is written on demand, so mapping and client-config edits sit unapplied
+  // until the user asks for a write. The backend answers this by rendering through
+  // the real adapter and diffing against disk, so the hint cannot drift from what
+  // a write would actually produce.
+  const configWriteStaleQuery = useQuery({
+    queryKey: [
+      "route-config-stale",
+      activePlatform,
+      routeProxyQuery.data?.base_url ?? null,
+      // Any pool or account edit changes the rendered bytes, so refetch when the
+      // account list version changes rather than hand-listing every mutation.
+      allCredentialsQuery.dataUpdatedAt,
+      settingsQuery.data?.claude_client_config_json ?? null,
+      storedClientSelection,
+      // The written model ids follow the mode, so switching it makes the file stale.
+      routePoolQuery.data?.model_mode ?? null,
+    ],
+    queryFn: () =>
+      routeConfigWriteIsStale(
+        routeProxyQuery.data?.base_url ?? null,
+        activePlatform,
+        storedClientSelection,
+      ),
+    enabled: Boolean(routeProxyQuery.data?.running) && configWriteEnabled,
+    staleTime: 0,
+  });
+  const configWriteStale = configWriteStaleQuery.data === true;
+  const saveClientConfigMutation = useMutation({
+    mutationFn: async (configJson: string | null) => {
+      const settings = settingsQuery.data;
+      if (!settings) {
+        throw new Error("设置尚未加载完成。");
+      }
+      return saveSettings({ ...settings, claude_client_config_json: configJson });
+    },
+    onSuccess: (settings) => {
+      queryClient.setQueryData(["settings"], settings);
+      setClientConfigOpen(false);
+    },
+    onError: (error) => setClientConfigError(formatApiError(error, "保存全局配置失败。")),
+  });
+  const openClientConfigDialog = () => {
+    setClientConfigDraft(settingsQuery.data?.claude_client_config_json ?? "");
+    setClientConfigError(null);
+    setClientConfigOpen(true);
+  };
+  const submitClientConfig = () => {
+    const trimmed = clientConfigDraft.trim();
+    if (!trimmed) {
+      setClientConfigError(null);
+      saveClientConfigMutation.mutate(null);
+      return;
+    }
+    // Validate here rather than at write time: a malformed value is ignored by
+    // the writer, which would look like the setting silently doing nothing.
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      setClientConfigError("不是合法的 JSON。");
+      return;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      setClientConfigError("需要一个 JSON 对象，例如 {\"includeCoAuthoredBy\": false}。");
+      return;
+    }
+    setClientConfigError(null);
+    saveClientConfigMutation.mutate(trimmed);
+  };
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingCredential) {
+        throw new Error("缺少账号");
+      }
+      const normalizedMappings = normalizeModelMappings(editModelMappings, activePlatform);
+      if (editingCredential.kind === "api" && normalizedMappings.error) {
+        setEditModelMappingsError(normalizedMappings.error);
+        setEditTab("basic");
+        throw new Error(normalizedMappings.error);
+      }
+      if (editingCredential.kind === "api") {
+        if (!editApiKey.trim()) {
+          setEditTab("basic");
+          throw new Error("API Key 不能为空");
+        }
+        if (!editApiBaseUrl.trim()) {
+          setEditTab("basic");
+          throw new Error("Base URL 不能为空");
+        }
+      }
+      if (!Number.isInteger(editPriority) || editPriority < 1 || editPriority > 5) {
+        setEditTab("advanced");
+        throw new Error("路由优先级必须是 1-5 的整数");
+      }
+      const maxConcurrency = Number(editMaxConcurrency);
+      if (!Number.isInteger(maxConcurrency) || maxConcurrency < 1) {
+        setEditTab("advanced");
+        throw new Error("最大并发数必须是大于等于 1 的整数");
+      }
+      const retryCount = Number(editRetryCount);
+      const retryIntervalMs = Number(editRetryIntervalMs);
+      const semanticErrorThreshold = Number(editSemanticErrorThreshold);
+      const cooldownSeconds = Number(editCooldownSeconds);
+      let failurePolicyError: string | null = null;
+      if (!Number.isInteger(retryCount) || retryCount < 0 || retryCount > 10) {
+        failurePolicyError = "额外重试次数必须是 0-10 的整数";
+      } else if (
+        !Number.isInteger(retryIntervalMs) ||
+        retryIntervalMs < 0 ||
+        retryIntervalMs > 60_000
+      ) {
+        failurePolicyError = "重试间隔必须是 0-60000 毫秒的整数";
+      } else if (
+        !Number.isInteger(semanticErrorThreshold) ||
+        semanticErrorThreshold < 1 ||
+        semanticErrorThreshold > 1_000
+      ) {
+        failurePolicyError = "异常触发次数必须是 1-1000 的整数";
+      } else if (
+        !Number.isInteger(cooldownSeconds) ||
+        cooldownSeconds < 1 ||
+        cooldownSeconds > MAX_ROUTE_CREDENTIAL_COOLDOWN_SECONDS
+      ) {
+        failurePolicyError = `失败冷却需在 1 到 ${MAX_ROUTE_CREDENTIAL_COOLDOWN_SECONDS} 秒之间。`;
+      }
+      if (failurePolicyError) {
+        setEditFailurePolicyError(failurePolicyError);
+        setEditTab("failure");
+        throw new Error(failurePolicyError);
+      }
+      const failurePolicy: RouteCredentialFailurePolicy = {
+        retry_count: retryCount,
+        retry_interval_ms: retryIntervalMs,
+        semantic_error_threshold: semanticErrorThreshold,
+        cooldown_enabled: editCooldownEnabled,
+        cooldown_seconds: cooldownSeconds,
+        error_status_enabled: editErrorStatusEnabled,
+      };
+      setEditFailurePolicyError(null);
+      setEditModelMappingsError(null);
+      const relayBalanceError =
+        editingCredential.kind === "api" ? relayBalanceFormError(editRelayBalance) : null;
+      if (relayBalanceError) {
+        setEditRelayBalanceError(relayBalanceError);
+        setEditTab("advanced");
+        throw new Error(relayBalanceError);
+      }
+      setEditRelayBalanceError(null);
+      const nextSecretJson =
+        editingCredential.kind === "api"
+          ? apiSecretJsonWithKey(editSecretJson, editApiKey, editRelayBalancePanelAccount)
+          : editSecretJson.trim() || "{}";
+      const baseConfig =
+        editingCredential.kind === "api"
+          ? parseJsonObject(
+              apiConfigJsonWithFields(
+                editConfigJson.trim() || "{}",
+                editApiBaseUrl,
+                editApiInterfaceFormat,
+                normalizedMappings.mappings,
+                editApiKeyField,
+                editResponsesCustomToolCompat,
+                editUserAgent,
+                editInlineRemoteImages,
+                editTurnReminder,
+                editTurnReminderText,
+              ),
+            )
+          : writeUserAgentToConfig(
+              parseJsonObject(editConfigJson.trim() || "{}"),
+              editUserAgent,
+            );
+      const configWithFetchedModels =
+        editingCredential.kind === "api"
+          ? writeFetchedModelsToConfig(baseConfig, editFetchedModels)
+          : baseConfig;
+      const configWithRelayBalance =
+        editingCredential.kind === "api"
+          ? writeRelayBalanceToConfig(
+              configWithFetchedModels,
+              editRelayBalance,
+              editRelayBalanceSnapshot,
+            )
+          : configWithFetchedModels;
+      const nextConfigJson = JSON.stringify(
+        writeFailurePolicyToConfig(configWithRelayBalance, failurePolicy),
+        null,
+        2,
+      );
+      const nextPreviewJson =
+        editingCredential.kind === "api"
+          ? apiPreviewJsonFromPayloads(activePlatform, nextSecretJson, nextConfigJson)
+          : editPreviewJson.trim() || "{}";
+      const updated = await updateRouteCredential(editingCredential.id, {
+        display_name: editName.trim(),
+        email: editingCredential.kind === "api" ? null : editEmail.trim() || null,
+        status: editStatus,
+        route_priority: editPriority,
+        max_concurrency: maxConcurrency,
+        secret_payload_json: nextSecretJson,
+        config_json: nextConfigJson,
+        preview_json: nextPreviewJson,
+      });
+      const recovery: RecoveryRule = {
+        mode: editRecoveryMode,
+        times: editRecoveryMode === "scheduled" ? editRecoveryTimes : [],
+        probe_interval_minutes:
+          editRecoveryMode === "healthcheck" ? Number(editRecoveryProbeInterval) : null,
+      };
+      return setRouteCredentialRecovery(updated.id, recovery);
+    },
+    onSuccess: async () => {
+      setEditingCredential(null);
+      await invalidateAccountData();
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: deleteRouteCredential,
+    onSuccess: async () => {
+      setEditingCredential(null);
+      await invalidateAccountData();
+    },
+  });
+  // 快捷编辑只动一个字段，其余照抄账号当前值。secret_payload_json 可能是脱敏
+  // 后的掩码，后端在 update 里会自己换回真 key，所以原样回传是安全的。
+  const quickEditPriorityMutation = useMutation({
+    mutationFn: ({ credential, priority }: { credential: RouteCredential; priority: number }) =>
+      updateRouteCredential(credential.id, {
+        display_name: credential.display_name,
+        email: credential.email ?? null,
+        status: credential.status,
+        route_priority: priority,
+        max_concurrency: credential.max_concurrency,
+        secret_payload_json: credential.secret_payload_json,
+        config_json: credential.config_json,
+        preview_json: credential.preview_json,
+      }),
+    onSuccess: async (updated) => {
+      setQuickEditPriorityCredential(null);
+      setQuickEditPriorityError(null);
+      mergeCredentialsIntoCache([updated]);
+      await invalidateAccountData();
+    },
+    onError: (error) => {
+      setQuickEditPriorityError(formatApiError(error, "保存路由优先级失败。"));
+    },
+  });
+  const quickEditConcurrencyMutation = useMutation({
+    mutationFn: ({ credential, concurrency }: { credential: RouteCredential; concurrency: number }) =>
+      updateRouteCredential(credential.id, {
+        display_name: credential.display_name,
+        email: credential.email ?? null,
+        status: credential.status,
+        route_priority: credential.route_priority,
+        max_concurrency: concurrency,
+        secret_payload_json: credential.secret_payload_json,
+        config_json: credential.config_json,
+        preview_json: credential.preview_json,
+      }),
+    onSuccess: async (updated) => {
+      setQuickEditConcurrencyCredential(null);
+      setQuickEditConcurrencyError(null);
+      mergeCredentialsIntoCache([updated]);
+      await invalidateAccountData();
+    },
+    onError: (error) => {
+      setQuickEditConcurrencyError(formatApiError(error, "保存最大并发数失败。"));
+    },
+  });
+  // 列表里的 P(N) 和并发计数原本都是只读展示，改一个数字得开整个编辑抽屉。这两个
+  // 入口把它们变成可点的：只带一个字段，存完就关。
+  const openQuickEditPriority = (credential: RouteCredential) => {
+    quickEditPriorityMutation.reset();
+    setQuickEditPriorityError(null);
+    setQuickEditPriorityValue(String(credential.route_priority));
+    setQuickEditPriorityCredential(credential);
+  };
+  const openQuickEditConcurrency = (credential: RouteCredential) => {
+    quickEditConcurrencyMutation.reset();
+    setQuickEditConcurrencyError(null);
+    setQuickEditConcurrencyValue(String(credential.max_concurrency));
+    setQuickEditConcurrencyCredential(credential);
+  };
+  const submitQuickEditPriority = () => {
+    if (!quickEditPriorityCredential) {
+      return;
+    }
+    const priority = Number(quickEditPriorityValue);
+    if (!Number.isInteger(priority) || priority < 1 || priority > 5) {
+      setQuickEditPriorityError("路由优先级必须是 1-5 的整数");
+      return;
+    }
+    setQuickEditPriorityError(null);
+    quickEditPriorityMutation.mutate({ credential: quickEditPriorityCredential, priority });
+  };
+  const submitQuickEditConcurrency = () => {
+    if (!quickEditConcurrencyCredential) {
+      return;
+    }
+    const concurrency = Number(quickEditConcurrencyValue);
+    if (!Number.isInteger(concurrency) || concurrency < 1) {
+      setQuickEditConcurrencyError("最大并发数必须是大于等于 1 的整数");
+      return;
+    }
+    setQuickEditConcurrencyError(null);
+    quickEditConcurrencyMutation.mutate({
+      credential: quickEditConcurrencyCredential,
+      concurrency,
+    });
+  };
+  // 账号级冷却原本只能等它自己过期：模型级有「解除」，账号级一个入口都没有。
+  // 列表里的冷却徽章因此变成可点的，弹窗里既能改剩余时长，也能直接解除。
+  const cooldownMutation = useMutation({
+    mutationFn: ({ credential, seconds }: { credential: RouteCredential; seconds: number }) =>
+      setRouteCredentialCooldown(credential.id, seconds),
+    onSuccess: async (updated) => {
+      setCooldownEditCredential(null);
+      setCooldownEditError(null);
+      mergeCredentialsIntoCache([updated]);
+      await invalidateAccountData();
+    },
+    onError: (error) => {
+      setCooldownEditError(formatApiError(error, "调整冷却时间失败。"));
+    },
+  });
+  const clearFailureStateMutation = useMutation({
+    mutationFn: (credential: RouteCredential) => clearRouteCredentialFailureState(credential.id),
+    onSuccess: async (updated) => {
+      setCooldownEditCredential(null);
+      setCooldownEditError(null);
+      mergeCredentialsIntoCache([updated]);
+      await invalidateAccountData();
+    },
+    onError: (error) => {
+      setCooldownEditError(formatApiError(error, "解除冷却失败。"));
+    },
+  });
+  const openCooldownEditor = (credential: RouteCredential) => {
+    cooldownMutation.reset();
+    clearFailureStateMutation.reset();
+    setCooldownEditError(null);
+    // Seed with what is actually left, so 保存 without touching anything is a
+    // no-op rather than a silent extension.
+    const raw = credential.cooldown_until || credential.next_retry_at;
+    const remaining = raw ? Math.ceil((new Date(raw).getTime() - Date.now()) / 1000) : 0;
+    setCooldownEditValue(String(clampCooldownSeconds(remaining)));
+    setCooldownEditCredential(credential);
+  };
+  const adjustCooldownEditValue = (delta: number) => {
+    setCooldownEditError(null);
+    setCooldownEditValue((current) => {
+      const parsed = Number(current);
+      const base = Number.isFinite(parsed) ? Math.round(parsed) : 0;
+      return String(clampCooldownSeconds(base + delta));
+    });
+  };
+  const submitCooldownEdit = () => {
+    if (!cooldownEditCredential) {
+      return;
+    }
+    const seconds = Number(cooldownEditValue);
+    if (
+      !Number.isInteger(seconds) ||
+      seconds < 1 ||
+      seconds > MAX_ROUTE_CREDENTIAL_COOLDOWN_SECONDS
+    ) {
+      setCooldownEditError(`剩余冷却需在 1 到 ${MAX_ROUTE_CREDENTIAL_COOLDOWN_SECONDS} 秒之间。`);
+      return;
+    }
+    setCooldownEditError(null);
+    cooldownMutation.mutate({ credential: cooldownEditCredential, seconds });
+  };
+  const modelStatusMutation = useMutation({
+    mutationFn: ({
+      credentialId,
+      modelKey,
+      status,
+    }: {
+      credentialId: string;
+      modelKey: string;
+      status: RouteCredentialModelStatus;
+    }) => setRouteCredentialModelStatus(credentialId, modelKey, status),
+    onSuccess: (credential) => {
+      // The drawer renders straight off the returned account, so it reflects the
+      // new status without waiting for the list queries to come back.
+      setEditingCredential(credential);
+      void queryClient.invalidateQueries({
+        queryKey: ["route-credential-page", activePlatform],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["route-credentials-all", activePlatform],
+      });
+    },
+  });
+  const clearModelStateMutation = useMutation({
+    mutationFn: ({
+      credentialId,
+      modelKey,
+    }: {
+      credentialId: string;
+      modelKey: string;
+    }) => clearRouteCredentialModelState(credentialId, modelKey),
+    onSuccess: (credential) => {
+      setEditingCredential(credential);
+      void queryClient.invalidateQueries({
+        queryKey: ["route-credential-page", activePlatform],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["route-credentials-all", activePlatform],
+      });
+    },
+  });
+  const copyCredentialMutation = useMutation({
+    mutationFn: ({
+      credential,
+      input,
+    }: {
+      credential: RouteCredential;
+      input: CopyRouteCredentialInput;
+    }) => copyRouteCredential(credential.id, input),
+    onSuccess: async (credential, variables) => {
+      const sourceId = variables.credential.id;
+      const copiedToCurrentPlatform = credential.platform === activePlatform;
+      setCopyingCredential(null);
+      if (copiedToCurrentPlatform) {
+        mergeCredentialsIntoCache([credential]);
+      }
+      setCopiedCredentialId(sourceId);
+      window.setTimeout(() => {
+        setCopiedCredentialId((current) => (current === sourceId ? null : current));
+      }, 1400);
+      // Backend mirrors the source's pool membership onto the copy; keep the
+      // local draft in sync so the copy shows up in the current segment.
+      if (copiedToCurrentPlatform && draftPoolIds.has(sourceId)) {
+        setDraftPoolIds((current) => {
+          const next = new Set(current);
+          next.add(credential.id);
+          return next;
+        });
+      }
+      await invalidateAccountData();
+      if (!copiedToCurrentPlatform) {
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: ["route-credential-page", credential.platform],
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ["route-credentials-all", credential.platform],
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ["route-pool", credential.platform],
+          }),
+        ]);
+      }
+    },
+  });
+
+  const reorderMutation = useMutation({
+    mutationFn: async (input: Parameters<typeof reorderRouteCredentials>[0]) => {
+      if (typeof reorderRouteCredentials !== "function") {
+        throw new Error("账号排序功能不可用");
+      }
+      return reorderRouteCredentials(input);
+    },
+    onSuccess: async (page) => {
+      queryClient.setQueryData(
+        [
+          "route-credential-page",
+          activePlatform,
+          accountScope,
+          page.page,
+          page.page_size,
+          accountFilters,
+          poolMemberKey,
+        ],
+        page,
+      );
+      setAccountPage(page.page);
+      await invalidateAccountData();
+    },
+    onError: () => {
+      void invalidateAccountData();
+    },
+    onSettled: () => {
+      setKeyboardDragId(null);
+    },
+  });
+  const routePoolModelsMutation = useMutation({
+    mutationFn: async () => {
+      const proxyStatus = routeProxyQuery.data;
+      if (!proxyStatus?.running || !proxyStatus.base_url?.trim()) {
+        throw new Error("请先启动本地路由代理，再查看算力池模型列表。");
+      }
+      const proxyKey = await getRouteProxyKey(activePlatform);
+      return fetchRouteProxyModels(proxyStatus.base_url, proxyKey, activePlatform);
+    },
+  });
+
+  const batchDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) {
+        await deleteRouteCredential(id);
+      }
+      return ids;
+    },
+    onSuccess: async (ids) => {
+      if (editingCredential && ids.includes(editingCredential.id)) {
+        setEditingCredential(null);
+      }
+      await invalidateAccountData();
+    },
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: (ids: string[]) => archiveRouteCredentials(ids),
+    onSuccess: async () => {
+      setSelectedAccountIds(new Set());
+      await invalidateAccountData();
+    },
+  });
+  const restoreMutation = useMutation({
+    mutationFn: (ids: string[]) => restoreRouteCredentials(ids),
+    onSuccess: async () => {
+      setSelectedAccountIds(new Set());
+      await invalidateAccountData();
+    },
+  });
+  const batchStatusMutation = useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: AccountStatus }) =>
+      setRouteCredentialStatuses(ids, status),
+    onSuccess: async () => {
+      setSelectedAccountIds(new Set());
+      setBatchStatus("");
+      await invalidateAccountData();
+    },
+  });
+
+  const toggleAccountSelection = (credentialId: string) => {
+    setSelectedAccountIds((current) => {
+      const next = new Set(current);
+      if (next.has(credentialId)) {
+        next.delete(credentialId);
+      } else {
+        next.add(credentialId);
+      }
+      return next;
+    });
+  };
+
+  const clearAccountSelection = () => {
+    setSelectedAccountIds(new Set());
+  };
+
+  const archiveSelectedAccounts = () => {
+    if (
+      selectedAccountIds.size === 0 ||
+      archiveMutation.isPending ||
+      restoreMutation.isPending
+    ) {
+      return;
+    }
+    archiveMutation.mutate(Array.from(selectedAccountIds));
+  };
+
+  const restoreSelectedAccounts = () => {
+    if (
+      selectedAccountIds.size === 0 ||
+      archiveMutation.isPending ||
+      restoreMutation.isPending
+    ) {
+      return;
+    }
+    restoreMutation.mutate(Array.from(selectedAccountIds));
+  };
+
+  const setSelectedAccountsStatus = () => {
+    if (
+      selectedAccountIds.size === 0 ||
+      !batchStatus ||
+      batchStatusMutation.isPending ||
+      accountView === "stats"
+    ) {
+      return;
+    }
+    batchStatusMutation.mutate({
+      ids: Array.from(selectedAccountIds),
+      status: batchStatus,
+    });
+  };
+
+  const toggleAccountFilter = (key: string) => {
+    setAccountPage(1);
+    setAccountFilters((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
+    );
+  };
+
+  const removeAccountFilter = (key: string) => {
+    setAccountPage(1);
+    setAccountFilters((current) => current.filter((item) => item !== key));
+  };
+
+  const copyCredential = (credential: RouteCredential) => {
+    if (copyCredentialMutation.isPending) {
+      return;
+    }
+    copyCredentialMutation.reset();
+    setCopyingCredential(credential);
+  };
+
+  const applyPoolMembership = (
+    accountIds: string[],
+    action: RoutePoolAction,
+    affectedCount: number,
+  ) => {
+    const next = new Set(accountIds);
+    setDraftPoolIds(next);
+    routePoolMutation.mutate({
+      platform: activePlatform,
+      account_ids: Array.from(next),
+      action,
+      affectedCount,
+    });
+  };
+
+  const commitAccountReorder = (movedId: string, targetIndex: number) => {
+    if (!accountPageData || reorderMutation.isPending) return;
+    const neighbors = neighborsForDrop({
+      items: credentials,
+      movedId,
+      targetIndex,
+      previousPageAccountId: accountPageData.previous_page_account_id,
+      nextPageAccountId: accountPageData.next_page_account_id,
+    });
+    reorderMutation.mutate({
+      platform: activePlatform,
+      moved_account_id: movedId,
+      previous_account_id: neighbors.previousAccountId,
+      next_account_id: neighbors.nextAccountId,
+      filters: accountFilters,
+      pool_scope: accountScope,
+      page_size: accountPageSize,
+    });
+  };
+
+  const scheduleAccountEdgePage = (direction: -1 | 1) => {
+    if (accountEdgeTimerRef.current != null || !accountPageData) return;
+    const nextPage = accountPageData.page + direction;
+    if (nextPage < 1 || nextPage > accountPageData.page_count) return;
+    accountEdgeTimerRef.current = window.setTimeout(() => {
+      accountEdgeTimerRef.current = null;
+      setAccountPage(nextPage);
+    }, 600);
+  };
+
+  const cancelAccountEdgePage = () => {
+    if (accountEdgeTimerRef.current == null) return;
+    window.clearTimeout(accountEdgeTimerRef.current);
+    accountEdgeTimerRef.current = null;
+  };
+
+  const accountIds = useMemo(() => credentials.map((credential) => credential.id), [credentials]);
+  const accountDragSort = useDragSort({
+    itemIds: accountIds,
+    onCommit: commitAccountReorder,
+    getScrollContainer: () => accountScrollRef.current,
+    onEdgeHold: scheduleAccountEdgePage,
+    onEdgeLeave: cancelAccountEdgePage,
+    disabled: reorderMutation.isPending,
+    layout: cardLayout ? "grid" : "vertical",
+  });
+  const dragMovedIndex = accountDragSort.activeId
+    ? accountIds.indexOf(accountDragSort.activeId)
+    : -1;
+  const dropPlaceholderAtEnd =
+    accountDragSort.insertIndex != null &&
+    accountDragSort.insertIndex >= credentials.length - (dragMovedIndex >= 0 ? 1 : 0);
+  const dropPlaceholder = accountDragSort.insertIndex == null ? null : (
+    <div
+      aria-hidden="true"
+      className={`border-2 border-dashed border-blue-400 bg-blue-50/70 ${
+        cardLayout ? "rounded-xl" : "mx-1 mb-0.5 rounded-md"
+      }`}
+      data-testid="account-drop-placeholder"
+      style={{ height: accountDragSort.placeholderHeight }}
+    />
+  );
+
+  const addSelectedToPool = () => {
+    if (selectedAccountIds.size === 0 || routePoolMutation.isPending) {
+      return;
+    }
+    const next = new Set(draftPoolIds);
+    for (const id of selectedAccountIds) {
+      next.add(id);
+    }
+    applyPoolMembership(Array.from(next), "add", selectedAccountIds.size);
+    clearAccountSelection();
+  };
+
+  const removeSelectedFromPool = () => {
+    if (selectedAccountIds.size === 0 || routePoolMutation.isPending) {
+      return;
+    }
+    const next = new Set(draftPoolIds);
+    for (const id of selectedAccountIds) {
+      next.delete(id);
+    }
+    applyPoolMembership(Array.from(next), "remove", selectedAccountIds.size);
+    clearAccountSelection();
+  };
+
+  const requestDeleteSelectedAccounts = () => {
+    if (selectedAccountIds.size === 0 || batchDeleteMutation.isPending) {
+      return;
+    }
+    setPendingDelete({ kind: "batch", count: selectedAccountIds.size });
+  };
+
+  const deleteSelectedAccounts = () => {
+    if (selectedAccountIds.size === 0 || batchDeleteMutation.isPending) {
+      return;
+    }
+    const ids = Array.from(selectedAccountIds);
+    const remainingPool = Array.from(draftPoolIds).filter((id) => !selectedAccountIds.has(id));
+    clearAccountSelection();
+    batchDeleteMutation.mutate(ids, {
+      onSuccess: () => {
+        if (remainingPool.length !== draftPoolIds.size) {
+          applyPoolMembership(remainingPool, "sync", ids.length);
+        }
+      },
+    });
+  };
+
+  const openRouteTestDialog = () => {
+    if (!modelTestEnabled || !hasEligiblePoolModelTestCredential) {
+      return;
+    }
+    setTestingAccountId(null);
+    setModelTestAccount(null);
+    setModelTestToolCall(false);
+    setModelTestDialogOpen(true);
+  };
+
+  const copyModelTestCurl = async (shell: ModelTestCurlShell = "posix") => {
+    const proxyBaseUrl = routeProxyQuery.data?.base_url?.trim();
+    if (!routeProxyQuery.data?.running || !proxyBaseUrl) {
+      setRoutePoolFeedback({
+        type: "error",
+        message: "复制 curl 失败：本地路由代理尚未启动。",
+      });
+      return;
+    }
+    try {
+      const proxyKey = await getRouteProxyKey(activePlatform);
+      const command = modelTestCurlCommand({
+        activePlatform,
+        codexEndpoint: codexModelTestEndpoint,
+        outcome: modelTestOutcome,
+        proxyBaseUrl,
+        proxyKey,
+        requestedModel: routeTestModel,
+        shell,
+      });
+      await copySensitiveText(command);
+      setModelTestMenuCopied(shell === "posix" ? "curl" : `curl-${shell}`);
+      setModelTestMenuOpen(false);
+      window.setTimeout(() => setModelTestMenuCopied(null), 1400);
+    } catch (error) {
+      setRoutePoolFeedback({
+        type: "error",
+        message: "复制 curl 失败：" + formatApiError(error, "剪贴板不可用。"),
+      });
+    }
+  };
+
+  const openRoutePoolModelsDialog = () => {
+    setModelTestMenuOpen(false);
+    routePoolModelsMutation.reset();
+    setRoutePoolModelsDialogOpen(true);
+    routePoolModelsMutation.mutate();
+  };
+
+  const closeRoutePoolModelsDialog = () => {
+    setRoutePoolModelsDialogOpen(false);
+    routePoolModelsMutation.reset();
+  };
+
+  const openAccountTestDialog = (credential: RouteCredential) => {
+    if (credential.archived_at || !credentialKindAllowed(modelTestRule, credential.kind)) {
+      return;
+    }
+    setModelTestAccount(credential);
+    setModelTestToolCall(false);
+    setModelTestDialogOpen(true);
+  };
+
+  const selectCodexModelTestEndpoint = (endpoint: CodexModelTestEndpoint) => {
+    setCodexModelTestEndpoint(endpoint);
+    saveCodexModelTestEndpoint(endpoint);
+  };
+
+  const submitModelTest = () => {
+    if (
+      !modelTestEnabled ||
+      (modelTestAccount && !credentialKindAllowed(modelTestRule, modelTestAccount.kind))
+    ) {
+      return;
+    }
+    const accountId = modelTestAccount?.id ?? null;
+    // Persist exactly what gets sent, so the cache means "what was last tested".
+    const trimmedModel = routeTestModel.trim();
+    saveModelTestModel(modelTestStorageKey, trimmedModel, activePlatform);
+    setModelTestModels((current) => {
+      const next = { ...current };
+      if (trimmedModel) {
+        next[modelTestStorageKey] = { model: trimmedModel, platform: activePlatform };
+      } else {
+        delete next[modelTestStorageKey];
+      }
+      return next;
+    });
+    setTestingAccountId(accountId);
+    setModelTestOutcome(null);
+    modelTestMutation.reset();
+    modelTestMutation.mutate({
+      platform: activePlatform,
+      ...(accountId ? { account_id: accountId } : {}),
+      model: trimmedModel || null,
+      ...(activePlatform === "codex"
+        ? { interface_format: codexModelTestInterfaceFormat(codexModelTestEndpoint) }
+        : {}),
+      ...(modelTestToolCall ? { test_tool_call: true } : {}),
+    });
+    setModelTestDialogOpen(false);
+  };
+
+  const fetchApiModels = () => {
+    try {
+      apiFetchModelsMutation.mutate(createModelsFetchRequest());
+    } catch (error) {
+      setApiFetchModelsError(formatApiError(error, "获取模型列表失败。"));
+    }
+  };
+
+  const fetchEditModels = () => {
+    try {
+      editFetchModelsMutation.mutate(editModelsFetchRequest());
+    } catch (error) {
+      setEditFetchModelsError(formatApiError(error, "获取模型列表失败。"));
+    }
+  };
+
+  const closeModelTestOutcome = () => {
+    setModelTestOutcome(null);
+    modelTestMutation.reset();
+  };
+
+  // Arm the 真实生成测试 countdown whenever a verdict lands, and tear it down the
+  // moment another test is in flight — what is on screen no longer describes
+  // what the user is waiting for. The next verdict re-runs this effect, so it
+  // gets a fresh 30 seconds rather than the remainder of the old one.
+  useEffect(() => {
+    const hasVerdict = Boolean(modelTestOutcome) || modelTestMutation.isError;
+    if (!hasVerdict || modelTestMutation.isPending) {
+      setModelTestAutoCloseIn(null);
+      return;
+    }
+    setModelTestAutoCloseIn(MODEL_TEST_AUTO_CLOSE_SECONDS);
+    const timer = window.setInterval(() => {
+      setModelTestAutoCloseIn((current) => (current === null ? null : Math.max(0, current - 1)));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [modelTestOutcome, modelTestMutation.isError, modelTestMutation.isPending]);
+
+  // Reaching zero is what dismisses the panel. Closing from inside the tick
+  // would put a side effect in a state updater, and React is free to run those
+  // more than once.
+  useEffect(() => {
+    if (modelTestAutoCloseIn !== 0) {
+      return;
+    }
+    closeModelTestOutcome();
+    // closeModelTestOutcome is a fresh closure every render; depending on it
+    // would restart the countdown forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelTestAutoCloseIn]);
+
+  // Deliberately outside any aria-live region: the panel announces itself once,
+  // and a per-second tick in a live region would talk over everything else.
+  const modelTestAutoCloseCountdown =
+    modelTestAutoCloseIn !== null && modelTestAutoCloseIn > 0 ? (
+      <span
+        className="shrink-0 whitespace-nowrap text-[11px] opacity-70"
+        data-testid="model-test-auto-close-countdown"
+      >
+        {modelTestAutoCloseIn} 秒后自动关闭
+      </span>
+    ) : null;
+
+  const selectAccountView = (view: AccountView) => {
+    if (view === accountView) {
+      return;
+    }
+    setAccountView(view);
+  };
+
+  const selectAccountLayout = (layout: AccountListLayout) => {
+    if (layout === accountLayout) {
+      return;
+    }
+    accountDragSort.cancel();
+    // The menu is anchored to a row that is about to be laid out somewhere else.
+    setOpenActionMenuId(null);
+    setKeyboardDragId(null);
+    setAccountLayout(layout);
+    saveAccountListLayout(layout);
+  };
+
+  const decodeApiKey = () => {
+    try {
+      setApiKey(
+        apiKey
+          .split(/\r?\n/)
+          .map((line) => {
+            const trimmed = line.trim();
+            return trimmed ? decodeBase64Text(trimmed) : "";
+          })
+          .join("\n"),
+      );
+      setApiKeyDecodeError(null);
+      setApiKeyOcrError(null);
+      setApiFetchedModels([]);
+      setApiFetchModelsError(null);
+    } catch {
+      setApiKeyDecodeError("API Key 不是有效的 Base64 字符串。");
+    }
+  };
+
+  const recognizeApiKeyImage = async (blob: Blob) => {
+    setApiKeyOcrRecognizing(true);
+    setApiKeyDecodeError(null);
+    setApiKeyOcrError(null);
+    try {
+      const recognized = await recognizeApiKeysFromImageBlob(blob);
+      if (!recognized) {
+        setApiKeyOcrError("未识别到 API Key。");
+        return;
+      }
+      setApiKey(recognized);
+      setApiFetchedModels([]);
+      setApiFetchModelsError(null);
+    } catch {
+      setApiKeyOcrError("OCR 识别失败，请换一张更清晰的图片。");
+    } finally {
+      setApiKeyOcrRecognizing(false);
+    }
+  };
+
+  const chooseApiKeyOcrFile = () => {
+    apiKeyOcrFileInputRef.current?.click();
+  };
+
+  const runApiKeyOcr = async () => {
+    setApiKeyDecodeError(null);
+    setApiKeyOcrError(null);
+    try {
+      await recognizeApiKeyImage(await readClipboardImageBlob());
+    } catch (error) {
+      setApiKeyOcrError(
+        error instanceof ClipboardImageReadError && error.code === "no-image"
+          ? "剪切板中没有图片，请选择图片文件。"
+          : "无法读取剪切板图片，请选择图片文件。",
+      );
+      chooseApiKeyOcrFile();
+    }
+  };
+
+  const handleApiKeyOcrFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setApiKeyOcrError("请选择图片文件。");
+      return;
+    }
+    await recognizeApiKeyImage(file);
+  };
+
+  const decodeEditApiKey = () => {
+    try {
+      setEditApiKey(decodeBase64Text(editApiKey));
+      setEditApiKeyDecodeError(null);
+      setEditApiKeyOcrError(null);
+      setEditFetchedModels([]);
+      setEditFetchModelsError(null);
+    } catch {
+      setEditApiKeyDecodeError("API Key 不是有效的 Base64 字符串。");
+    }
+  };
+
+  const recognizeEditApiKeyImage = async (blob: Blob) => {
+    setEditApiKeyOcrRecognizing(true);
+    setEditApiKeyDecodeError(null);
+    setEditApiKeyOcrError(null);
+    try {
+      const recognized = await recognizeApiKeysFromImageBlob(blob);
+      if (!recognized) {
+        setEditApiKeyOcrError("未识别到 API Key。");
+        return;
+      }
+      setEditApiKey(recognized);
+      setEditFetchedModels([]);
+      setEditFetchModelsError(null);
+    } catch {
+      setEditApiKeyOcrError("OCR 识别失败，请换一张更清晰的图片。");
+    } finally {
+      setEditApiKeyOcrRecognizing(false);
+    }
+  };
+
+  const chooseEditApiKeyOcrFile = () => {
+    editApiKeyOcrFileInputRef.current?.click();
+  };
+
+  const runEditApiKeyOcr = async () => {
+    setEditApiKeyDecodeError(null);
+    setEditApiKeyOcrError(null);
+    try {
+      await recognizeEditApiKeyImage(await readClipboardImageBlob());
+    } catch (error) {
+      setEditApiKeyOcrError(
+        error instanceof ClipboardImageReadError && error.code === "no-image"
+          ? "剪切板中没有图片，请选择图片文件。"
+          : "无法读取剪切板图片，请选择图片文件。",
+      );
+      chooseEditApiKeyOcrFile();
+    }
+  };
+
+  const handleEditApiKeyOcrFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setEditApiKeyOcrError("请选择图片文件。");
+      return;
+    }
+    await recognizeEditApiKeyImage(file);
+  };
+
+  const chooseOfficialFiles = async () => {
+    if (!desktop) {
+      return;
+    }
+
+    setFilePickerError(null);
+    try {
+      const selected = await open({
+        multiple: true,
+        title: "选择账号 JSON 文件",
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+
+      if (Array.isArray(selected)) {
+        setOfficialFilePaths(selected);
+        return;
+      }
+      if (typeof selected === "string") {
+        setOfficialFilePaths([selected]);
+      }
+    } catch (error) {
+      setFilePickerError(error instanceof Error ? error.message : "打开文件选择器失败。");
+    }
+  };
+
+  const chooseExternalClientSource = async () => {
+    if (!desktop) {
+      return;
+    }
+
+    setFilePickerError(null);
+    try {
+      const selected = await open({
+        multiple: false,
+        title: `选择 ${EXTERNAL_IMPORT_CLIENT_LABELS[externalClient]} 配置文件`,
+        filters: [{ name: "配置文件", extensions: ["db", "json"] }],
+      });
+      const path = Array.isArray(selected) ? selected[0] : selected;
+      if (typeof path === "string" && path.trim()) {
+        // A new file means a new provider list, so drop the old selection rather
+        // than carrying ids that may not exist there.
+        setExternalSelectedIds(new Set());
+        setExternalSourcePath(path);
+      }
+    } catch (error) {
+      setFilePickerError(error instanceof Error ? error.message : "打开文件选择器失败。");
+    }
+  };
+
+  const toggleExternalSelection = (sourceId: string) => {
+    setExternalSelectedIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(sourceId)) {
+        next.add(sourceId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllExternalSelections = (checked: boolean) => {
+    if (!checked) {
+      setExternalSelectedIds(new Set());
+      return;
+    }
+    setExternalSelectedIds(
+      new Set(
+        (externalImportPreview?.items ?? [])
+          .filter(isImportableExternalItem)
+          .map((item) => item.source_id),
+      ),
+    );
+  };
+
+  const fieldClass =
+    "rounded-xl border border-stone-200 bg-white px-3 py-2 text-[13px] text-stone-900 outline-none motion-control focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
+  const monoFieldClass = `${fieldClass} font-mono`;
+  const labelClass = "grid gap-1.5 text-[12px] font-semibold text-stone-600";
+  const secondaryButtonClass =
+    "rounded-xl border border-stone-200 bg-white px-3 py-2 text-[13px] font-semibold text-stone-700 motion-control hover:bg-stone-50";
+  const primaryButtonClass =
+    "rounded-xl bg-stone-900 px-3 py-2 text-[13px] font-semibold text-white shadow-sm motion-control hover:bg-stone-800 disabled:opacity-50";
+  const handleEditUserAgentChange = (next: string) => {
+    setEditUserAgent(next);
+    if (editingCredential?.kind === "official") {
+      setEditConfigJson(
+        JSON.stringify(
+          writeUserAgentToConfig(parseJsonObject(editConfigJson.trim() || "{}"), next),
+          null,
+          2,
+        ),
+      );
+    }
+  };
+
+  return (
+    <section className="accounts-screen flex h-full min-h-0 flex-col overflow-hidden">
+      <div
+        className="account-workspace grid h-full min-h-0 overflow-hidden rounded-lg bg-transparent motion-layout duration-300 ease-out"
+        data-testid="account-workspace"
+        onMouseMove={(event) => {
+          if (toolbarAutoHidden && event.clientY <= 10) {
+            revealToolbar();
+          }
+        }}
+        onPointerMove={(event) => {
+          if (toolbarAutoHidden && event.clientY <= 10) {
+            revealToolbar();
+          }
+        }}
+        style={{
+          gridTemplateRows: toolbarAutoHidden
+            ? "44px minmax(0, 1fr) 32px"
+            : "60px minmax(0, 1fr) 32px",
+        }}
+      >
+        <div
+          className="relative z-30 flex h-full min-h-0 items-center justify-between gap-3 border-b border-[#d1d1d6] bg-[#f2f2f7] px-3"
+          data-testid="account-workspace-toolbar"
+          onFocus={revealToolbar}
+          onPointerEnter={() => {
+            toolbarHoveredRef.current = true;
+            clearToolbarHideTimer();
+            revealToolbar();
+          }}
+          onPointerLeave={() => {
+            toolbarHoveredRef.current = false;
+            if (toolbarAutoHideEligibleRef.current) {
+              scheduleToolbarHide();
+            }
+          }}
+        >
+          <div
+            className={`min-w-0 flex-1 motion-control duration-300 max-[599px]:hidden ${sidebarCollapsed ? "hidden" : ""} ${toolbarAutoHidden ? "pointer-events-none -translate-y-3 opacity-0" : "translate-y-0 opacity-100"}`}
+            data-testid="workspace-toolbar-leading"
+          >
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                {platformLabels[activePlatform]}
+              </p>
+              {activeCapability?.support_level === "partial" ? (
+                <PlatformSupportBadge
+                  displayName={activeCapability.display_name}
+                  supportLevel={activeCapability.support_level}
+                />
+              ) : null}
+            </div>
+            <h1 className="mt-0.5 text-lg font-semibold leading-tight tracking-tight text-stone-950">
+              {sidebarCollapsed ? (
+                "AI Switch"
+              ) : (
+                <>
+                  <span className="max-[599px]:hidden">算力中心</span>
+                  <span className="hidden max-[599px]:inline">AI Switch</span>
+                </>
+              )}
+            </h1>
+          </div>
+          <div
+            className="mx-2 flex min-w-0 max-w-[560px] flex-[1.5] items-center justify-between gap-3 rounded-lg border border-stone-300/80 bg-stone-100/75 px-2.5 py-1.5 shadow-[inset_0_1px_2px_rgba(28,25,23,0.08),inset_0_-1px_0_rgba(255,255,255,0.82)] max-[599px]:mx-0 max-[599px]:max-w-none max-[599px]:flex-1"
+            data-testid="pool-status-strip"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+              <KeyRound aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="shrink-0 text-[11px] font-semibold text-stone-800">算力池</span>
+                  <span className="shrink-0 font-mono text-[10px] text-stone-500">{draftPoolIds.size} 个账号</span>
+                </div>
+                <div className="hidden min-w-0 items-center gap-2 truncate text-[10px] text-stone-500 sm:flex">
+                  <span className="truncate" title={routeProxyQuery.data?.base_url ?? undefined}>
+                    {routeProxyQuery.data?.running ? routeProxyQuery.data.base_url ?? "代理运行中" : "代理未启动"}
+                  </span>
+                  {lastRouteAccount ? <span className="truncate">最近：{lastRouteAccount}</span> : null}
+                </div>
+                <span className="sr-only">已加入 {draftPoolIds.size} 个账号</span>
+                <span className="sr-only">
+                  本地代理：{routeProxyQuery.data?.running ? routeProxyQuery.data.base_url ?? "运行中" : "未启动"}
+                </span>
+                {lastRouteAccount ? <span className="sr-only">最近路由到：{lastRouteAccount}</span> : null}
+              </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              {routeProxyQuery.data?.running ? (
+                <button
+                  aria-label="停止本地路由代理"
+                  className="grid h-6 w-6 place-items-center border border-red-700 bg-red-600 text-white motion-control hover:bg-red-700 disabled:opacity-50"
+                  disabled={startProxyMutation.isPending || stopProxyMutation.isPending}
+                  onClick={() => stopProxyMutation.mutate()}
+                  title="停止本地路由代理"
+                  type="button"
+                >
+                  <Square aria-hidden="true" className="h-3.5 w-3.5 fill-current" />
+                </button>
+              ) : (
+                <button
+                  aria-label="启动本地路由代理"
+                  className="grid h-6 w-6 place-items-center border border-emerald-700 bg-emerald-600 text-white motion-control hover:bg-emerald-700 disabled:opacity-50"
+                  disabled={startProxyMutation.isPending || stopProxyMutation.isPending}
+                  onClick={() => startProxyMutation.mutate()}
+                  title="启动本地路由代理"
+                  type="button"
+                >
+                  <Play aria-hidden="true" className="h-3.5 w-3.5 fill-current" />
+                </button>
+              )}
+              <button
+                aria-label="写入路由配置文件"
+                className={`relative grid h-6 w-6 place-items-center border bg-white motion-control hover:bg-stone-200 disabled:opacity-50 ${
+                  configWriteStale
+                    ? "border-amber-400 text-amber-700"
+                    : "border-stone-300 text-stone-700"
+                }`}
+                // Platforms without a native config write still open the dialog:
+                // it is where the endpoint parameters for hand-configured clients
+                // live, and the write itself stays gated inside it.
+                disabled={!routeProxyQuery.data?.running || writeConfigsMutation.isPending}
+                onClick={() => setConfigWriteDialogOpen(true)}
+                title={
+                  !configWriteEnabled
+                    ? configWriteReason + "可在弹窗里复制端点参数手动配置。"
+                    : configWriteStale
+                      ? "配置已变更，需重新写入才会生效"
+                      : "对接客户端：把当前算力池写入客户端配置"
+                }
+                type="button"
+              >
+                <Plug aria-hidden="true" className="h-3.5 w-3.5" />
+                {configWriteStale ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber-500"
+                  />
+                ) : null}
+              </button>
+              {configWriteStale ? (
+                <span className="shrink-0 text-[11px] font-semibold text-amber-700">
+                  配置已变更，需重新写入
+                </span>
+              ) : null}
+              {activePlatform === "claude" ? (
+                <button
+                  aria-label="编辑全局客户端配置"
+                  className="grid h-6 w-6 place-items-center border border-stone-300 bg-white text-stone-700 motion-control hover:bg-stone-200 disabled:opacity-50"
+                  disabled={!settingsQuery.data}
+                  onClick={openClientConfigDialog}
+                  title="全局客户端配置（整池共用，写入配置时合并进 settings.json）"
+                  type="button"
+                >
+                  <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+              <div className="relative flex shrink-0" ref={modelTestMenuRef}>
+                <button
+                  aria-label="真实生成测试算力池路由"
+                  className="grid h-6 w-6 place-items-center rounded-l-md border border-stone-300 border-r-0 bg-transparent text-sky-700 motion-control hover:bg-stone-100 disabled:opacity-50"
+                  disabled={!modelTestEnabled || !hasEligiblePoolModelTestCredential || modelTestMutation.isPending}
+                  onClick={openRouteTestDialog}
+                  title={
+                    !modelTestEnabled
+                      ? modelTestReason
+                      : !hasEligiblePoolModelTestCredential
+                        ? "当前算力池没有可测试账号"
+                        : "发送测试"
+                  }
+                  type="button"
+                >
+                  <Send aria-hidden="true" className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  aria-expanded={modelTestMenuOpen}
+                  aria-haspopup="menu"
+                  aria-label="打开算力池测试菜单"
+                  className="grid h-6 w-5 place-items-center rounded-r-md border border-stone-300 bg-transparent text-sky-700 motion-control hover:bg-stone-100"
+                  onClick={() => setModelTestMenuOpen((open) => !open)}
+                  title="更多测试操作"
+                  type="button"
+                >
+                  {modelTestMenuCopied ? (
+                    <Check aria-hidden="true" className="h-3 w-3 text-emerald-600" />
+                  ) : (
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={"h-3 w-3 motion-control " + (modelTestMenuOpen ? "rotate-180" : "")}
+                    />
+                  )}
+                </button>
+                <MotionMenu
+                  ariaLabel="算力池测试菜单"
+                  className="absolute right-0 top-full z-50 mt-1 min-w-44 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
+                  open={modelTestMenuOpen}
+                  origin="top-right"
+                  role="menu"
+                >
+                    <button
+                      aria-label="复制 curl 执行语句"
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-medium text-stone-700 motion-control hover:bg-stone-100"
+                      onClick={() => void copyModelTestCurl("posix")}
+                      role="menuitem"
+                      title="Git Bash / WSL / macOS / Linux"
+                      type="button"
+                    >
+                      <Copy aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      复制 curl（Bash）
+                    </button>
+                    <button
+                      aria-label="复制 PowerShell curl 执行语句"
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-medium text-stone-700 motion-control hover:bg-stone-100"
+                      onClick={() => void copyModelTestCurl("powershell")}
+                      role="menuitem"
+                      title="Windows PowerShell 5.1 与 PowerShell 7 都适用"
+                      type="button"
+                    >
+                      <Copy aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      复制 curl（PowerShell）
+                    </button>
+                    <button
+                      aria-label="复制 CMD curl 执行语句"
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-medium text-stone-700 motion-control hover:bg-stone-100"
+                      onClick={() => void copyModelTestCurl("cmd")}
+                      role="menuitem"
+                      title="cmd.exe"
+                      type="button"
+                    >
+                      <Copy aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      复制 curl（CMD）
+                    </button>
+                    <button
+                      aria-label="查看模型列表"
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-medium text-stone-700 motion-control hover:bg-stone-100"
+                      onClick={openRoutePoolModelsDialog}
+                      role="menuitem"
+                      type="button"
+                    >
+                      <List aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      查看模型列表
+                    </button>
+                    <button
+                      aria-label="实时日志"
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-medium text-stone-700 motion-control hover:bg-stone-100"
+                      onClick={() => {
+                        setModelTestMenuOpen(false);
+                        setLiveLogOpen(true);
+                      }}
+                      role="menuitem"
+                      type="button"
+                    >
+                      <ScrollText aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      实时日志
+                    </button>
+                </MotionMenu>
+              </div>
+            </div>
+          </div>
+          <div className={`flex min-w-0 flex-1 justify-end motion-control duration-300 max-[599px]:hidden ${toolbarAutoHidden ? "pointer-events-none -translate-y-3 opacity-0" : "translate-y-0 opacity-100"}`}>
+            <button
+              aria-label="会话管理"
+              className="grid h-7 w-7 shrink-0 place-items-center border border-stone-300 bg-white text-stone-700 motion-control hover:bg-stone-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
+              onClick={() => onOpenSessions?.(activePlatform)}
+              title="会话管理"
+              type="button"
+            >
+              <MessageSquareText aria-hidden="true" className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        <div
+          className="min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain bg-transparent"
+          data-testid="account-workspace-scroll-region"
+          ref={accountScrollRef}
+        >
+        {configWriteOutcomes.length > 0 && (
+          <div className="mx-4 mb-3 space-y-1 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[12px] text-stone-600">
+            <div className="flex items-start justify-between gap-3">
+              <p className="font-semibold text-stone-950">配置写入结果</p>
+              <DismissButton
+                ariaLabel="关闭配置写入结果"
+                onClick={() => setConfigWriteOutcomes([])}
+              />
+            </div>
+            {configWriteOutcomes.map((outcome) => (
+              <div
+                className="rounded-lg border border-stone-200 bg-white px-2.5 py-2"
+                key={`${outcome.operation_id}:${outcome.target_key}:${outcome.snapshot_id ?? "none"}`}
+              >
+                <p>
+                  {clientByTargetKey.get(outcome.target_key)?.display_name ?? outcome.target_key} ·{" "}
+                  {outcome.platform}: {outcome.path || "未解析路径"} ({outcome.status})
+                </p>
+                <p className="mt-1 font-mono text-[11px] text-stone-500">
+                  operation {outcome.operation_id} · snapshot {outcome.snapshot_id ?? "none"}
+                </p>
+                <p className="mt-1 font-mono text-[11px] text-stone-500">
+                  before {outcome.before_hash ?? "none"} · after {outcome.after_hash ?? "none"}
+                </p>
+                {outcome.error_code ? (
+                  <p className="mt-1 font-mono text-[11px] text-red-600">{outcome.error_code}</p>
+                ) : null}
+              </div>
+            ))}
+            {/* The dialog is gone by now and the user likely switched windows, so
+                the restart requirement has to be repeated here. */}
+            {configWriteOutcomes.some(
+              (outcome) => clientByTargetKey.get(outcome.target_key)?.restart_required,
+            ) ? (
+              <p className="text-[11px] text-stone-500">
+                写入后需重启{" "}
+                {Array.from(
+                  new Set(
+                    configWriteOutcomes
+                      .map((outcome) => clientByTargetKey.get(outcome.target_key))
+                      .filter((client) => client?.restart_required)
+                      .map((client) => client?.display_name ?? ""),
+                  ),
+                ).join("、")}{" "}
+                才生效（它不监听配置文件变化）。
+              </p>
+            ) : null}
+          </div>
+        )}
+        {/* The dialog stays open on failure and shows this same sentence, so
+            rendering it here too would duplicate it on screen. */}
+        {configWriteError && !configWriteDialogOpen ? (
+          <div className="mx-4 mb-3 flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700">
+            <p role="alert">{configWriteError}</p>
+            <DismissButton
+              ariaLabel="关闭配置写入错误"
+              onClick={() => setConfigWriteError(null)}
+            />
+          </div>
+        ) : null}
+        {modelTestMutation.isPending ? (
+          <div
+            aria-label="真实生成测试进行中"
+            aria-live="polite"
+            className="mx-4 mb-3 mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-[12px] text-sky-950"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 font-semibold">
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  真实生成测试：正在请求中...
+                </p>
+                <p className="mt-1 text-[11px] opacity-80">
+                  {(modelTestAccount?.display_name ?? "算力池路由")}
+                  {routeTestModel.trim() ? ` · 模型 ${routeTestModel.trim()}` : " · 默认测试模型"}
+                </p>
+                <p className="mt-1 text-[11px] text-sky-800/80">
+                  请求已发出，等待上游响应；完成后会显示在此区域。
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 font-mono text-[11px] text-sky-800">
+                pending
+              </span>
+            </div>
+          </div>
+        ) : null}
+        {modelTestOutcome ? (
+          <div
+            aria-label="真实生成测试结果"
+            className={`mx-4 mb-3 mt-3 space-y-3 rounded-xl border px-3 py-2 text-[12px] ${
+              modelTestOutcome.success
+                ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                : "border-red-200 bg-red-50 text-red-950"
+            }`}
+          >
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold">
+                  真实生成测试：{modelTestOutcome.success ? "通过" : "失败"}
+                </p>
+                <p className="text-[11px] opacity-80">
+                  {modelTestOutcome.selected_account_name} · {interfaceFormatLabel(modelTestOutcome.interface_format)} · {modelTestTargetText(modelTestOutcome)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <p className="font-mono text-[11px]">{modelTestStatusLine(modelTestOutcome)}</p>
+                {modelTestAutoCloseCountdown}
+                <DismissButton
+                  ariaLabel="关闭真实生成测试结果"
+                  onClick={closeModelTestOutcome}
+                />
+              </div>
+            </div>
+
+            {modelTestOutcome.response_text ? (
+              <div>
+                <p className="font-semibold">模型输出</p>
+                <p className="mt-1 rounded-lg bg-white/80 px-2 py-1 font-mono text-[11px] text-stone-800">
+                  {modelTestOutcome.response_text}
+                </p>
+              </div>
+            ) : null}
+
+            {modelTestOutcome.via_route_proxy ? (
+              <div
+                aria-label="算力池请求链路"
+                className="rounded-lg bg-white/80 px-2 py-2 text-[11px] text-stone-800"
+              >
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="font-semibold text-stone-700">算力池请求链路</p>
+                  {modelTestOutcome.route_proxy_trace_id ? (
+                    <p className="truncate font-mono text-[10px] text-stone-500">
+                      trace {modelTestOutcome.route_proxy_trace_id}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="mt-2 grid gap-2 lg:grid-cols-3">
+                  {modelTestRouteChainItems(modelTestOutcome).map((item) => (
+                    <div
+                      className="min-w-0 rounded-md border border-stone-200/80 bg-white px-2 py-1.5"
+                      key={item.label}
+                    >
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">
+                        {item.label}
+                      </p>
+                      <p className="mt-0.5 truncate font-mono text-[11px] text-stone-800" title={item.value}>
+                        {item.value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {modelTestOutcome.error_message ? (
+              <p className="rounded-lg bg-white/80 px-2 py-1 font-mono text-[11px] text-red-800">
+                {modelTestOutcome.error_message}
+              </p>
+            ) : null}
+
+            <details className="rounded-lg bg-white/80 px-2 py-1">
+              <summary className="cursor-pointer font-semibold">查看输入输出</summary>
+              <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                <div>
+                  <p className="mb-1 font-semibold text-stone-600">请求 JSON</p>
+                  <pre className="max-h-56 overflow-auto rounded-lg border border-stone-200 bg-white p-2 font-mono text-[11px] leading-relaxed text-stone-700">
+                    {prettyJsonOrText(modelTestOutcome.request_body_json)}
+                  </pre>
+                </div>
+                <div>
+                  <p className="mb-1 font-semibold text-stone-600">响应 Body</p>
+                  <pre className="max-h-56 overflow-auto rounded-lg border border-stone-200 bg-white p-2 font-mono text-[11px] leading-relaxed text-stone-700">
+                    {prettyJsonOrText(modelTestOutcome.response_body)}
+                  </pre>
+                </div>
+              </div>
+            </details>
+          </div>
+        ) : null}
+        {modelTestMutation.isError ? (
+          <div className="mx-4 mb-3 flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-800">
+            <p>
+              真实生成测试失败：
+              {formatApiError(
+                modelTestMutation.error,
+                "请检查算力池账号和网络。",
+              )}
+            </p>
+            <div className="flex shrink-0 items-center gap-2">
+              {modelTestAutoCloseCountdown}
+              <DismissButton
+                ariaLabel="关闭真实生成测试错误"
+                onClick={closeModelTestOutcome}
+              />
+            </div>
+          </div>
+        ) : null}
+      <>
+        {statsOpen ? (
+          <motion.div
+            key="account-stats"
+            className="account-view-motion min-h-full"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <UsageOverviewPanel />
+          </motion.div>
+        ) : (
+          <motion.div
+            key={accountView}
+            className="account-view-motion min-h-full"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+          >
+      <section className="flex min-h-full flex-col border-t border-stone-300/80 bg-transparent pt-2">
+        <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-2 border-y border-stone-300/80 bg-stone-100/90 px-2 py-1.5 backdrop-blur-sm">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="shrink-0 text-[12px] font-semibold text-stone-600 max-[599px]:hidden">筛选：</span>
+              <div className="relative w-72 max-w-full flex-none" ref={accountFilterMenuRef}>
+                <div
+                  className="flex min-h-8 w-full min-w-0 flex-wrap items-center gap-1.5 rounded-md border border-stone-300 bg-white px-2 py-1"
+                  onClick={() => setAccountFilterMenuOpen(true)}
+                >
+                  {accountFilters.length === 0 ? (
+                    <span className="px-1 text-[12px] text-stone-400">选择批量名或单账号</span>
+                  ) : (
+                    accountFilters.map((filterKey) => (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-800"
+                        key={filterKey}
+                      >
+                        {accountFilterLabels.get(filterKey) ?? credentialBatchFilterLabel(filterKey)}
+                        <button
+                          aria-label={`移除筛选 ${accountFilterLabels.get(filterKey) ?? credentialBatchFilterLabel(filterKey)}`}
+                            className="p-0.5 text-blue-700 motion-control hover:bg-blue-100"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            removeAccountFilter(filterKey);
+                          }}
+                          type="button"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))
+                  )}
+                  <button
+                    aria-label="打开账号筛选"
+                    className="ml-auto inline-flex items-center gap-1 px-1.5 py-1 text-[12px] font-semibold text-stone-600 motion-control hover:bg-stone-50"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setAccountFilterMenuOpen((open) => !open);
+                    }}
+                    type="button"
+                  >
+                    <ChevronDown className={`h-3.5 w-3.5 motion-control ${accountFilterMenuOpen ? "rotate-180" : ""}`} />
+                  </button>
+                </div>
+                <MotionMenu
+                  ariaLabel="账号筛选"
+                  className="absolute left-0 right-0 z-20 mt-1 max-h-56 overflow-auto rounded-xl border border-stone-300 bg-white p-1 shadow-lg"
+                  open={accountFilterMenuOpen}
+                  origin="top-left"
+                  role="menu"
+                >
+                    {accountFilterOptions.length === 0 ? (
+                      <p className="px-2 py-2 text-[12px] text-stone-500">暂无可筛选项</p>
+                    ) : (
+                      accountFilterOptions.map((option) => {
+                        const checked = accountFilters.includes(option);
+                        return (
+                          <button
+                            aria-label={`筛选 ${accountFilterLabels.get(option) ?? credentialBatchFilterLabel(option)}`}
+                            className={`flex w-full items-center justify-between rounded-sm px-2.5 py-1.5 text-left text-[12px] font-semibold motion-control ${
+                              checked ? "bg-blue-50 text-blue-800" : "text-stone-700 hover:bg-stone-50"
+                            }`}
+                            key={option}
+                            onClick={() => toggleAccountFilter(option)}
+                            type="button"
+                          >
+                            <span>{accountFilterLabels.get(option) ?? credentialBatchFilterLabel(option)}</span>
+                            {checked ? <Check className="h-3.5 w-3.5" /> : null}
+                          </button>
+                        );
+                      })
+                    )}
+                    {accountFilters.length > 0 && (
+                      <button
+                        aria-label="清空账号筛选"
+                        className="mt-1 w-full rounded-sm border border-stone-300 px-2.5 py-1.5 text-[12px] font-semibold text-stone-600 motion-control hover:bg-stone-50"
+                        onClick={() => { setAccountFilters([]); setAccountPage(1); }}
+                        type="button"
+                      >
+                        清空筛选
+                      </button>
+                    )}
+                </MotionMenu>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div
+              aria-label="账号展示模式"
+              className="flex h-7 shrink-0 items-center gap-0.5 rounded-lg border border-stone-300 bg-white p-0.5 shadow-sm"
+              role="group"
+            >
+              {accountLayoutOptions.map((option) => {
+                const active = accountLayout === option.key;
+                return (
+                  <button
+                    aria-label={option.label}
+                    aria-pressed={active}
+                    className={`grid h-6 w-6 place-items-center rounded-md motion-control ${
+                      active
+                        ? "bg-stone-900 text-white shadow-sm"
+                        : "text-stone-600 hover:bg-stone-100"
+                    }`}
+                    key={option.key}
+                    onClick={() => selectAccountLayout(option.key)}
+                    title={option.label}
+                    type="button"
+                  >
+                    {option.key === "card" ? (
+                      <LayoutGrid aria-hidden="true" className="h-3.5 w-3.5" />
+                    ) : (
+                      <List aria-hidden="true" className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedAccountIds.size > 0 && (
+              <button
+                aria-label="导出选中账号"
+                className="grid h-7 w-7 place-items-center border border-stone-300 bg-white text-stone-700 motion-control hover:bg-stone-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
+                onClick={openExport}
+                title="导出选中账号"
+                type="button"
+              >
+                <Download aria-hidden="true" className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <button
+              aria-label="新增账号"
+              className="grid h-7 w-7 place-items-center border border-stone-700 bg-stone-800 text-white motion-control hover:bg-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
+              onClick={() => {
+                setJoinPoolOnCreate(true);
+                setCreateTab("basic");
+                setCreateOpen(true);
+              }}
+              title="新增账号"
+              type="button"
+            >
+              <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+            </button>
+            <div className="relative" ref={refreshMenuRef}>
+              <div className="flex overflow-hidden rounded-lg border border-stone-300 bg-white shadow-sm">
+                <button
+                  aria-label="刷新账号列表"
+                  className="grid h-7 w-7 place-items-center bg-white text-stone-700 motion-control hover:bg-stone-100 disabled:opacity-50"
+                  disabled={credentialsQuery.isFetching || quotaRefreshPlatformMutation.isPending}
+                  onClick={() => {
+                    setRefreshMenuOpen(false);
+                    void invalidateAccountData();
+                  }}
+                  title="刷新账号列表"
+                  type="button"
+                >
+                  <RefreshCw
+                    aria-hidden="true"
+                    className={`h-3.5 w-3.5 ${credentialsQuery.isFetching ? "animate-spin" : ""}`}
+                  />
+                  <span className="sr-only">刷新账号列表</span>
+                </button>
+                <button
+                  aria-expanded={refreshMenuOpen}
+                  aria-haspopup="menu"
+                  aria-label="打开刷新菜单"
+                  className="grid h-7 w-6 place-items-center border-l border-stone-200 bg-white text-stone-600 motion-control hover:bg-stone-100 disabled:opacity-50"
+                  disabled={credentialsQuery.isFetching || quotaRefreshPlatformMutation.isPending}
+                  onClick={() => setRefreshMenuOpen((open) => !open)}
+                  title="更多刷新操作"
+                  type="button"
+                >
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={`h-3.5 w-3.5 motion-control ${refreshMenuOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+              </div>
+              <MotionMenu
+                ariaLabel="刷新操作"
+                className="absolute right-0 top-full z-30 mt-1 min-w-36 overflow-hidden rounded-xl border border-stone-200 bg-white p-1 shadow-lg"
+                open={refreshMenuOpen}
+                origin="top-right"
+                role="menu"
+              >
+                  <button
+                    aria-label="刷新账号列表"
+                    className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] font-semibold text-stone-700 motion-control hover:bg-stone-50 disabled:opacity-50"
+                    disabled={credentialsQuery.isFetching || quotaRefreshPlatformMutation.isPending}
+                    onClick={() => {
+                      setRefreshMenuOpen(false);
+                      void invalidateAccountData();
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
+                    刷新账号列表
+                  </button>
+                  <div
+                    aria-label="显示内容自定义"
+                    className="my-1 border-t border-stone-100 pt-1"
+                    role="group"
+                  >
+                    <p className="px-2.5 py-1 text-[11px] font-semibold text-stone-400">
+                      显示内容自定义
+                    </p>
+                    {(
+                      [
+                        ["showAccountType", "账号类型（API/Token）"],
+                        ["showModelList", "模型列表"],
+                        ["showRequestStats", "请求统计"],
+                        ["showLatencyStats", "请求耗时"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <label
+                        className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-[12px] font-semibold text-stone-700 motion-control hover:bg-stone-50"
+                        key={key}
+                      >
+                        <input
+                          aria-label={`显示${label}`}
+                          checked={accountDisplayPreferences[key]}
+                          className="h-3.5 w-3.5 accent-blue-600"
+                          onChange={(event) =>
+                            updateAccountDisplayPreference(key, event.target.checked)
+                          }
+                          type="checkbox"
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <button
+                    aria-label="刷新官方账号额度"
+                    className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] font-semibold text-violet-700 motion-control hover:bg-violet-50 disabled:opacity-50"
+                    disabled={
+                      !officialQuotaEnabled ||
+                      quotaRefreshPlatformMutation.isPending ||
+                      credentialsQuery.isFetching
+                    }
+                    onClick={() => {
+                      setRefreshMenuOpen(false);
+                      quotaRefreshPlatformMutation.mutate();
+                    }}
+                    role="menuitem"
+                    title={!officialQuotaEnabled ? officialQuotaReason : undefined}
+                    type="button"
+                  >
+                    <RefreshCw
+                      aria-hidden="true"
+                      className={`h-3.5 w-3.5 ${quotaRefreshPlatformMutation.isPending ? "animate-spin" : ""}`}
+                    />
+                    刷新账号额度
+                  </button>
+                  <button
+                    aria-label="查询中转站余额"
+                    className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] font-semibold text-teal-700 motion-control hover:bg-teal-50 disabled:opacity-50"
+                    disabled={
+                      relayBalancePlatformMutation.isPending || credentialsQuery.isFetching
+                    }
+                    onClick={() => {
+                      setRefreshMenuOpen(false);
+                      relayBalancePlatformMutation.mutate();
+                    }}
+                    role="menuitem"
+                    title="查询本平台所有开启了余额查询的中转站账号"
+                    type="button"
+                  >
+                    {/* 钱包只是这条菜单项的身份标记，转起来会像在翻跟头；查询期间
+                        让位给刷新图标，跟上面「刷新账号额度」一个转法。 */}
+                    {relayBalancePlatformMutation.isPending ? (
+                      <RefreshCw
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 animate-spin"
+                        data-testid="relay-balance-platform-icon"
+                      />
+                    ) : (
+                      <Wallet
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5"
+                        data-testid="relay-balance-platform-icon"
+                      />
+                    )}
+                    查中转站余额
+                  </button>
+              </MotionMenu>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+          {selectedAccountIds.size > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] font-semibold text-amber-900">
+                <span>已选 {selectedAccountIds.size} 个账号</span>
+                <button
+                  aria-label="取消账号选择"
+                  className="rounded-lg border border-amber-200 bg-white px-2 py-1 text-[12px] font-semibold text-stone-700 motion-control hover:bg-stone-50"
+                  onClick={clearAccountSelection}
+                  type="button"
+                >
+                  取消选择
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {accountView !== "archived" && (
+                  <>
+                    <select
+                      aria-label="批量设置状态"
+                      className="h-7 rounded-lg border border-amber-300 bg-white px-2 text-[12px] font-semibold text-stone-700"
+                      onChange={(event) => setBatchStatus(event.target.value as AccountStatus | "")}
+                      value={batchStatus}
+                    >
+                      <option value="">批量设置状态</option>
+                      <option value="ok">正常</option>
+                      <option value="paused">暂停</option>
+                      <option value="warning">警告</option>
+                      <option value="error">异常</option>
+                      <option value="revoked">已失效</option>
+                    </select>
+                    {batchStatus && (
+                      <button
+                        aria-label="应用批量状态"
+                        className="inline-flex items-center justify-center rounded-lg bg-amber-700 px-2.5 py-1.5 text-[12px] font-semibold text-white motion-control hover:bg-amber-800 disabled:opacity-50"
+                        disabled={batchStatusMutation.isPending}
+                        onClick={setSelectedAccountsStatus}
+                        type="button"
+                      >
+                        {batchStatusMutation.isPending ? "应用中..." : "应用状态"}
+                      </button>
+                    )}
+                  </>
+                )}
+                {accountView === "archived" ? (
+                  <button
+                    aria-label="批量恢复账号"
+                    className="grid h-7 w-7 place-items-center border border-emerald-200 bg-white text-emerald-800 motion-control hover:bg-emerald-50 disabled:opacity-50"
+                    disabled={archiveMutation.isPending || restoreMutation.isPending}
+                    onClick={restoreSelectedAccounts}
+                    title="批量恢复账号"
+                    type="button"
+                  >
+                    <ArchiveRestore aria-hidden="true" className="h-3.5 w-3.5" />
+                    <span className="sr-only">批量恢复账号</span>
+                  </button>
+                ) : (
+                  <>
+                    {accountView === "out_of_pool" ? (
+                      <button
+                        aria-label="批量加入算力池"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-[12px] font-semibold text-white motion-control hover:bg-emerald-800 disabled:opacity-50"
+                        disabled={routePoolMutation.isPending}
+                        onClick={addSelectedToPool}
+                        type="button"
+                      >
+                        加入算力池
+                      </button>
+                    ) : (
+                      <button
+                        aria-label="批量移出算力池"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-emerald-800 motion-control hover:bg-emerald-50 disabled:opacity-50"
+                        disabled={routePoolMutation.isPending}
+                        onClick={removeSelectedFromPool}
+                        type="button"
+                      >
+                        移出算力池
+                      </button>
+                    )}
+                    <button
+                      aria-label="批量归档账号"
+                      className="inline-flex h-7 items-center justify-center gap-1.5 border border-amber-200 bg-white px-2.5 text-[12px] font-semibold text-amber-800 motion-control hover:bg-amber-50 disabled:opacity-50"
+                      disabled={archiveMutation.isPending || restoreMutation.isPending}
+                      onClick={archiveSelectedAccounts}
+                      title="批量归档账号"
+                      type="button"
+                    >
+                      <Archive aria-hidden="true" className="h-3.5 w-3.5" />
+                      归档
+                    </button>
+                  </>
+                )}
+                <button
+                  aria-label="批量删除账号"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-red-700 motion-control hover:bg-red-50 disabled:opacity-50"
+                  disabled={batchDeleteMutation.isPending}
+                  onClick={requestDeleteSelectedAccounts}
+                  type="button"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  批量删除
+                </button>
+              </div>
+            </div>
+          )}
+          {quotaRefreshMessage && (
+            <div className="flex items-start justify-between gap-3 rounded-xl bg-violet-50 px-3 py-2 text-[12px] font-medium text-violet-800">
+              <p>{quotaRefreshMessage}</p>
+              <DismissButton
+                ariaLabel="关闭额度刷新提示"
+                onClick={() => setQuotaRefreshMessage(null)}
+              />
+            </div>
+          )}
+          {relayBalanceMessage && (
+            <div className="flex items-start justify-between gap-3 rounded-xl bg-teal-50 px-3 py-2 text-[12px] font-medium text-teal-800">
+              <p>{relayBalanceMessage}</p>
+              <DismissButton
+                ariaLabel="关闭余额查询提示"
+                onClick={() => setRelayBalanceMessage(null)}
+              />
+            </div>
+          )}
+          {credentialsQuery.isLoading && <p className="rounded-xl bg-stone-50 p-4 text-sm text-stone-500">正在加载账号...</p>}
+          {credentialsQuery.error && <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">账号加载失败。</p>}
+          {!credentialsQuery.isLoading && credentials.length === 0 && (
+            <div
+              className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-dashed border-stone-300 bg-stone-50 p-6 text-center text-sm text-stone-500"
+              data-testid="account-empty-state"
+            >
+              空空如也
+            </div>
+          )}
+          {batchStatusMutation.error && (
+            <div className="flex items-start justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700">
+              <p>{formatApiError(batchStatusMutation.error, "批量设置状态失败。")}</p>
+              <DismissButton
+                ariaLabel="关闭批量设置状态错误"
+                onClick={() => batchStatusMutation.reset()}
+              />
+            </div>
+          )}
+          <div
+            className={
+              cardLayout
+                ? // min(...) rather than a bare 272px: below one card's width the
+                  // track has to shrink with the container instead of overflowing it.
+                  "grid grid-cols-[repeat(auto-fill,minmax(min(272px,100%),1fr))] gap-2 px-1"
+                : undefined
+            }
+            data-account-layout={accountLayout}
+            data-testid="account-list"
+            ref={attachAccountList}
+          >
+          {credentials.map((credential, credentialIndex) => {
+                  const subscriptionType = officialSubscriptionType(credential);
+                  const primaryRemain = officialPrimaryRemain(credential);
+                  const weeklyRemain = officialWeeklyRemain(credential);
+                  const latestReset = officialLatestResetLabel(credential);
+                  const retryLabel = credentialRetryLabel(credential);
+                  const cooldownState = credentialCooldownState(credential, cooldownNow);
+                  const failureTag = transientFailureTag(
+                    credential.status,
+                    credential.transient_failure_count,
+                  );
+                  const modelMappings = parseModelMappingsFromConfig(credential.config_json);
+                  const modelIssues = credentialModelIssues(credential, cooldownNow);
+                  const baseUrlLink = credentialBaseUrlLink(credential);
+                  const credentialConfig = parseJsonObject(credential.config_json);
+                  const credentialRelayBalanceEnabled =
+                    credential.kind === "api" &&
+                    relayBalanceFormFromConfig(credentialConfig).provider !== "none";
+                  const relayBalanceSnapshot = relayBalanceSnapshotFromConfig(credentialConfig);
+                  const relayBalanceStatus = relayBalanceStatusById[credential.id];
+                  // A failed refresh must not hide the reading that is still in
+                  // the config. The batch path writes an `error` for every account
+                  // whose panel did not answer, so nulling the snapshot here turned
+                  // one timed-out panel into "balance gone" on that row while the
+                  // stored value was still perfectly good. The failure is already
+                  // visible in the pinned rose refresh icon and the tooltip.
+                  const effectiveRelayBalanceSnapshot =
+                    relayBalanceStatus?.snapshot ?? relayBalanceSnapshot;
+                  const relayBalanceTag = effectiveRelayBalanceSnapshot
+                    ? relayBalanceBadge(effectiveRelayBalanceSnapshot)
+                    : null;
+                  // 余额只剩这一个入口：读数是标签本身，刷新按钮长在标签里，悬停/聚焦
+                  // 才追加图标，右侧不再单独摆一个钱包。归档账号没有刷新入口，但存过的
+                  // 读数还得看得见，所以退化成一个静态标签。
+                  const relayBalanceRefreshable =
+                    credentialRelayBalanceEnabled && !credential.archived_at;
+                  const relayBalanceError = relayBalanceStatus?.error ?? null;
+                  // 批量查询扫的正是所有渲染出这颗徽标的行——api、未归档、开了余额
+                  // 查询——所以它跑起来时每颗图标都得转。只认 credential.id 的话，
+                  // 「查中转站余额」期间整列只是变灰，看不出到底在不在查。
+                  const relayBalanceRefreshing =
+                    refreshingRelayBalanceId === credential.id ||
+                    relayBalancePlatformMutation.isPending;
+                  // 三种情况下图标常显而不等悬停：还没有读数（此时标签只剩图标，是取第
+                  // 一次余额的唯一入口）、正在查、上次查失败——最后一种原先由钱包图标
+                  // 变红承担，藏进 hover 里就等于没有了。
+                  const relayBalanceIconPinned =
+                    !effectiveRelayBalanceSnapshot ||
+                    relayBalanceRefreshing ||
+                    Boolean(relayBalanceError);
+                  // 有读数就用读数自己的色调：查询失败不该把一笔好读数染成「余额告急」，
+                  // 那个色是留给 remaining <= 0 的。没有读数可保时才整颗染红。
+                  const relayBalanceToneClass =
+                    relayBalanceTag?.toneClass ??
+                    (relayBalanceError ? "bg-rose-50 text-rose-700" : "bg-teal-50 text-teal-800");
+                  const relayBalanceBlock = !relayBalanceRefreshable ? (
+                    relayBalanceTag ? (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${relayBalanceTag.toneClass}`}
+                        data-testid={`credential-relay-balance-${credential.id}`}
+                        title={relayBalanceTag.title}
+                      >
+                        {relayBalanceTag.label}
+                      </span>
+                    ) : null
+                  ) : (
+                    <button
+                      // The visible label is an amount, so the accessible name has to
+                      // carry it too — an aria-label of just "查询 X 余额" overrides it,
+                      // leaving a screen reader with no balance and no hint that the
+                      // last refresh failed. It quotes the badge's own wording so the
+                      // spoken name matches the text on screen.
+                      aria-label={
+                        relayBalanceError
+                          ? `查询 ${credential.display_name} 余额（上次查询失败）`
+                          : relayBalanceTag
+                            ? `查询 ${credential.display_name} 余额（当前 ${relayBalanceTag.amount}）`
+                            : `查询 ${credential.display_name} 余额`
+                      }
+                      className={`group/balance inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold motion-control disabled:opacity-50 ${relayBalanceToneClass}`}
+                      data-testid={`credential-relay-balance-${credential.id}`}
+                      disabled={
+                        relayBalanceMutation.isPending || relayBalancePlatformMutation.isPending
+                      }
+                      onClick={() => relayBalanceMutation.mutate(credential.id)}
+                      title={
+                        relayBalanceError ??
+                        relayBalanceTag?.title ??
+                        `查询 ${credential.display_name} 的中转站余额`
+                      }
+                      type="button"
+                    >
+                      {relayBalanceTag ? <span>{relayBalanceTag.label}</span> : null}
+                      <RefreshCw
+                        aria-hidden="true"
+                        className={`h-3 w-3 shrink-0 ${relayBalanceRefreshing ? "animate-spin" : ""} ${
+                          relayBalanceError ? "text-rose-600" : ""
+                        } ${
+                          relayBalanceIconPinned
+                            ? ""
+                            : "hidden group-hover/balance:block group-focus-within/balance:block"
+                        }`}
+                        data-testid={`credential-relay-balance-refresh-${credential.id}`}
+                      />
+                    </button>
+                  );
+                  const isCopyingCredential =
+                    copyCredentialMutation.isPending &&
+                    copyCredentialMutation.variables?.credential.id === credential.id;
+                  const testAllowed = credentialKindAllowed(modelTestRule, credential.kind);
+                  const rowActions: RowAction[] = [];
+                  if (credential.kind === "official" && !credential.archived_at) {
+                    rowActions.push({
+                      key: "quota",
+                      ariaLabel: `刷新 ${credential.display_name} 额度`,
+                      menuLabel: "刷新额度",
+                      title: !officialQuotaEnabled ? officialQuotaReason : `刷新 ${credential.display_name} 额度`,
+                      disabled:
+                        !officialQuotaEnabled ||
+                        quotaRefreshMutation.isPending ||
+                        quotaRefreshPlatformMutation.isPending,
+                      onClick: () => quotaRefreshMutation.mutate(credential.id),
+                      inlineToneClass: "border-violet-200 text-violet-700 hover:bg-violet-50",
+                      icon: (
+                        <RefreshCw
+                          aria-hidden="true"
+                          className={`h-3.5 w-3.5 ${refreshingQuotaId === credential.id ? "animate-spin" : ""}`}
+                        />
+                      ),
+                    });
+                  }
+                  rowActions.push({
+                    key: "copy",
+                    ariaLabel: `复制 ${credential.display_name}`,
+                    menuLabel: isCopyingCredential
+                      ? "复制中…"
+                      : copiedCredentialId === credential.id
+                        ? "已复制"
+                        : "复制账号",
+                    title: "复制账号",
+                    disabled: copyCredentialMutation.isPending,
+                    onClick: () => copyCredential(credential),
+                    inlineToneClass: "border-stone-200 text-stone-700 hover:bg-stone-50",
+                    icon:
+                      copiedCredentialId === credential.id ? (
+                        <Check aria-hidden="true" className="h-3.5 w-3.5 text-emerald-600" />
+                      ) : (
+                        <Copy aria-hidden="true" className="h-3.5 w-3.5" />
+                      ),
+                  });
+                  if (!credential.archived_at) {
+                    const isTesting = testingAccountId === credential.id && modelTestMutation.isPending;
+                    rowActions.push({
+                      key: "test",
+                      ariaLabel: `测试 ${credential.display_name}`,
+                      menuLabel: isTesting ? "测试中…" : "测试账号",
+                      title: !testAllowed ? modelTestReason : "测试账号",
+                      disabled: !testAllowed || modelTestMutation.isPending,
+                      onClick: () => openAccountTestDialog(credential),
+                      inlineToneClass: "border-emerald-200 text-emerald-700 hover:bg-emerald-50",
+                      icon: <Send aria-hidden="true" className="h-3.5 w-3.5" />,
+                    });
+                  }
+                  rowActions.push({
+                    key: "edit",
+                    ariaLabel: `编辑 ${credential.display_name}`,
+                    menuLabel: "编辑账号",
+                    title: "编辑账号",
+                    onClick: () => {
+                      updateMutation.reset();
+                      deleteMutation.reset();
+                      setEditTab("basic");
+                      setEditingCredential(credential);
+                    },
+                    inlineToneClass: "border-stone-200 text-stone-700 hover:bg-stone-50",
+                    icon: <Edit3 aria-hidden="true" className="h-3.5 w-3.5" />,
+                  });
+                  const actionMenuOpen = openActionMenuId === credential.id;
+                  const isDragged = accountDragSort.activeId === credential.id;
+                  const isKeyboardDragged = keyboardDragId === credential.id;
+                  // Slot this row falls into once the dragged row is out of the list,
+                  // which is where the placeholder has to show up for "lands here".
+                  const dropSlot =
+                    dragMovedIndex >= 0 && credentialIndex > dragMovedIndex
+                      ? credentialIndex - 1
+                      : credentialIndex;
+                  const placeholderSlot =
+                    !isDragged && accountDragSort.insertIndex === dropSlot
+                      ? dropPlaceholder
+                      : null;
+                  const dragHandle = (
+                    <button
+                      aria-grabbed={isDragged || isKeyboardDragged}
+                      aria-label={`拖动 ${credential.display_name}`}
+                      className={`grid shrink-0 touch-none place-items-center rounded border border-stone-200 px-0 text-stone-400 hover:bg-stone-50 ${
+                        cardLayout ? "h-6 w-5" : "h-7 w-7"
+                      } ${isDragged ? "cursor-grabbing bg-stone-100" : "cursor-grab"}`}
+                      onPointerDown={(event) => accountDragSort.startDrag(credential.id, event)}
+                      onKeyDown={(event) => {
+                        const back = event.key === "ArrowUp" || (cardLayout && event.key === "ArrowLeft");
+                        const forward =
+                          event.key === "ArrowDown" || (cardLayout && event.key === "ArrowRight");
+                        if (event.key === " " || event.key === "Enter") {
+                          event.preventDefault();
+                          setKeyboardDragId((current) => current === credential.id ? null : credential.id);
+                        } else if (isKeyboardDragged && back) {
+                          event.preventDefault();
+                          commitAccountReorder(credential.id, Math.max(0, credentialIndex - 1));
+                        } else if (isKeyboardDragged && forward) {
+                          event.preventDefault();
+                          commitAccountReorder(credential.id, Math.min(credentials.length - 1, credentialIndex + 1));
+                        } else if (event.key === "Escape") {
+                          setKeyboardDragId(null);
+                        }
+                      }}
+                      type="button"
+                    >
+                      <GripVertical className={cardLayout ? "h-3.5 w-3.5" : "h-4 w-4"} />
+                    </button>
+                  );
+                  const selectionCheckbox = (
+                    <input
+                      aria-label={`选择 ${credential.display_name}`}
+                      checked={selectedAccountIds.has(credential.id)}
+                      className="h-4 w-4 rounded border-stone-300 text-amber-500 focus:ring-blue-400"
+                      onChange={() => toggleAccountSelection(credential.id)}
+                      type="checkbox"
+                    />
+                  );
+                  const nameBlock = (
+                    <>
+                        <p
+                          className={`truncate text-[13px] font-semibold text-stone-950 ${
+                            // A card lays the name out in a nowrap row, so it has to be
+                            // allowed to shrink; the list wraps its badges instead.
+                            //
+                            // `basis-64` aligns the badges that follow it into a
+                            // column, but it must stay shrinkable: the grid track
+                            // holding it is `minmax(0,1fr)`, which goes below 16rem
+                            // once the window approaches the 320px minimum. With
+                            // `shrink-0` the name overflowed into the action column
+                            // and, because the scroll container hides overflow-x,
+                            // did so with neither an ellipsis nor a way to scroll to
+                            // it — the text simply ran under the buttons.
+                            cardLayout ? "min-w-0 flex-1" : "min-w-0 basis-64"
+                          }`}
+                          title={`P${credential.route_priority}-${credential.display_name}`}
+                        >
+                          {/* The prefix doubles as the 路由优先级 quick edit. Chrome
+                              cancelled down to a colour shift and an underline on
+                              hover: the global button lift would make a number
+                              sitting mid-sentence jump. `data-plain-text` covers
+                              the rest — `shadow-none` cannot, because the
+                              .accounts-screen rules outweigh a utility class and
+                              were drawing a rounded box around `P1-`. Focus is a
+                              fill rather than a ring — the enclosing `truncate`
+                              box clips anything drawn outside the text, and a
+                              clipped ring is no focus indicator at all. */}
+                          <button
+                            aria-label={`快捷编辑 ${credential.display_name} 的路由优先级，当前 P${credential.route_priority}`}
+                            className="text-stone-500 motion-control hover:translate-y-0 hover:text-blue-700 hover:underline focus:outline-none focus-visible:bg-blue-100 focus-visible:text-blue-800 focus-visible:underline active:translate-y-0 active:scale-100"
+                            data-plain-text=""
+                            data-testid={`credential-priority-${credential.id}`}
+                            onClick={() => openQuickEditPriority(credential)}
+                            title="点击修改路由优先级"
+                            type="button"
+                          >
+                            {`P${credential.route_priority}-`}
+                          </button>
+                          <span>{credential.display_name}</span>
+                        </p>
+                        {baseUrlLink && (
+                          <button
+                            aria-label={`打开 ${baseUrlLink.host}`}
+                            // Hidden until the row is hovered or the button itself is
+                            // focused: keyboard users never lose access to it.
+                            className="-ml-1 shrink-0 text-stone-400 opacity-0 motion-control hover:text-blue-600 focus-visible:opacity-100 group-hover/name:opacity-100"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void openExternal(baseUrlLink.href);
+                            }}
+                            title={baseUrlLink.href}
+                            type="button"
+                          >
+                            <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                    </>
+                  );
+                  // A row keeps both live counters up in the badges: 并发 goes last,
+                  // after the balance, where a number that changes with every request
+                  // is not shoving the status badges around. A card is too narrow for
+                  // that, so it sends them to the footer instead.
+                  //
+                  // The counter is also the 最大并发数 quick edit. `aria-label` stays
+                  // the reading itself so the live announcement is unchanged; `title`
+                  // carries the "click me" as the accessible description.
+                  //
+                  // `data-plain-text` for the same reason as the P(N) prefix: the
+                  // global shadow drew a box around a counter that has no surface of
+                  // its own until hover. It also frees box-shadow, which that rule
+                  // was claiming — so `focus-visible:ring-2` below now shows.
+                  // `rounded-full` keeps the hover fill a pill, like the badges it
+                  // sits among.
+                  const concurrencyBadge =
+                    (credential.active_request_count ?? 0) > 0 ? (
+                      <button
+                        aria-label={`正在处理请求，当前 ${credential.active_request_count}/${credential.max_concurrency}`}
+                        className="inline-flex items-center gap-1 rounded-full px-1 text-[10px] font-semibold text-emerald-700 motion-control hover:translate-y-0 hover:bg-emerald-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 active:translate-y-0 active:scale-100"
+                        data-plain-text=""
+                        data-testid={`credential-activity-${credential.id}`}
+                        onClick={() => openQuickEditConcurrency(credential)}
+                        title="点击修改最大并发数"
+                        type="button"
+                      >
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                        {credential.active_request_count}/{credential.max_concurrency}
+                      </button>
+                    ) : null;
+                  const cooldownBadge =
+                    cooldownState?.active && retryLabel ? (
+                      <CredentialFailureTooltip credential={credential}>
+                        {/* `data-plain-text` for the same reason as the counters
+                            above: the global `.accounts-screen button` rule would
+                            stack its own rounded shadow box on top of this pill's
+                            fill. */}
+                        <button
+                          aria-label={`账号冷却至 ${retryLabel}，点击调整或解除`}
+                          className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-800 motion-control hover:translate-y-0 hover:bg-orange-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 active:translate-y-0 active:scale-100"
+                          data-plain-text=""
+                          data-testid={`credential-cooldown-${credential.id}`}
+                          onClick={() => openCooldownEditor(credential)}
+                          title={`临时失败退避中，冷却至 ${retryLabel}；点击调整或解除冷却`}
+                          type="button"
+                        >
+                          冷却 {formatCooldownRemaining(cooldownState.remaining)}
+                        </button>
+                      </CredentialFailureTooltip>
+                    ) : null;
+                  // The model list gets a line of its own in both layouts: it can carry
+                  // four tags on its own, and inline it pushed the status badges past a
+                  // wrap where they were easy to miss.
+                  const modelListBlock = accountDisplayPreferences.showModelList ? (
+                    <ModelMappingSummary platform={activePlatform} mappings={modelMappings} />
+                  ) : null;
+                  // Switch 显示模型列表 off and the models have nowhere left to go, so the
+                  // stats line doubles as their slot: click it to swap the numbers for a
+                  // dot-separated model list in the very same type, click again to swap
+                  // back. The swap is list-wide, so one click never leaves half the rows
+                  // showing models and half showing counts. Null while the tag row is on
+                  // — there is nothing to reveal.
+                  const modelLineToggle = accountDisplayPreferences.showModelList
+                    ? null
+                    : (() => {
+                        const summary = statsLineShowsModels
+                          ? modelSummaryLine(activePlatform, modelMappings)
+                          : null;
+                        return {
+                          showsModels: statsLineShowsModels,
+                          text: summary?.text ?? "",
+                          title: summary?.title ?? "点击把所有账号的这一行换成模型列表",
+                        };
+                      })();
+                  // 请求耗时 is off by default and lives at the right end of the stats
+                  // line. Only wall-clock duration is recorded (`duration_ms` in the
+                  // proxy's usage-event metadata), so this is the whole request, and
+                  // nothing here claims to be a time-to-first-token — that number does
+                  // not exist anywhere in the pipeline yet.
+                  const latencyTag =
+                    accountDisplayPreferences.showLatencyStats &&
+                    credential.last_duration_ms != null ? (
+                      <span
+                        data-testid={`account-latency-${credential.id}`}
+                        title={
+                          credential.avg_recent_duration_ms != null
+                            ? `最近 10 次成功请求平均 ${formatRequestDuration(credential.avg_recent_duration_ms)}（最近一次 ${formatRequestDuration(credential.last_duration_ms)}）`
+                            : `最近一次请求 ${formatRequestDuration(credential.last_duration_ms)}；还没有成功的请求可以求平均`
+                        }
+                      >
+                        耗时 {formatRequestDuration(credential.last_duration_ms)}
+                      </span>
+                    ) : null;
+                  const badges = (
+                    <>
+                        {accountDisplayPreferences.showAccountType ? (
+                          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                            {credential.kind === "api" ? "API" : "Token"}
+                          </span>
+                        ) : null}
+                        {credential.archived_at && (
+                          <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[11px] font-semibold text-stone-700">
+                            已归档
+                          </span>
+                        )}
+                        <CredentialFailureTooltip credential={credential}>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${failureTag?.className ?? accountStatusClass(credential.status)}`}
+                            title={failureTag ? `${accountStatusLabel(credential.status)} · ${failureTag.label}` : credential.status}
+                          >
+                            {failureTag?.label ?? accountStatusLabel(credential.status)}
+                          </span>
+                        </CredentialFailureTooltip>
+                        {cardLayout ? null : cooldownBadge}
+                        {modelIssues.length > 0 && (
+                          <span
+                            className="group relative inline-flex outline-none focus:ring-2 focus:ring-orange-300"
+                            tabIndex={0}
+                          >
+                            <span
+                              className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-800"
+                              data-testid={`credential-model-issues-${credential.id}`}
+                              title="部分模型暂不参与路由"
+                            >
+                              模型 {modelIssues.length} 不可用
+                            </span>
+                            {/* pt-1 rather than mt-1: a margin gap drops :hover
+                                mid-travel and closes the panel before the pointer
+                                arrives. */}
+                            <span
+                              className="absolute left-0 top-full z-50 hidden pt-1 group-hover:block group-focus-within:block"
+                              data-testid={`credential-model-detail-${credential.id}`}
+                            >
+                              <span className="block w-[min(28rem,calc(100vw-2rem))] select-text rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-left text-[11px] font-medium leading-5 text-white shadow-xl">
+                                {modelIssues.map((issue) => (
+                                  <span
+                                    className="mt-1 block first:mt-0"
+                                    key={issue.state.model_key}
+                                  >
+                                    <span className="font-semibold">{issue.state.model_key}</span>
+                                    {issue.state.aliases.length > 0 ? (
+                                      <span className="text-stone-400">
+                                        （{issue.state.aliases.join("、")}）
+                                      </span>
+                                    ) : (
+                                      <span className="text-stone-400">（已移除映射）</span>
+                                    )}
+                                    <span className="ml-1 text-orange-200">
+                                      {modelIssueLabel(issue)}
+                                    </span>
+                                    {issue.state.last_failure_message ? (
+                                      <span className="mt-0.5 block break-words text-stone-300">
+                                        {issue.state.last_failure_message}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                ))}
+                              </span>
+                            </span>
+                          </span>
+                        )}
+                        {subscriptionType && (
+                          <span
+                            className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800"
+                            title="订阅类型"
+                          >
+                            订阅 {subscriptionType}
+                          </span>
+                        )}
+                        {primaryRemain != null && (
+                          <span
+                            className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-800"
+                            title="主额度剩余"
+                          >
+                            主额度 {primaryRemain}
+                          </span>
+                        )}
+                        {weeklyRemain != null && (
+                          <span
+                            className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-800"
+                            title="周额度剩余"
+                          >
+                            周额度 {weeklyRemain}
+                          </span>
+                        )}
+                        {latestReset && (
+                          <span
+                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700"
+                            title="最近重置时间"
+                          >
+                            重置 {latestReset}
+                          </span>
+                        )}
+                        {relayBalanceBlock}
+                        {cardLayout ? null : concurrencyBadge}
+                    </>
+                  );
+                  const statsLine = (() => {
+                          const requestStats = credentialRequestStats(credential);
+                          return (
+                            <>
+                              {requestStats.requestCount <= 0 ? (
+                                <span>暂无请求</span>
+                              ) : (
+                                <>
+                                  <span>请求 {requestStats.requestCount}</span>
+                                  {/* A card is too narrow for the breakdown, same as a
+                                      list squeezed against the sidebar. */}
+                                  <span
+                                    className={
+                                      cardLayout || sidebarCollapsed ? "hidden" : "max-[599px]:hidden"
+                                    }
+                                  >
+                                    {` · 成功 ${requestStats.successCount} · 失败 ${requestStats.failureCount}`}
+                                  </span>
+                                  <span>{` · 成功率 ${requestStats.rateLabel}`}</span>
+                                </>
+                              )}
+                              {credential.batch_id && (
+                                <span title={credential.batch_name?.trim() || credential.batch_id}>
+                                  {` · 批量 ${credential.batch_name?.trim() || shortId(credential.batch_id)}`}
+                                </span>
+                              )}
+                            </>
+                          );
+                  })();
+                  const actionsBlock = (
+                    <div className="flex shrink-0 flex-nowrap items-center justify-end gap-1">
+                      {rowActionsInMenu ? (
+                        <div className="relative flex" data-account-action-menu>
+                          <button
+                            aria-expanded={actionMenuOpen}
+                            aria-haspopup="menu"
+                            aria-label={`更多操作 ${credential.display_name}`}
+                            className="grid h-7 w-7 place-items-center border border-stone-200 text-stone-700 motion-control hover:bg-stone-50"
+                            onClick={() =>
+                              setOpenActionMenuId((current) =>
+                                current === credential.id ? null : credential.id,
+                              )
+                            }
+                            title="更多操作"
+                            type="button"
+                          >
+                            <MoreVertical aria-hidden="true" className="h-3.5 w-3.5" />
+                            <span className="sr-only">更多操作</span>
+                          </button>
+                          <MotionMenu
+                            ariaLabel={`${credential.display_name} 操作菜单`}
+                            className="absolute right-0 top-full z-50 mt-1 min-w-36 rounded-xl border border-stone-200 bg-white p-1 shadow-lg"
+                            open={actionMenuOpen}
+                            origin="top-right"
+                            role="menu"
+                          >
+                              {rowActions.map((action) => (
+                                <button
+                                  aria-label={action.ariaLabel}
+                                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-medium text-stone-700 motion-control hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-45"
+                                  disabled={action.disabled}
+                                  key={action.key}
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    action.onClick();
+                                  }}
+                                  role="menuitem"
+                                  title={action.title}
+                                  type="button"
+                                >
+                                  <span className="grid h-4 w-4 shrink-0 place-items-center">{action.icon}</span>
+                                  {action.menuLabel}
+                                </button>
+                              ))}
+                          </MotionMenu>
+                        </div>
+                      ) : (
+                        rowActions.map((action) => (
+                          <button
+                            aria-label={action.ariaLabel}
+                            className={`${
+                              action.inlineLabel
+                                ? "flex h-7 items-center gap-1 px-2"
+                                : "grid h-7 w-7 place-items-center"
+                            } border motion-control disabled:opacity-50 ${action.inlineToneClass}`}
+                            disabled={action.disabled}
+                            key={action.key}
+                            onClick={action.onClick}
+                            title={action.title}
+                            type="button"
+                          >
+                            {action.icon}
+                            {action.inlineLabel ? (
+                              <span className="text-[11px] font-semibold">{action.inlineLabel}</span>
+                            ) : null}
+                            <span className="sr-only">{action.menuLabel}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  );
+                  // Without stats the footer still has to render when a counter is
+                  // live, otherwise turning off 请求统计 would also hide 并发/冷却.
+                  const cardFooterVisible = Boolean(
+                    accountDisplayPreferences.showRequestStats || concurrencyBadge || cooldownBadge,
+                  );
+                  if (cardLayout) {
+                    return (
+                      <Fragment key={credential.id}>
+                        {placeholderSlot}
+                        <article
+                          aria-label={`放置在 ${credential.display_name} 前`}
+                          className={`group/name flex h-full min-w-0 flex-col gap-1.5 rounded-xl border p-2.5 motion-control ${
+                            isDragged
+                              ? "border-blue-400 bg-white shadow-lg"
+                              : isKeyboardDragged
+                                ? "border-blue-400 bg-blue-50/70"
+                                : "border-stone-200 bg-white hover:shadow-md"
+                          } ${
+                            selectedAccountIds.has(credential.id)
+                              ? "ring-2 ring-amber-300"
+                              : ""
+                          }`}
+                          data-testid={`account-card-${credential.id}`}
+                          ref={accountDragSort.registerItem(credential.id)}
+                        >
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            {dragHandle}
+                            {selectionCheckbox}
+                            <div className="flex min-w-0 flex-1 items-center gap-1">{nameBlock}</div>
+                            {actionsBlock}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">{badges}</div>
+                          {modelListBlock ? (
+                            <div
+                              className="flex min-w-0 flex-wrap items-center gap-1.5"
+                              data-testid={`account-model-list-${credential.id}`}
+                            >
+                              {modelListBlock}
+                            </div>
+                          ) : null}
+                          {/* mt-auto keeps the footer pinned to the bottom so the
+                              footers of a grid row stay on one baseline. The live
+                              counters sit at its right end, away from the stats. */}
+                          {cardFooterVisible ? (
+                            <div
+                              className="mt-auto flex items-center gap-2 border-t border-stone-200/70 pt-1.5"
+                              data-testid={`account-card-footer-${credential.id}`}
+                            >
+                              {accountDisplayPreferences.showRequestStats ? (
+                                <p className="min-w-0 flex-1 truncate text-[11px] text-stone-500">
+                                  {statsLine}
+                                </p>
+                              ) : null}
+                              {concurrencyBadge || cooldownBadge ? (
+                                // ml-auto rather than justify-between: with the stats
+                                // line hidden the counters are the only child, and
+                                // justify-between would leave them at the left edge.
+                                <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                                  {concurrencyBadge}
+                                  {cooldownBadge}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </article>
+                      </Fragment>
+                    );
+                  }
+                  return (
+                  <Fragment key={credential.id}>
+                  {placeholderSlot}
+                  <div
+                    aria-label={`放置在 ${credential.display_name} 前`}
+                    className={`mx-1 mb-0.5 grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-3 py-2.5 motion-control last:mb-0 ${
+                      isDragged
+                        ? "border-blue-400 bg-white shadow-lg"
+                        : isKeyboardDragged
+                          ? "border-blue-400 bg-blue-50/70"
+                          : "border-stone-200 bg-white"
+                    }`}
+                    ref={accountDragSort.registerItem(credential.id)}
+                  >
+                    {dragHandle}
+                    {selectionCheckbox}
+                    <div className="min-w-0">
+                      <div className="group/name flex flex-wrap items-center gap-2">
+                        {nameBlock}
+                        {badges}
+                      </div>
+                      {modelListBlock ? (
+                        <div
+                          className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5"
+                          data-testid={`account-model-list-${credential.id}`}
+                        >
+                          {modelListBlock}
+                        </div>
+                      ) : null}
+                      {accountDisplayPreferences.showRequestStats || latencyTag ? (
+                        <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px] text-stone-500">
+                          {accountDisplayPreferences.showRequestStats ? (
+                            modelLineToggle ? (
+                              <button
+                                aria-label={
+                                  modelLineToggle.showsModels
+                                    ? "全部账号改显示请求统计"
+                                    : "全部账号改显示模型列表"
+                                }
+                                aria-pressed={modelLineToggle.showsModels}
+                                // It is a line of text that happens to be clickable, so
+                                // the global button chrome — a 1px hover lift and a press
+                                // scale from styles.css, plus the radius and shadow that
+                                // drew a ghost border around the sentence — is cancelled
+                                // here. Only the colour shifts; `data-plain-text` leaves
+                                // box-shadow free for the focus ring.
+                                className={`min-w-0 ${STATS_LINE_WIDTH} truncate rounded text-left motion-control hover:translate-y-0 hover:text-stone-700 active:translate-y-0 active:scale-100`}
+                                data-plain-text=""
+                                data-testid={`account-stats-line-${credential.id}`}
+                                onClick={() => setStatsLineShowsModels((current) => !current)}
+                                title={modelLineToggle.title}
+                                type="button"
+                              >
+                                {modelLineToggle.showsModels ? modelLineToggle.text : statsLine}
+                              </button>
+                            ) : (
+                              <p className={`min-w-0 ${STATS_LINE_WIDTH} truncate`}>{statsLine}</p>
+                            )
+                          ) : null}
+                          {latencyTag ? <span className="shrink-0">{latencyTag}</span> : null}
+                        </div>
+                      ) : null}
+                    </div>
+                    {actionsBlock}
+                  </div>
+                  </Fragment>
+                  );
+                })}
+          {dropPlaceholderAtEnd ? dropPlaceholder : null}
+          </div>
+          {accountPageData && accountPageData.total > 0 && (
+            <div className="hidden flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-3">
+              <label className="flex items-center gap-2 text-[12px] font-semibold text-stone-600">
+                <span>账号每页数量</span>
+                <select
+                  aria-label="账号每页数量"
+                  className="rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-[12px]"
+                  onChange={(event) => {
+                    setAccountPageSize(Number(event.target.value));
+                    setAccountPage(1);
+                  }}
+                  value={accountPageSize}
+                >
+                  {[20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+                </select>
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  aria-label="上一页账号"
+                  className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold disabled:opacity-50"
+                  disabled={(accountPageData.page ?? accountPage) <= 1}
+                  onClick={() => setAccountPage((page) => Math.max(1, page - 1))}
+                  type="button"
+                ><ChevronLeft className="h-3.5 w-3.5" />上一页</button>
+                <span className="min-w-20 text-center text-[12px] font-semibold text-stone-600">
+                  第 {accountPageData.page} / {accountPageData.page_count} 页
+                </span>
+                <button
+                  aria-label="下一页账号"
+                  className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold disabled:opacity-50"
+                  disabled={accountPageData.page >= accountPageData.page_count}
+                  onClick={() => setAccountPage((page) => Math.min(accountPageData.page_count, page + 1))}
+                  type="button"
+                >下一页<ChevronRight className="h-3.5 w-3.5" /></button>
+              </div>
+            </div>
+          )}
+          {/* role="alert" sits on the sentence, not the row: a screen reader
+              should announce what went wrong, not the × next to it. Dismissing
+              resets the mutation, which is the only way to clear an error
+              react-query owns. */}
+          {archiveMutation.error ? (
+            <div className="flex items-start justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700">
+              <p role="alert">{formatApiError(archiveMutation.error, "归档账号失败。")}</p>
+              <DismissButton
+                ariaLabel="关闭归档账号错误"
+                onClick={() => archiveMutation.reset()}
+              />
+            </div>
+          ) : null}
+          {restoreMutation.error ? (
+            <div className="flex items-start justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700">
+              <p role="alert">{formatApiError(restoreMutation.error, "恢复账号失败。")}</p>
+              <DismissButton
+                ariaLabel="关闭恢复账号错误"
+                onClick={() => restoreMutation.reset()}
+              />
+            </div>
+          ) : null}
+          {/* A rejected reorder only snaps the row back, which reads as a dead
+              drag handle. Say why instead. */}
+          {reorderMutation.error ? (
+            <div className="flex items-start justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700">
+              <p role="alert">{formatApiError(reorderMutation.error, "保存账号顺序失败。")}</p>
+              <DismissButton
+                ariaLabel="关闭账号排序错误"
+                onClick={() => reorderMutation.reset()}
+              />
+            </div>
+          ) : null}
+        </div>
+      </section>
+          </motion.div>
+        )}
+      </>
+
+        </div>
+        <footer
+          className="flex h-8 min-h-0 items-center justify-between gap-1 overflow-hidden border-t border-stone-300 bg-stone-100 px-2 text-[11px] text-stone-600"
+          data-testid="account-workspace-status-bar"
+        >
+          <div aria-label="账号视图" className="flex h-7 shrink-0 items-center rounded-lg border border-stone-200 bg-white p-0.5 shadow-sm" role="group">
+            {accountViewOptions.map((option) => {
+              const active = accountView === option.key;
+              return (
+                <button
+                  aria-label={option.label}
+                  aria-pressed={active}
+                  className={`relative grid h-6 place-items-center rounded-md px-1 text-[11px] font-semibold motion-control ${active ? "bg-stone-900 text-white shadow-sm" : "text-stone-600 hover:bg-stone-100"}`}
+                  key={option.key}
+                  onClick={() => selectAccountView(option.key)}
+                  title={option.label}
+                  type="button"
+                >
+                  {option.label}
+                  {active ? (
+                    <motion.span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-amber-400"
+                      layoutId="account-view-active-indicator"
+                      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                    />
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          {routePoolFeedback ? (
+            <div className="flex min-w-0 flex-1 items-center gap-1 px-2">
+              <span
+                aria-live="polite"
+                className={`min-w-0 flex-1 truncate text-[11px] ${routePoolFeedback.type === "error" ? "text-red-700" : "text-emerald-700"}`}
+                role={routePoolFeedback.type === "error" ? "alert" : "status"}
+              >
+                {routePoolFeedback.message}
+              </span>
+              <DismissButton
+                ariaLabel="关闭算力池提示"
+                onClick={() => setRoutePoolFeedback(null)}
+                size="sm"
+              />
+            </div>
+          ) : <span className="min-w-0 flex-1" />}
+          <div className="flex min-w-0 items-center gap-1">
+                <span className="hidden truncate sm:inline">{accountPageData?.total ?? 0} 个账号</span>
+                {accountPageData && accountPageData.total > 0 ? (
+                  <>
+                    <label className="flex items-center gap-1">
+                      <span className="sr-only">账号每页数量</span>
+                      <select
+                        aria-label="账号每页数量"
+                        className="h-6 border border-stone-300 bg-white px-1 text-[11px] text-stone-700 outline-none focus:border-stone-500"
+                        onChange={(event) => {
+                          setAccountPageSize(Number(event.target.value));
+                          setAccountPage(1);
+                        }}
+                        value={accountPageSize}
+                      >
+                        {[20, 50, 100].map((size) => <option key={size} value={size}>{size}/页</option>)}
+                      </select>
+                    </label>
+                    <button
+                      aria-label="上一页账号"
+                      className="grid h-6 w-6 place-items-center border border-stone-300 bg-white text-stone-700 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={(accountPageData.page ?? accountPage) <= 1}
+                      onClick={() => setAccountPage((page) => Math.max(1, page - 1))}
+                      title="上一页"
+                      type="button"
+                    ><ChevronLeft aria-hidden="true" className="h-3.5 w-3.5" /></button>
+                    <span className="whitespace-nowrap font-mono text-[11px]">{accountPageData.page}/{accountPageData.page_count}</span>
+                    <button
+                      aria-label="下一页账号"
+                      className="grid h-6 w-6 place-items-center border border-stone-300 bg-white text-stone-700 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={accountPageData.page >= accountPageData.page_count}
+                      onClick={() => setAccountPage((page) => Math.min(accountPageData.page_count, page + 1))}
+                      title="下一页"
+                      type="button"
+                    ><ChevronRight aria-hidden="true" className="h-3.5 w-3.5" /></button>
+                  </>
+                ) : null}
+          </div>
+        </footer>
+
+        </div>
+
+      {pendingDelete && (
+        <div className="motion-overlay fixed inset-0 z-[80] grid place-items-center bg-stone-950/35 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deleteMutation.isPending && !batchDeleteMutation.isPending) {
+              setPendingDelete(null);
+            }
+          }}>
+          <div
+            aria-label="删除确认弹窗"
+            aria-modal="true"
+            className="w-full max-w-sm rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl"
+            role="dialog"
+          >
+            <h3 className="text-lg font-semibold text-stone-950">
+              {pendingDelete.kind === "batch" ? "确认批量删除账号" : "确认删除账号"}
+            </h3>
+            <p className="mt-2 text-[13px] leading-6 text-stone-600">
+              {pendingDelete.kind === "batch"
+                ? `将删除已选中的 ${pendingDelete.count} 个账号，删除后无法恢复。`
+                : `将删除账号「${pendingDelete.name}」，删除后无法恢复。`}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className={secondaryButtonClass}
+                onClick={() => setPendingDelete(null)}
+                type="button"
+              >
+                取消
+              </button>
+              <button
+                aria-label="确认删除"
+                className="rounded-xl border border-red-700 bg-red-600 px-3 py-2 text-[13px] font-semibold text-white motion-control hover:bg-red-700 disabled:opacity-50"
+                disabled={deleteMutation.isPending || batchDeleteMutation.isPending}
+                onClick={() => {
+                  if (pendingDelete.kind === "batch") {
+                    deleteSelectedAccounts();
+                  } else {
+                    deleteMutation.mutate(pendingDelete.id);
+                  }
+                  setPendingDelete(null);
+                }}
+                type="button"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clientConfigOpen && (
+        <div className="motion-overlay fixed inset-0 z-50 grid place-items-center bg-stone-950/35 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setClientConfigOpen(false);
+            }
+          }}
+        >
+          <div
+            aria-label="全局客户端配置弹窗"
+            className="w-full max-w-lg rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                  {platformLabels[activePlatform]}
+                </p>
+                <h3 className="mt-0.5 text-lg font-semibold text-stone-950">全局客户端配置</h3>
+                <p className="mt-1 text-[12px] leading-5 text-stone-500">
+                  Claude Code 的行为开关（includeCoAuthoredBy、permissions 等）由它自己读取 settings.json，
+                  整个算力池共用一份，所以只能全局配置、不能按账号区分。写入配置时合并进 settings.json 根级。
+                </p>
+              </div>
+              <button
+                aria-label="关闭全局客户端配置弹窗"
+                className="rounded-xl border border-stone-200 p-1.5 text-stone-500 motion-control hover:bg-stone-50"
+                onClick={() => setClientConfigOpen(false)}
+                type="button"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <label className="mt-4 grid gap-1.5">
+              <span className="text-[12px] font-semibold text-stone-600">配置片段（JSON 对象）</span>
+              <textarea
+                aria-label="全局客户端配置 JSON"
+                className="min-h-40 rounded-xl border border-stone-200 bg-white px-3 py-2 font-mono text-[12px] text-stone-900 outline-none motion-control focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                onChange={(event) => setClientConfigDraft(event.target.value)}
+                placeholder={'{\n  "includeCoAuthoredBy": false\n}'}
+                spellCheck={false}
+                value={clientConfigDraft}
+              />
+            </label>
+            <p className="mt-1.5 text-[11px] leading-5 text-stone-500">
+              这里配置的键会覆盖 settings.json 中同名的手改值；从这里删掉某个键，下次写入会把它从
+              settings.json 中移除。未在此出现过的键不会被改动。留空表示不管理任何键。
+            </p>
+            {clientConfigError ? (
+              <p className="mt-2 text-[12px] font-semibold text-red-700">{clientConfigError}</p>
+            ) : null}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-[13px] font-semibold text-stone-700 motion-control hover:bg-stone-50"
+                onClick={() => setClientConfigOpen(false)}
+                type="button"
+              >
+                取消
+              </button>
+              <button
+                className="rounded-xl border border-blue-700 bg-blue-600 px-3 py-2 text-[13px] font-semibold text-white motion-control hover:bg-blue-700 disabled:opacity-50"
+                disabled={saveClientConfigMutation.isPending}
+                onClick={submitClientConfig}
+                type="button"
+              >
+                {saveClientConfigMutation.isPending ? "保存中..." : "保存"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modelTestDialogOpen && (
+        <div className="motion-overlay fixed inset-0 z-50 grid place-items-center bg-stone-950/35 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setModelTestDialogOpen(false);
+            }
+          }}
+        >
+          <div
+            aria-label="真实生成测试弹窗"
+            className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                  {platformLabels[activePlatform]}
+                </p>
+                <h3 className="mt-0.5 text-lg font-semibold text-stone-950">
+                  {modelTestAccount ? `真实生成测试 ${modelTestAccount.display_name}` : "真实生成测试算力池路由"}
+                </h3>
+                <p className="mt-1 text-[12px] text-stone-500">
+                  会向上游发起一次真实生成请求；cc-switch 的站点可达测试仅代表 Base URL 可访问。模型可选，留空使用当前平台默认测试模型。
+                </p>
+              </div>
+              <button
+                aria-label="关闭真实生成测试弹窗"
+                className="rounded-xl border border-stone-200 p-1.5 text-stone-500 motion-control hover:bg-stone-50"
+                onClick={() => setModelTestDialogOpen(false)}
+                type="button"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {activePlatform === "codex" && (
+              <fieldset className="mt-4">
+                <legend className="text-[12px] font-semibold text-stone-600">测试接口</legend>
+                <div className="mt-1.5 grid grid-cols-2 gap-1 rounded-lg bg-stone-100 p-1">
+                  {(["/responses", "/chat/completions"] as const).map((endpoint) => {
+                    const selected = codexModelTestEndpoint === endpoint;
+                    return (
+                      <button
+                        aria-label={`测试接口 ${endpoint}`}
+                        aria-pressed={selected}
+                        className={`h-9 min-w-0 cursor-pointer whitespace-nowrap rounded-md px-1 font-mono text-[11px] font-semibold motion-control focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
+                          selected
+                            ? "bg-white text-stone-950 shadow-sm"
+                            : "text-stone-600 hover:text-stone-900"
+                        }`}
+                        key={endpoint}
+                        onClick={() => selectCodexModelTestEndpoint(endpoint)}
+                        type="button"
+                      >
+                        {endpoint}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            )}
+
+            <label className={`${labelClass} mt-4`}>
+              测试模型（可选）
+              <input
+                aria-label="弹窗测试模型"
+                className={fieldClass}
+                list="model-test-model-options"
+                onChange={(event) =>
+                  setModelTestModels((current) => ({
+                    ...current,
+                    [modelTestStorageKey]: {
+                      model: event.target.value,
+                      platform: activePlatform,
+                    },
+                  }))
+                }
+                placeholder={defaultRequestedModel(activePlatform)}
+                value={routeTestModel}
+              />
+              {modelTestModelOptions.length > 0 ? (
+                <datalist id="model-test-model-options">
+                  {modelTestModelOptions.map((model) => (
+                    <option key={model} value={model} />
+                  ))}
+                </datalist>
+              ) : null}
+            </label>
+            {activePlatform === "claude" && (
+              <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800">
+                claude-opus-alias 等内部角色模型需要在账号模型映射里指向站点真实模型；不确定时留空使用默认 Claude 测试模型。
+              </p>
+            )}
+
+            <label className="mt-4 flex cursor-pointer items-start gap-2 text-[12px] font-medium text-stone-700">
+              <input
+                aria-label="测试模块工具调用能力"
+                checked={modelTestToolCall}
+                className="mt-0.5 h-4 w-4 accent-stone-900"
+                onChange={(event) => setModelTestToolCall(event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                <span className="block">测试模块工具调用能力</span>
+                <span className="mt-1 block font-normal text-stone-500">
+                  部分中转站反代的网页接口等模型只能聊天，不具备工具调用能力；启用后会额外验证工具调用。
+                </span>
+              </span>
+            </label>
+            <div className="mt-4 flex justify-end gap-2 border-t border-stone-100 pt-3">
+              <button
+                className={secondaryButtonClass}
+                onClick={() => setModelTestDialogOpen(false)}
+                type="button"
+              >
+                取消
+              </button>
+              <button
+                aria-label="开始真实生成测试"
+                className={primaryButtonClass}
+                disabled={
+                  modelTestMutation.isPending ||
+                  !modelTestEnabled ||
+                  (modelTestAccount
+                    ? !credentialKindAllowed(modelTestRule, modelTestAccount.kind)
+                    : !hasEligiblePoolModelTestCredential)
+                }
+                onClick={submitModelTest}
+                title={!modelTestEnabled ? modelTestReason : undefined}
+                type="button"
+              >
+                {modelTestMutation.isPending ? "测试中..." : "开始测试"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {liveLogOpen && (
+        <div className="motion-overlay fixed inset-0 z-50 grid place-items-center bg-stone-950/35 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setLiveLogOpen(false);
+            }
+          }}
+        >
+          <div
+            aria-label="实时日志弹窗"
+            className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl"
+            role="dialog"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-semibold text-stone-900">实时日志</h2>
+                <p className="mt-0.5 text-[11px] text-stone-500">
+                  实时显示经本机路由代理转发的请求，含协议转换的四个阶段（原始请求 / 发往上游 / 上游原始返回 / 最终返回），便于排查出错。仅当前平台，最多保留最近 200 条。
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button className={secondaryButtonClass} onClick={() => setLiveLogEntries([])} type="button">
+                  清空
+                </button>
+                <button aria-label="关闭" onClick={() => setLiveLogOpen(false)} type="button">
+                  <X className="h-4 w-4 text-stone-500" />
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 flex-1 overflow-auto rounded-lg border border-stone-200">
+              {liveLogEntries.length === 0 ? (
+                <p className="p-6 text-center text-[12px] text-stone-400">
+                  暂无请求。通过算力池发起一次请求后会实时出现在这里。
+                </p>
+              ) : (
+                <ul className="divide-y divide-stone-100">
+                  {[...liveLogEntries].reverse().map((entry) => (
+                    <li key={entry.id}>
+                      <button
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-stone-50"
+                        onClick={() =>
+                          setExpandedLiveLogId((current) => (current === entry.id ? null : entry.id))
+                        }
+                        type="button"
+                      >
+                        <span
+                          className={`inline-flex min-w-9 justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold ${entry.success ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}
+                        >
+                          {entry.status ?? "ERR"}
+                        </span>
+                        <span className="font-mono text-[11px] text-stone-600">
+                          {entry.requested_model ?? "?"}
+                        </span>
+                        {entry.bridge ? (
+                          <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-600">
+                            协议转换
+                          </span>
+                        ) : null}
+                        {entry.notes && entry.notes.length > 0 ? (
+                          <span
+                            className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-600"
+                            title={entry.notes.join("\n")}
+                          >
+                            提示
+                          </span>
+                        ) : null}
+                        <span className="truncate text-[11px] text-stone-500">{entry.credential_name}</span>
+                        <span className="ml-auto shrink-0 text-[10px] text-stone-400">
+                          {formatUsageTime(entry.created_at)} · {entry.duration_ms}ms
+                        </span>
+                      </button>
+                      {expandedLiveLogId === entry.id ? (
+                        <div className="space-y-2 bg-stone-50 px-3 pb-3 pt-1">
+                          {entry.error_message ? (
+                            <p className="text-[11px] text-red-600">{entry.error_message}</p>
+                          ) : null}
+                          {entry.notes && entry.notes.length > 0 ? (
+                            <ul className="space-y-0.5">
+                              {entry.notes.map((note, index) => (
+                                <li key={index} className="text-[11px] text-amber-600">
+                                  ⚠ {note}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          <LiveLogStage title="原始请求" body={entry.client_request} />
+                          {entry.target_url ? (
+                            <LiveLogStage title="上游地址" body={entry.target_url} />
+                          ) : null}
+                          {entry.upstream_headers ? (
+                            <LiveLogStage title="上游请求头" body={entry.upstream_headers} />
+                          ) : null}
+                          <LiveLogStage title="发往上游" body={entry.upstream_request} />
+                          <LiveLogStage title="上游原始返回" body={entry.upstream_response} />
+                          <LiveLogStage
+                            title="最终返回"
+                            body={
+                              liveLogStagesIdentical(entry) ? "（与上游原始返回一致）" : entry.final_response
+                            }
+                          />
+                          {entry.truncated ? (
+                            <p className="text-[10px] text-stone-400">（部分内容已截断，每段最多 64KB）</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {routePoolModelsDialogOpen && (
+        <div className="motion-overlay fixed inset-0 z-50 grid place-items-center bg-stone-950/35 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setRoutePoolModelsDialogOpen(false);
+            }
+          }}
+        >
+          <div
+            aria-label="算力池模型列表"
+            className="w-full max-w-lg rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl"
+            role="dialog"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                  {platformLabels[activePlatform]}
+                </p>
+                <h3 className="mt-0.5 text-lg font-semibold text-stone-950">算力池模型列表</h3>
+                <p className="mt-1 text-[12px] text-stone-500">
+                  当前列表来自本地路由代理 `/v1/models`，表示算力池对外公开的模型集合。
+                </p>
+              </div>
+              <button
+                aria-label="关闭算力池模型列表"
+                className="rounded-xl border border-stone-200 p-1.5 text-stone-500 motion-control hover:bg-stone-50"
+                onClick={closeRoutePoolModelsDialog}
+                type="button"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {routePoolModelsMutation.isPending ? (
+              <div className="mt-4 flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-[12px] text-sky-900">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                正在读取模型列表...
+              </div>
+            ) : routePoolModelsMutation.isError ? (
+              <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-[12px] font-medium text-amber-900" role="alert">
+                {formatApiError(routePoolModelsMutation.error, "获取算力池模型列表失败。")}
+              </p>
+            ) : (
+              <div className="mt-4">
+                {routePoolModelsMutation.data && routePoolModelsMutation.data.length > 0 ? (
+                  <div className="grid max-h-72 gap-1.5 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50 p-2">
+                    {routePoolModelsMutation.data.map((model) => {
+                      const mappingTargets = poolModelMappingTargets.get(model.id.trim().toLowerCase());
+                      const reasoningLevels = model.supported_reasoning_levels ?? [];
+                      const contextWindow = normalizeCodexContextWindow(model.context_window);
+                      return (
+                        <div className="flex gap-3 rounded-lg bg-white px-3 py-2" key={model.id}>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-3">
+                              <span
+                                className="min-w-0 truncate font-mono text-[12px] font-semibold text-stone-800"
+                                title={model.id}
+                              >
+                                {model.id}
+                              </span>
+                              {model.owned_by ? (
+                                <span className="shrink-0 text-[11px] text-stone-500">{model.owned_by}</span>
+                              ) : null}
+                            </div>
+                            {mappingTargets?.length ? (
+                              <p className="mt-0.5 break-words text-[11px] leading-4 text-sky-700">
+                                映射的上游模型：{mappingTargets.join("、")}
+                              </p>
+                            ) : null}
+                            {reasoningLevels.length > 0 ? (
+                              <p className="mt-0.5 break-words text-[11px] leading-4 text-violet-700">
+                                推理等级：{reasoningLevels.map((level) => level.effort).join("、")}
+                                {model.default_reasoning_level
+                                  ? ` · 默认 ${model.default_reasoning_level}`
+                                  : ""}
+                              </p>
+                            ) : null}
+                            {contextWindow ? (
+                              <p className="mt-0.5 text-[11px] leading-4 text-emerald-700">
+                                上下文：{codexContextWindowLabel(contextWindow)}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-center text-[12px] text-stone-500">
+                    当前算力池没有可公开的模型。
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end border-t border-stone-100 pt-3">
+              <button className={secondaryButtonClass} onClick={closeRoutePoolModelsDialog} type="button">
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {configWriteDialogOpen ? (
+        <ConfigWriteTargetsDialog
+          capabilityDisabledReason={configWriteEnabled ? undefined : configWriteReason}
+          clients={configWriteClientsQuery.data ?? []}
+          error={configWriteError}
+          httpsError={routeProxyQuery.data?.https_error ?? null}
+          initialSelection={storedClientSelection}
+          loading={writeConfigsMutation.isPending}
+          modelMode={routePoolQuery.data?.model_mode ?? "aggregate"}
+          modelModeSaving={setModelModeMutation.isPending}
+          onClose={() => {
+            if (!writeConfigsMutation.isPending) {
+              setConfigWriteDialogOpen(false);
+            }
+          }}
+          onModelModeChange={(mode) => setModelModeMutation.mutate(mode)}
+          onSubmit={(clientKeys) => writeConfigsMutation.mutate(clientKeys)}
+          platform={activePlatform}
+          platformLabel={platformLabels[activePlatform]}
+          poolApiKey={routeProxyKeyQuery.data ?? null}
+          poolBaseUrl={
+            routeProxyQuery.data?.running ? routeProxyQuery.data.base_url ?? null : null
+          }
+          poolHttpsBaseUrl={
+            routeProxyQuery.data?.running ? routeProxyQuery.data.https_base_url ?? null : null
+          }
+        />
+      ) : null}
+
+      {exportRequest ? (
+        <RouteCredentialExportDialog
+          open
+          credential_ids={exportRequest.credential_ids}
+          onClose={() => setExportRequest(null)}
+          selection_context={exportRequest.selection_context}
+        />
+      ) : null}
+
+      {copyingCredential ? (
+        <CopyRouteCredentialDialog
+          credential={copyingCredential}
+          error={
+            copyCredentialMutation.isError
+              ? formatApiError(copyCredentialMutation.error, "复制账号失败。")
+              : null
+          }
+          loading={copyCredentialMutation.isPending}
+          onClose={() => {
+            if (!copyCredentialMutation.isPending) {
+              copyCredentialMutation.reset();
+              setCopyingCredential(null);
+            }
+          }}
+          onSubmit={(input) => {
+            copyCredentialMutation.mutate({ credential: copyingCredential, input });
+          }}
+          sourcePlatform={activePlatform}
+        />
+      ) : null}
+
+      {quickEditPriorityCredential ? (
+        <QuickEditDialog
+          error={quickEditPriorityError}
+          onClose={() => {
+            if (!quickEditPriorityMutation.isPending) {
+              quickEditPriorityMutation.reset();
+              setQuickEditPriorityCredential(null);
+              setQuickEditPriorityError(null);
+            }
+          }}
+          onSubmit={submitQuickEditPriority}
+          saving={quickEditPriorityMutation.isPending}
+          subtitle={quickEditPriorityCredential.display_name}
+          title="路由优先级"
+        >
+          <label className="grid gap-1 text-[12px] font-semibold text-stone-600">
+            优先级
+            <select
+              aria-label="快捷编辑路由优先级"
+              className="w-full px-2.5 py-2 text-[13px] font-medium text-stone-900"
+              onChange={(event) => setQuickEditPriorityValue(event.target.value)}
+              value={quickEditPriorityValue}
+            >
+              {[1, 2, 3, 4, 5].map((priority) => (
+                <option key={priority} value={priority}>
+                  {priority}（数字越小优先级越高）
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-[11px] text-stone-500">
+            路由先挑优先级最高的账号，同级之间按列表顺序轮换。
+          </p>
+        </QuickEditDialog>
+      ) : null}
+
+      {quickEditConcurrencyCredential ? (
+        <QuickEditDialog
+          error={quickEditConcurrencyError}
+          onClose={() => {
+            if (!quickEditConcurrencyMutation.isPending) {
+              quickEditConcurrencyMutation.reset();
+              setQuickEditConcurrencyCredential(null);
+              setQuickEditConcurrencyError(null);
+            }
+          }}
+          onSubmit={submitQuickEditConcurrency}
+          saving={quickEditConcurrencyMutation.isPending}
+          subtitle={quickEditConcurrencyCredential.display_name}
+          title="最大并发数"
+        >
+          <label className="grid gap-1 text-[12px] font-semibold text-stone-600">
+            最大并发数
+            <input
+              aria-label="快捷编辑最大并发数"
+              className="w-full px-2.5 py-2 text-[13px] font-medium text-stone-900"
+              min={1}
+              onChange={(event) => setQuickEditConcurrencyValue(event.target.value)}
+              step={1}
+              type="number"
+              value={quickEditConcurrencyValue}
+            />
+          </label>
+          <p className="text-[11px] text-stone-500">
+            当前正在处理 {quickEditConcurrencyCredential.active_request_count ?? 0} 个请求；
+            超过上限的请求会排到别的账号。
+          </p>
+        </QuickEditDialog>
+      ) : null}
+
+      {cooldownEditCredential ? (
+        <QuickEditDialog
+          error={cooldownEditError}
+          onClose={() => {
+            if (!cooldownMutation.isPending && !clearFailureStateMutation.isPending) {
+              cooldownMutation.reset();
+              clearFailureStateMutation.reset();
+              setCooldownEditCredential(null);
+              setCooldownEditError(null);
+            }
+          }}
+          onSubmit={submitCooldownEdit}
+          saving={cooldownMutation.isPending || clearFailureStateMutation.isPending}
+          subtitle={cooldownEditCredential.display_name}
+          title="账号冷却"
+        >
+          <label className="grid gap-1 text-[12px] font-semibold text-stone-600">
+            剩余冷却（秒）
+            <input
+              aria-label="剩余冷却秒数"
+              className="w-full px-2.5 py-2 text-[13px] font-medium text-stone-900"
+              max={MAX_ROUTE_CREDENTIAL_COOLDOWN_SECONDS}
+              min={1}
+              onChange={(event) => setCooldownEditValue(event.target.value)}
+              step={1}
+              type="number"
+              value={cooldownEditValue}
+            />
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {COOLDOWN_ADJUST_STEPS.map((step) => {
+              const label = `${step > 0 ? "+" : "−"}${formatCooldownRemaining(Math.abs(step) * 1000)}`;
+              return (
+                <button
+                  aria-label={`${step > 0 ? "延长" : "缩短"}冷却 ${formatCooldownRemaining(Math.abs(step) * 1000)}`}
+                  className="rounded-lg bg-stone-100 px-2 py-1 text-[11px] font-semibold text-stone-700 motion-control hover:bg-stone-200 disabled:opacity-50"
+                  disabled={cooldownMutation.isPending || clearFailureStateMutation.isPending}
+                  key={step}
+                  onClick={() => adjustCooldownEditValue(step)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-stone-500">
+            {(() => {
+              const state = credentialCooldownState(cooldownEditCredential, cooldownNow);
+              const deadline = credentialRetryLabel(cooldownEditCredential);
+              return state?.active && deadline
+                ? `还剩 ${formatCooldownRemaining(state.remaining)}，冷却至 ${deadline}。`
+                : "冷却已结束，账号已经重新参与路由。";
+            })()}
+            {(cooldownEditCredential.transient_failure_count ?? 0) > 0
+              ? `已累计错误 ${cooldownEditCredential.transient_failure_count} 次。`
+              : ""}
+          </p>
+          <div className="mt-1 rounded-lg bg-stone-50 p-2.5">
+            {/* Filled rather than `ring-1`: inside `.accounts-screen` the global
+                button rule claims `box-shadow`, which is what a ring is drawn
+                with, so an outlined variant here would render as no outline. */}
+            <button
+              aria-label="解除账号冷却"
+              className="rounded-lg bg-orange-100 px-2.5 py-1.5 text-[12px] font-semibold text-orange-800 motion-control hover:bg-orange-200 disabled:opacity-50"
+              disabled={cooldownMutation.isPending || clearFailureStateMutation.isPending}
+              onClick={() => clearFailureStateMutation.mutate(cooldownEditCredential)}
+              type="button"
+            >
+              {clearFailureStateMutation.isPending ? "解除中…" : "立即解除冷却"}
+            </button>
+            <p className="mt-1.5 text-[11px] text-stone-500">
+              立即恢复参与路由，并清零错误次数与最近失败信息，等同于一次请求成功后的清账。
+              模型级的冷却与异常不在此列，请到编辑抽屉「模型状态」里单独解除。
+            </p>
+          </div>
+        </QuickEditDialog>
+      ) : null}
+
+      {createOpen && (
+        <div className="motion-overlay fixed inset-0 z-50 grid place-items-center bg-stone-950/35 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setCreateOpen(false);
+            }
+          }}
+        >
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                  {platformLabels[activePlatform]}
+                </p>
+                <h3 className="text-lg font-semibold text-stone-950">新增账号</h3>
+              </div>
+              <button
+                aria-label="关闭新增账号"
+                className="rounded-xl border border-stone-200 p-1.5 text-stone-500 motion-control hover:bg-stone-50"
+                onClick={() => setCreateOpen(false)}
+                type="button"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-1 rounded-xl bg-stone-100 p-1 sm:grid-cols-3">
+              {[
+                ["api", "API 账号"],
+                ["official", "批量导入"],
+                ["external", "导入其他客户端"],
+              ].map(([mode, label]) => (
+                <button
+                  className={`rounded-lg px-3 py-1.5 text-[13px] font-semibold motion-control ${
+                    createMode === mode ? "bg-white text-stone-950 shadow-sm" : "text-stone-500"
+                  }`}
+                  disabled={mode === "official" && !officialImportEnabled}
+                  key={mode}
+                  onClick={() => setCreateMode(mode as CreateMode)}
+                  title={mode === "official" && !officialImportEnabled ? officialImportReason : undefined}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <label className="mt-3 flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[12px] font-medium text-stone-700">
+              <input
+                aria-label="创建后加入算力池"
+                checked={joinPoolOnCreate}
+                className="mt-0.5 h-4 w-4 rounded border-stone-300 text-amber-500 focus:ring-blue-400"
+                disabled={createMutation.isPending}
+                onChange={(event) => setJoinPoolOnCreate(event.target.checked)}
+                type="checkbox"
+              />
+              <span className="grid gap-0.5">
+                <span>创建后加入算力池</span>
+                <span className="text-[11px] font-medium text-stone-500">
+                  {createMode === "external"
+                    ? "只作用于本次新增的账号；覆盖已有账号时保持其原有入池状态。"
+                    : "创建成功后自动切换到对应列表；取消则放入未入池。"}
+                </span>
+              </span>
+            </label>
+
+            {createMode === "external" && (
+              <ExternalClientImportPanel
+                client={externalClient}
+                desktop={desktop}
+                error={
+                  externalImportPreviewQuery.isError
+                    ? formatApiError(externalImportPreviewQuery.error, "读取客户端账号失败。")
+                    : null
+                }
+                labelClass={labelClass}
+                loading={externalImportPreviewQuery.isFetching}
+                onChooseSourcePath={() => void chooseExternalClientSource()}
+                onRefresh={() => void externalImportPreviewQuery.refetch()}
+                onResetSourcePath={() => {
+                  setExternalSelectedIds(new Set());
+                  setExternalSourcePath(null);
+                }}
+                onToggleAll={toggleAllExternalSelections}
+                onToggleItem={toggleExternalSelection}
+                preview={externalImportPreview}
+                selectedIds={externalSelectedIds}
+                sourcePath={externalSourcePath}
+              />
+            )}
+
+            {createMode === "api" && (
+              <div className="mt-4">
+                <FormTabs<CreateTab>
+                  ariaLabel="新增账号分组"
+                  onChange={setCreateTab}
+                  tabs={createTabs}
+                  value={createTab}
+                />
+              </div>
+            )}
+
+            {createMode === "api" && (
+              <div className="mt-4 grid gap-3">
+                {createTab === "basic" ? (
+                  <>
+                    <PresetFields
+                      baseUrl={apiBaseUrl}
+                      fieldClass={fieldClass}
+                      idPrefix="创建"
+                      labelClass={labelClass}
+                      onApply={(preset) => {
+                        setApiBaseUrl(preset.baseUrl);
+                        setApiInterfaceFormat(preset.interfaceFormat);
+                        setApiMappings(preset.modelMappings.map((mapping) => ({ ...mapping })));
+                        setApiName((current) => (current.trim() ? current : preset.defaultName));
+                        setApiFetchedModels([]);
+                        setApiFetchModelsError(null);
+                        setApiMappingsError(null);
+                      }}
+                      platform={activePlatform}
+                    />
+                    <label className={labelClass}>
+                      账号名称
+                      <input
+                        aria-label="API 账号名称"
+                        className={fieldClass}
+                        onChange={(event) => setApiName(event.target.value)}
+                        value={apiName}
+                      />
+                    </label>
+                    <label className={labelClass}>
+                      API Key
+                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                        <textarea
+                          aria-label="API Key"
+                          className={`${monoFieldClass} min-h-24`}
+                          onChange={(event) => {
+                            setApiKey(event.target.value);
+                            setApiKeyDecodeError(null);
+                            setApiKeyOcrError(null);
+                            setApiFetchedModels([]);
+                            setApiFetchModelsError(null);
+                          }}
+                          placeholder={"每行一个 API Key；多行会自动创建为同一批量。\nsk-...\nsk-..."}
+                          value={apiKey}
+                        />
+                        <div className="flex flex-col gap-2 sm:w-28">
+                          <button
+                            aria-label="Base64 解码 API Key"
+                            className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[13px] font-semibold text-stone-700 motion-control hover:bg-white"
+                            onClick={decodeApiKey}
+                            type="button"
+                          >
+                            Base64 解码
+                          </button>
+                          <button
+                            aria-label="OCR识别 API Key"
+                            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-[13px] font-semibold text-blue-700 motion-control hover:bg-white disabled:opacity-50"
+                            disabled={apiKeyOcrRecognizing}
+                            onClick={runApiKeyOcr}
+                            type="button"
+                          >
+                            <ScanText className="h-3.5 w-3.5" />
+                            {apiKeyOcrRecognizing ? "识别中..." : "OCR识别"}
+                          </button>
+                          <input
+                            accept="image/*"
+                            aria-label="选择图片识别 API Key"
+                            className="sr-only"
+                            onChange={handleApiKeyOcrFileChange}
+                            ref={apiKeyOcrFileInputRef}
+                            type="file"
+                          />
+                        </div>
+                      </div>
+                      {apiKeyDecodeError && <span className="text-[12px] font-semibold text-red-700">{apiKeyDecodeError}</span>}
+                      {apiKeyOcrError && <span className="text-[12px] font-semibold text-red-700">{apiKeyOcrError}</span>}
+                    </label>
+                    <label className={labelClass}>
+                      Base URL
+                      <input
+                        aria-label="Base URL"
+                        className={fieldClass}
+                        onChange={(event) => {
+                          setApiBaseUrl(event.target.value);
+                          setApiFetchedModels([]);
+                          setApiFetchModelsError(null);
+                        }}
+                        value={apiBaseUrl}
+                      />
+                    </label>
+                    {shouldShowInterfaceFormatSelect(activePlatform) ? (
+                      <label className={labelClass}>
+                        接口格式
+                        <select
+                          aria-label="接口格式"
+                          className={fieldClass}
+                          onChange={(event) => {
+                            setApiInterfaceFormat(event.target.value as InterfaceFormat);
+                            setApiFetchedModels([]);
+                            setApiFetchModelsError(null);
+                          }}
+                          value={apiInterfaceFormat}
+                        >
+                          {interfaceFormatsForPlatform(activePlatform).map((format) => (
+                            <option key={format} value={format}>
+                              {interfaceFormatLabel(format)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                    {isAnthropicInterfaceFormat(apiInterfaceFormat) ? (
+                      <label className={labelClass}>
+                        Claude 鉴权字段
+                        <select
+                          aria-label="Claude 鉴权字段"
+                          className={fieldClass}
+                          onChange={(event) => {
+                            setApiKeyField(event.target.value as AnthropicApiKeyField);
+                            setApiFetchedModels([]);
+                            setApiFetchModelsError(null);
+                          }}
+                          value={apiKeyField}
+                        >
+                          {anthropicApiKeyFields.map((field) => (
+                            <option key={field.value} value={field.value}>
+                              {field.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-[11px] font-medium text-stone-500">
+                          {anthropicApiKeyFieldDescription(apiKeyField)}
+                        </span>
+                      </label>
+                    ) : null}
+                    <ModelMappingsEditor
+                      error={apiMappingsError}
+                      fetchError={apiFetchModelsError}
+                      fetchedModels={apiFetchedModels}
+                      interfaceFormat={apiInterfaceFormat}
+                      isFetchingModels={apiFetchModelsMutation.isPending}
+                      label="模型映射"
+                      onChange={(next) => {
+                        setApiMappings(next);
+                        setApiMappingsError(null);
+                      }}
+                      onFetchModels={fetchApiModels}
+                      platform={activePlatform}
+                      value={apiMappings}
+                    />
+                  </>
+                ) : null}
+                {createTab === "advanced" ? (
+                  <>
+                    <UserAgentFields
+                      fieldClass={fieldClass}
+                      idPrefix="创建"
+                      labelClass={labelClass}
+                      onChange={setApiUserAgent}
+                      value={apiUserAgent}
+                    />
+                    <RelayBalanceFields
+                      allowCustom={false}
+                      fieldClass={fieldClass}
+                      idPrefix="创建"
+                      labelClass={labelClass}
+                      onPanelAccountChange={setApiRelayBalancePanelAccount}
+                      panelAccount={apiRelayBalancePanelAccount}
+                      onChange={setApiRelayBalance}
+                      value={apiRelayBalance}
+                    />
+                    {shouldShowResponsesCustomToolCompatForFormat(activePlatform, apiInterfaceFormat) ? (
+                      <label className="flex items-start gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-[12px] font-medium text-stone-700">
+                        <input
+                          aria-label="兼容 custom 工具（Responses 中转）"
+                          checked={apiResponsesCustomToolCompat}
+                          className="mt-0.5"
+                          onChange={(event) => setApiResponsesCustomToolCompat(event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span className="grid gap-1">
+                          <span>兼容 custom 工具（Responses 中转）</span>
+                          <span className="text-[11px] font-medium text-stone-500">
+                            仅当上游为 Responses 中转且不支持 custom 工具时勾选，把 custom 改写成 function。Chat/Anthropic/Gemini 上游会自动处理，无需勾选。
+                          </span>
+                        </span>
+                      </label>
+                    ) : null}
+                    <label className={labelClass}>
+                      预览 JSON（可选）
+                      <textarea
+                        aria-label="预览 JSON"
+                        className={`${monoFieldClass} min-h-20`}
+                        onChange={(event) => setApiPreviewJson(event.target.value)}
+                        value={apiPreviewJson}
+                      />
+                    </label>
+                  </>
+                ) : null}
+              </div>
+            )}
+
+            {createMode === "official" && (
+              <div className="mt-4 grid gap-3">
+                <p className="text-[13px] leading-5 text-stone-600">
+                  粘贴 OAuth CPA、API Key CPA、session JSON、auth.json、Sub2API JSON、accessToken 或 refresh_token。
+                </p>
+                <details className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 border-b border-stone-100 px-3 py-2 text-[12px] font-semibold text-stone-700">
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    必填字段与示例（点击展开）
+                  </summary>
+                  <div className="space-y-3 p-3 text-[12px] text-stone-600">
+                    <p>支持 OAuth CPA、API Key CPA（api-key / api-key-entries）、完整 tokens（id_token + access_token）、Sub2API 导出 JSON、仅 accessToken 或仅 refresh_token。</p>
+                    <div>
+                      <p className="mb-1 font-semibold text-stone-500">完整 tokens 示例</p>
+                      <pre className="overflow-auto rounded-xl border border-stone-200 bg-slate-100 p-3 font-mono text-[12px] leading-5 text-slate-900">{`{
+  "tokens": {
+    "id_token": "eyJ...",
+    "access_token": "eyJ...",
+    "refresh_token": "rt_..."
+  }
+}`}</pre>
+                    </div>
+                    <div>
+                      <p className="mb-1 font-semibold text-stone-500">session / accessToken / refresh_token 示例</p>
+                      <pre className="overflow-auto rounded-xl border border-stone-200 bg-slate-100 p-3 font-mono text-[12px] leading-5 text-slate-900">{`{
+  "user": {
+    "email": "user@example.com"
+  },
+  "account": {
+    "id": "account-id"
+  },
+  "accessToken": "eyJ...",
+  "authProvider": "openai"
+}
+
+{
+  "refresh_token": "rt_..."
+}`}</pre>
+                    </div>
+                    <div>
+                      <p className="mb-1 font-semibold text-stone-500">批量示例</p>
+                      <pre className="overflow-auto rounded-xl border border-stone-200 bg-slate-100 p-3 font-mono text-[12px] leading-5 text-slate-900">{`[
+  {
+    "id": "codex_demo_1",
+    "email": "user@example.com",
+    "tokens": {
+      "id_token": "eyJ...",
+      "access_token": "eyJ...",
+      "refresh_token": "rt_..."
+    },
+    "created_at": 1730000000,
+    "last_used": 1730000000
+  }
+]`}</pre>
+                    </div>
+                  </div>
+                </details>
+
+                <label className={labelClass}>
+                  名称
+                  <input
+                    aria-label="导入批量名称"
+                    className={fieldClass}
+                    onChange={(event) => setOfficialBatchName(event.target.value)}
+                    placeholder="必填，用于标记本次批量导入"
+                    required
+                    value={officialBatchName}
+                  />
+                </label>
+                <label className={labelClass}>
+                  账号 JSON
+                  <textarea
+                    aria-label="账号 JSON"
+                    className={`${monoFieldClass} min-h-32`}
+                    onChange={(event) => {
+                      setOfficialText(event.target.value);
+                      if (event.target.value.trim()) {
+                        setOfficialFilePaths([]);
+                      }
+                    }}
+                    placeholder={'示例：直接粘贴 session JSON、accessToken、Sub2API 导出 JSON，或 {"accessToken":"eyJ..."}'}
+                    value={officialText}
+                  />
+                </label>
+                <div className="grid gap-2">
+                  <button
+                    aria-label="导入 JSON 文件"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-[13px] font-semibold text-blue-900 motion-control hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!desktop}
+                    onClick={() => void chooseOfficialFiles()}
+                    title={desktop ? undefined : "此功能仅桌面端可用。"}
+                    type="button"
+                  >
+                    <FileCode2 className="h-3.5 w-3.5" />
+                    导入 JSON 文件
+                  </button>
+                  {!desktop && (
+                    <p className="text-[12px] text-stone-500">此功能仅桌面端可用。</p>
+                  )}
+                  {filePickerError && (
+                    <p className="text-[12px] font-medium text-red-700">{filePickerError}</p>
+                  )}
+                  {officialFilePaths.length > 0 && (
+                    <div className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[12px] text-stone-600">
+                      已选择 {officialFilePaths.length} 个文件
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {createMutation.error && (
+              <p className="mt-4 rounded-xl bg-red-50 p-3 text-[13px] font-semibold text-red-700">
+                {formatApiError(createMutation.error, "新增账号失败。")}
+              </p>
+            )}
+
+            <label className="mt-4 flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[12px] font-medium text-stone-700">
+              <input
+                aria-label="提交完重置表单"
+                checked={resetFormAfterCreate}
+                className="mt-0.5 h-4 w-4 rounded border-stone-300 text-amber-500 focus:ring-blue-400"
+                disabled={createMutation.isPending}
+                onChange={(event) => setResetFormAfterCreate(event.target.checked)}
+                type="checkbox"
+              />
+              <span className="grid gap-0.5">
+                <span>提交完重置表单</span>
+                <span className="text-[11px] font-medium text-stone-500">
+                  保存成功后清空本表单；取消则保留这次填的内容，方便接着录入同一批账号。
+                </span>
+              </span>
+            </label>
+
+            <div className="mt-4 flex justify-end gap-2 border-t border-stone-100 pt-3">
+              <button
+                className={secondaryButtonClass}
+                onClick={() => setCreateOpen(false)}
+                type="button"
+              >
+                取消
+              </button>
+              <button
+                className={primaryButtonClass}
+                disabled={
+                  createMutation.isPending ||
+                  (createMode === "official" && !officialImportEnabled) ||
+                  (createMode === "external" && externalSelectedIds.size === 0)
+                }
+                onClick={() => createMutation.mutate()}
+                type="button"
+              >
+                {createMutation.isPending
+                  ? "正在保存..."
+                  : createMode === "external"
+                    ? `导入所选账号${externalSelectedIds.size > 0 ? `（${externalSelectedIds.size}）` : ""}`
+                    : "保存账号"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingCredential && (
+        <div className="motion-overlay fixed inset-0 z-50 flex justify-end bg-stone-950/28 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setEditingCredential(null);
+            }
+          }}
+        >
+          <aside className="m-3 h-[calc(100%-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                  {kindLabel(editingCredential.kind)} Account
+                </p>
+                <h3 className="mt-0.5 text-lg font-semibold text-stone-950">{editingCredential.display_name}</h3>
+                <p className="mt-1 text-[12px] text-stone-500">{editingCredential.id}</p>
+              </div>
+              <button
+                aria-label="关闭编辑账号"
+                className="rounded-xl border border-stone-200 p-1.5 text-stone-500 motion-control hover:bg-stone-50"
+                onClick={() => setEditingCredential(null)}
+                type="button"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4">
+              <FormTabs<EditTab>
+                ariaLabel="编辑账号分组"
+                onChange={setEditTab}
+                tabs={editTabs}
+                value={editTab}
+              />
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              {editTab === "basic" ? (
+                <>
+                  <label className={labelClass}>
+                    账号名称
+                    <input
+                      aria-label="编辑账号名称"
+                      className={fieldClass}
+                      onChange={(event) => setEditName(event.target.value)}
+                      value={editName}
+                    />
+                  </label>
+                  {editingCredential.kind === "official" && (
+                    <label className={labelClass}>
+                      邮箱
+                      <input
+                        aria-label="编辑邮箱"
+                        className={fieldClass}
+                        onChange={(event) => setEditEmail(event.target.value)}
+                        value={editEmail}
+                      />
+                    </label>
+                  )}
+                  <label className={labelClass}>
+                    状态
+                    <select
+                      aria-label="编辑状态"
+                      className={fieldClass}
+                      onChange={(event) => setEditStatus(event.target.value as AccountStatus)}
+                      value={editStatus}
+                    >
+                      <option value="ok">正常 (ok)</option>
+                      <option value="warning">警告 (warning)</option>
+                      <option value="error">异常 (error)</option>
+                      <option value="revoked">已失效 (revoked)</option>
+                      <option value="paused">暂停 (paused)</option>
+                    </select>
+                  </label>
+                </>
+              ) : null}
+              {editTab === "advanced" ? (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className={labelClass}>
+                      路由优先级
+                      <select
+                        aria-label="编辑路由优先级"
+                        className={fieldClass}
+                        onChange={(event) => setEditPriority(Number(event.target.value))}
+                        value={editPriority}
+                      >
+                        {[1, 2, 3, 4, 5].map((priority) => (
+                          <option key={priority} value={priority}>
+                            {priority}（数字越小优先级越高）
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={labelClass}>
+                      最大并发数
+                      <input
+                        aria-label="编辑最大并发数"
+                        className={fieldClass}
+                        min={1}
+                        onChange={(event) => setEditMaxConcurrency(event.target.value)}
+                        step={1}
+                        type="number"
+                        value={editMaxConcurrency}
+                      />
+                    </label>
+                  </div>
+                </>
+              ) : null}
+              {editTab === "failure" ? (
+                <>
+                  <section
+                    aria-label="账号失败处理策略"
+                    className="rounded-xl border border-blue-100 bg-blue-50/60 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[13px] font-semibold text-stone-900">失败处理策略</p>
+                        <p className="mt-0.5 text-[11px] font-medium text-stone-500">
+                          此账号在代理请求和模型测试中共用以下规则。
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-blue-700">
+                        按账号生效
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <label className={labelClass}>
+                        额外重试次数
+                        <input
+                          aria-label="额外重试次数"
+                          className={fieldClass}
+                          max={10}
+                          min={0}
+                          onChange={(event) => {
+                            setEditRetryCount(event.target.value);
+                            setEditFailurePolicyError(null);
+                          }}
+                          step={1}
+                          type="number"
+                          value={editRetryCount}
+                        />
+                      </label>
+                      <label className={labelClass}>
+                        重试间隔（毫秒）
+                        <input
+                          aria-label="重试间隔（毫秒）"
+                          className={fieldClass}
+                          max={60_000}
+                          min={0}
+                          onChange={(event) => {
+                            setEditRetryIntervalMs(event.target.value);
+                            setEditFailurePolicyError(null);
+                          }}
+                          step={1}
+                          type="number"
+                          value={editRetryIntervalMs}
+                        />
+                      </label>
+                      <label className={labelClass}>
+                        异常触发次数
+                        <input
+                          aria-label="异常触发次数"
+                          className={fieldClass}
+                          max={1_000}
+                          min={1}
+                          onChange={(event) => {
+                            setEditSemanticErrorThreshold(event.target.value);
+                            setEditFailurePolicyError(null);
+                          }}
+                          step={1}
+                          type="number"
+                          value={editSemanticErrorThreshold}
+                        />
+                      </label>
+                      <label className={labelClass}>
+                        失败冷却（秒）
+                        <input
+                          aria-label="失败冷却（秒）"
+                          className={fieldClass}
+                          max={MAX_ROUTE_CREDENTIAL_COOLDOWN_SECONDS}
+                          min={1}
+                          onChange={(event) => {
+                            setEditCooldownSeconds(event.target.value);
+                            setEditFailurePolicyError(null);
+                          }}
+                          step={1}
+                          type="number"
+                          value={editCooldownSeconds}
+                        />
+                      </label>
+                    </div>
+                    {editFailurePolicyError && (
+                      <p className="mt-2 text-[12px] font-semibold text-red-700">
+                        {editFailurePolicyError}
+                      </p>
+                    )}
+                    <div className="mt-3 grid gap-2">
+                      <label className="flex items-start gap-2 text-[12px] leading-5 text-stone-700">
+                        <input
+                          aria-label="启用失败冷却"
+                          checked={editCooldownEnabled}
+                          className="mt-0.5"
+                          onChange={(event) => setEditCooldownEnabled(event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span>
+                          <span className="font-semibold">启用失败冷却</span>
+                          <span className="block text-[11px] text-stone-600">
+                            开启后每次临时失败都会让账号冷却「失败冷却（秒）」设定的时长（默认 10
+                            秒）暂不参与路由，冷却结束后自动恢复。默认关闭，即失败后立刻仍可被选中。
+                          </span>
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 text-[12px] leading-5 text-stone-700">
+                        <input
+                          aria-label="启用异常状态标记"
+                          checked={editErrorStatusEnabled}
+                          className="mt-0.5"
+                          onChange={(event) => setEditErrorStatusEnabled(event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span>
+                          <span className="font-semibold">启用异常状态标记</span>
+                          <span className="block text-[11px] text-stone-600">
+                            开启后连续同类语义错误达到上面的次数时，账号会被标记为异常并停止参与路由。默认开启，因为触发条件严格，通常意味着账号确实不可用。
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-[11px] leading-5 text-stone-600">
+                      <p>
+                        <span className="font-semibold text-emerald-700">会自动重试：</span>
+                        网络连接失败、请求超时、响应读取失败、HTTP 408 / 429 / 5xx，以及 Codex“服务器当前过载”。
+                      </p>
+                      <p>
+                        <span className="font-semibold text-amber-700">会累计为异常：</span>
+                        不可重试的永久语义错误，在 HTTP 状态和规范化错误消息相同且连续达到设定次数后，账号才会标记为异常；成功、临时错误或错误变化会清零。关闭「启用异常状态标记」后仍会累计次数，但不再改变账号状态。
+                      </p>
+                      <p>
+                        <span className="font-semibold text-red-700">不会同账号重试：</span>
+                        HTTP 401 / 403；它们继续按现有鉴权失效和切换账号逻辑处理。
+                      </p>
+                    </div>
+                  </section>
+                  <section
+                    aria-label="模型状态"
+                    className="rounded-xl border border-orange-100 bg-orange-50/50 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[13px] font-semibold text-stone-900">模型状态</p>
+                        <p className="mt-0.5 text-[11px] font-medium text-stone-500">
+                          冷却与异常由失败自动写入，暂停只由你决定。
+                        </p>
+                      </div>
+                      <button
+                        aria-label="解除全部模型冷却"
+                        className="shrink-0 rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-orange-700 hover:bg-orange-100 disabled:opacity-50"
+                        disabled={clearModelStateMutation.isPending}
+                        onClick={() => {
+                          for (const state of editingCredential.model_states ?? []) {
+                            if (!modelStateIsClearable(state)) {
+                              continue;
+                            }
+                            clearModelStateMutation.mutate({
+                              credentialId: editingCredential.id,
+                              modelKey: state.model_key,
+                            });
+                          }
+                        }}
+                        type="button"
+                      >
+                        全部解除
+                      </button>
+                    </div>
+                    {(editingCredential.model_states ?? []).length === 0 ? (
+                      <p className="mt-3 text-[11px] font-medium text-stone-500">
+                        暂无模型状态记录。
+                      </p>
+                    ) : null}
+                    <div className="mt-3 grid gap-2">
+                      {(editingCredential.model_states ?? []).map((state) => {
+                        const cooling =
+                          state.cooldown_until &&
+                          new Date(state.cooldown_until).getTime() > cooldownNow;
+                        const paused = state.status === "paused";
+                        return (
+                          <div
+                            className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5"
+                            key={state.model_key}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-[12px] font-semibold text-stone-900">
+                                {state.model_key}
+                              </p>
+                              <p className="truncate text-[10px] font-medium text-stone-500">
+                                {state.aliases.length > 0 ? state.aliases.join("、") : "已移除映射"}
+                                {paused
+                                  ? " · 已暂停"
+                                  : state.status === "error"
+                                    ? " · 异常"
+                                    : cooling
+                                      ? ` · 冷却 ${formatCooldownRemaining(
+                                          new Date(state.cooldown_until as string).getTime() -
+                                            cooldownNow,
+                                        )}`
+                                      : " · 正常"}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                aria-label={`${paused ? "恢复" : "暂停"}模型 ${state.model_key}`}
+                                className="rounded-md border border-stone-200 px-2 py-1 text-[10px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+                                disabled={modelStatusMutation.isPending}
+                                onClick={() =>
+                                  modelStatusMutation.mutate({
+                                    credentialId: editingCredential.id,
+                                    modelKey: state.model_key,
+                                    status: paused ? "ok" : "paused",
+                                  })
+                                }
+                                type="button"
+                              >
+                                {paused ? "恢复" : "暂停"}
+                              </button>
+                              <button
+                                aria-label={`解除模型 ${state.model_key}`}
+                                className="rounded-md border border-orange-200 px-2 py-1 text-[10px] font-semibold text-orange-700 hover:bg-orange-50 disabled:opacity-50"
+                                disabled={clearModelStateMutation.isPending}
+                                onClick={() =>
+                                  clearModelStateMutation.mutate({
+                                    credentialId: editingCredential.id,
+                                    modelKey: state.model_key,
+                                  })
+                                }
+                                type="button"
+                              >
+                                解除
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                  <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-3">
+                    <label className={labelClass}>
+                      自动恢复
+                      <select
+                        aria-label="自动恢复模式"
+                        className={fieldClass}
+                        onChange={(event) => setEditRecoveryMode(event.target.value as RecoveryMode)}
+                        value={editRecoveryMode}
+                      >
+                        <option value="off">关闭</option>
+                        <option value="scheduled">每日定时</option>
+                        <option value="healthcheck">探活恢复</option>
+                      </select>
+                    </label>
+                    {editRecoveryMode === "scheduled" ? (
+                      <div className="mt-3 grid gap-2">
+                        {editRecoveryTimes.map((time, index) => (
+                          <div className="flex items-center gap-2" key={`${index}-${time}`}>
+                            <input
+                              aria-label={`恢复时间 ${index + 1}`}
+                              className={fieldClass}
+                              onChange={(event) =>
+                                setEditRecoveryTimes((current) =>
+                                  current.map((value, currentIndex) =>
+                                    currentIndex === index ? event.target.value : value,
+                                  ),
+                                )
+                              }
+                              type="time"
+                              value={time}
+                            />
+                            <button
+                              aria-label={`删除恢复时间 ${index + 1}`}
+                              className="rounded-lg border border-stone-200 p-2 text-stone-500 hover:bg-white disabled:opacity-50"
+                              disabled={editRecoveryTimes.length <= 1}
+                              onClick={() =>
+                                setEditRecoveryTimes((current) => current.filter((_, currentIndex) => currentIndex !== index))
+                              }
+                              title="删除恢复时间"
+                              type="button"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          aria-label="添加恢复时间"
+                          className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-stone-700 hover:bg-stone-100"
+                          onClick={() => setEditRecoveryTimes((current) => [...current, "00:00"])}
+                          type="button"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          添加时间
+                        </button>
+                      </div>
+                    ) : null}
+                    {editRecoveryMode === "healthcheck" ? (
+                      <label className={`${labelClass} mt-3`}>
+                        探活间隔（分钟）
+                        <input
+                          aria-label="探活间隔（分钟）"
+                          className={fieldClass}
+                          min={1}
+                          max={1440}
+                          onChange={(event) => setEditRecoveryProbeInterval(event.target.value)}
+                          step={1}
+                          type="number"
+                          value={editRecoveryProbeInterval}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+              {editTab === "basic" && editingCredential.kind === "api" ? (
+                <>
+                  <label className={labelClass}>
+                    API Key
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                      <input
+                        aria-label="编辑 API Key"
+                        className={fieldClass}
+                        onChange={(event) => {
+                          setEditApiKey(event.target.value);
+                          setEditApiKeyDecodeError(null);
+                          setEditApiKeyOcrError(null);
+                          setEditFetchedModels([]);
+                          setEditFetchModelsError(null);
+                        }}
+                        value={editApiKey}
+                      />
+                      <div className="flex gap-2 sm:w-52">
+                        <button
+                          aria-label="编辑 Base64 解码 API Key"
+                          className="flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[13px] font-semibold text-stone-700 motion-control hover:bg-white"
+                          onClick={decodeEditApiKey}
+                          type="button"
+                        >
+                          Base64
+                        </button>
+                        <button
+                          aria-label="编辑 OCR识别 API Key"
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-[13px] font-semibold text-blue-700 motion-control hover:bg-white disabled:opacity-50"
+                          disabled={editApiKeyOcrRecognizing}
+                          onClick={runEditApiKeyOcr}
+                          type="button"
+                        >
+                          <ScanText className="h-3.5 w-3.5" />
+                          {editApiKeyOcrRecognizing ? "识别中" : "OCR"}
+                        </button>
+                        <input
+                          accept="image/*"
+                          aria-label="选择图片识别编辑 API Key"
+                          className="sr-only"
+                          onChange={handleEditApiKeyOcrFileChange}
+                          ref={editApiKeyOcrFileInputRef}
+                          type="file"
+                        />
+                      </div>
+                    </div>
+                    {editApiKeyDecodeError && <span className="text-[12px] font-semibold text-red-700">{editApiKeyDecodeError}</span>}
+                    {editApiKeyOcrError && <span className="text-[12px] font-semibold text-red-700">{editApiKeyOcrError}</span>}
+                  </label>
+                  <label className={labelClass}>
+                    Base URL
+                    <input
+                      aria-label="编辑 Base URL"
+                      className={fieldClass}
+                      onChange={(event) => {
+                        setEditApiBaseUrl(event.target.value);
+                        setEditFetchedModels([]);
+                        setEditFetchModelsError(null);
+                      }}
+                      value={editApiBaseUrl}
+                    />
+                  </label>
+                  {shouldShowInterfaceFormatSelect(activePlatform) ? (
+                    <label className={labelClass}>
+                      接口格式
+                      <select
+                        aria-label="编辑接口格式"
+                        className={fieldClass}
+                        onChange={(event) => {
+                          setEditApiInterfaceFormat(event.target.value as InterfaceFormat);
+                          setEditFetchedModels([]);
+                          setEditFetchModelsError(null);
+                        }}
+                        value={editApiInterfaceFormat}
+                      >
+                        {interfaceFormatsForPlatform(activePlatform).map((format) => (
+                          <option key={format} value={format}>
+                            {interfaceFormatLabel(format)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {isAnthropicInterfaceFormat(editApiInterfaceFormat) ? (
+                    <label className={labelClass}>
+                      Claude 鉴权字段
+                      <select
+                        aria-label="编辑 Claude 鉴权字段"
+                        className={fieldClass}
+                        onChange={(event) => {
+                          setEditApiKeyField(event.target.value as AnthropicApiKeyField);
+                          setEditFetchedModels([]);
+                          setEditFetchModelsError(null);
+                        }}
+                        value={editApiKeyField}
+                      >
+                        {anthropicApiKeyFields.map((field) => (
+                          <option key={field.value} value={field.value}>
+                            {field.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-[11px] font-medium text-stone-500">
+                        {anthropicApiKeyFieldDescription(editApiKeyField)}
+                      </span>
+                    </label>
+                  ) : null}
+                  <ModelMappingsEditor
+                    error={editModelMappingsError}
+                    fetchError={editFetchModelsError}
+                    fetchedModels={editFetchedModels}
+                    interfaceFormat={editApiInterfaceFormat}
+                    isFetchingModels={editFetchModelsMutation.isPending}
+                    label="模型映射"
+                    onChange={(next) => {
+                      setEditModelMappings(next);
+                      setEditModelMappingsError(null);
+                    }}
+                    onFetchModels={fetchEditModels}
+                    platform={activePlatform}
+                    value={editModelMappings}
+                  />
+                </>
+              ) : null}
+              {editTab === "advanced" ? (
+                <UserAgentFields
+                  fieldClass={fieldClass}
+                  idPrefix="编辑"
+                  labelClass={labelClass}
+                  onChange={handleEditUserAgentChange}
+                  value={editUserAgent}
+                />
+              ) : null}
+              {editTab === "advanced" && editingCredential.kind === "api" ? (
+                <>
+                  {shouldShowResponsesCustomToolCompatForFormat(activePlatform, editApiInterfaceFormat) ? (
+                    <label className="flex items-start gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-[12px] font-medium text-stone-700">
+                      <input
+                        aria-label="兼容 custom 工具（Responses 中转）"
+                        checked={editResponsesCustomToolCompat}
+                        className="mt-0.5"
+                        onChange={(event) => setEditResponsesCustomToolCompat(event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span className="grid gap-1">
+                        <span>兼容 custom 工具（Responses 中转）</span>
+                        <span className="text-[11px] font-medium text-stone-500">
+                          仅当上游为 Responses 中转且不支持 custom 工具时勾选，把 custom 改写成 function。Chat/Anthropic/Gemini 上游会自动处理，无需勾选。
+                        </span>
+                      </span>
+                    </label>
+                  ) : null}
+                  <label className="flex items-start gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-[12px] font-medium text-stone-700">
+                    <input
+                      aria-label="内联远程图片"
+                      checked={editInlineRemoteImages}
+                      className="mt-0.5"
+                      onChange={(event) => setEditInlineRemoteImages(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span className="grid gap-1">
+                      <span>内联远程图片</span>
+                      <span className="text-[11px] font-medium text-stone-500">
+                        转发前把请求里的 http(s) 图片链接抓取并转成 base64 data URL。用于上游会抓取图片链接、且因图床返回非 image/* 类型而报错的情况（如 OSS 对象被当作 text/plain）。会增加延迟，仅在需要时勾选。
+                      </span>
+                    </span>
+                  </label>
+                  {shouldShowTurnReminder(activePlatform) ? (
+                    <div className="grid gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2">
+                      <label className="flex items-start gap-2 text-[12px] font-medium text-stone-700">
+                        <input
+                          aria-label="每轮追加纠偏提醒"
+                          checked={editTurnReminder}
+                          className="mt-0.5"
+                          onChange={(event) => setEditTurnReminder(event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span className="grid gap-1">
+                          <span>每轮追加纠偏提醒</span>
+                          <span className="text-[11px] font-medium text-stone-500">
+                            在每次请求的最后一条用户消息后追加一句要求。紧凑模型在长会话里会逐渐忘掉系统提示里的约束（比如开始用英文回复），而追加在末尾的这句离生成最近、最有效。写在末尾也不会打断 prompt 缓存前缀，不增加重复上下文的费用。
+                          </span>
+                        </span>
+                      </label>
+                      {editTurnReminder ? (
+                        <label className={labelClass}>
+                          提醒内容
+                          <input
+                            aria-label="纠偏提醒内容"
+                            className={fieldClass}
+                            onChange={(event) => setEditTurnReminderText(event.target.value)}
+                            placeholder={DEFAULT_TURN_REMINDER_PLACEHOLDER}
+                            value={editTurnReminderText}
+                          />
+                          <span className="text-[11px] font-medium text-stone-500">
+                            留空则使用默认：{DEFAULT_TURN_REMINDER_PLACEHOLDER}
+                          </span>
+                        </label>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <div className="grid gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2">
+                    <RelayBalanceFields
+                      fieldClass={fieldClass}
+                      idPrefix="编辑"
+                      labelClass={labelClass}
+                      onPanelAccountChange={setEditRelayBalancePanelAccount}
+                      panelAccount={editRelayBalancePanelAccount}
+                      onChange={(next) => {
+                        setEditRelayBalance(next);
+                        setEditRelayBalanceError(null);
+                      }}
+                      value={editRelayBalance}
+                    />
+                    {editRelayBalanceError ? (
+                      <p className="text-[11px] font-semibold text-red-700">
+                        {editRelayBalanceError}
+                      </p>
+                    ) : null}
+                    {editRelayBalance.provider !== "none" &&
+                    relayBalanceSettingsDirty(
+                      editingCredential,
+                      editRelayBalance,
+                      editRelayBalancePanelAccount,
+                    ) ? (
+                      <p className="text-[11px] font-semibold text-amber-700">
+                        立即查询用的是已保存的设置，刚改的这些要先保存修改才会生效。
+                      </p>
+                    ) : null}
+                    {editRelayBalance.provider === "none" ? null : editRelayBalanceSnapshot ? (
+                      <div className="flex flex-wrap items-center gap-2 border-t border-stone-100 pt-2">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                            relayBalanceBadge(editRelayBalanceSnapshot).toneClass
+                          }`}
+                        >
+                          {relayBalanceBadge(editRelayBalanceSnapshot).label}
+                        </span>
+                        <span className="text-[11px] font-medium text-stone-500">
+                          更新于 {formatRelayBalanceCheckedAt(editRelayBalanceSnapshot.checked_at)}
+                        </span>
+                        <button
+                          className={`${secondaryButtonClass} inline-flex h-7 items-center gap-1 px-2 text-[11px]`}
+                          disabled={relayBalanceMutation.isPending}
+                          onClick={() => relayBalanceMutation.mutate(editingCredential.id)}
+                          type="button"
+                        >
+                          <RefreshCw
+                            aria-hidden="true"
+                            className={`h-3 w-3 ${relayBalanceMutation.isPending ? "animate-spin" : ""}`}
+                            data-testid="relay-balance-instant-icon"
+                          />
+                          立即查询
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        className={`${secondaryButtonClass} inline-flex h-7 items-center gap-1 justify-self-start px-2 text-[11px]`}
+                        disabled={relayBalanceMutation.isPending}
+                        onClick={() => relayBalanceMutation.mutate(editingCredential.id)}
+                        type="button"
+                      >
+                        <RefreshCw
+                          aria-hidden="true"
+                          className={`h-3 w-3 ${relayBalanceMutation.isPending ? "animate-spin" : ""}`}
+                          data-testid="relay-balance-instant-icon"
+                        />
+                        立即查询
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : null}
+              {editTab === "other" ? (
+                <>
+                  {editingCredential.kind === "official" ? (
+                    <>
+                      <label className={labelClass}>
+                        Secret JSON
+                        <textarea
+                          aria-label="编辑 Secret JSON"
+                          className={`${monoFieldClass} min-h-24`}
+                          onChange={(event) => {
+                            setEditSecretJson(event.target.value);
+                            setEditFetchedModels([]);
+                            setEditFetchModelsError(null);
+                          }}
+                          value={editSecretJson}
+                        />
+                      </label>
+                      <label className={labelClass}>
+                        Config JSON
+                        <textarea
+                          aria-label="编辑 Config JSON"
+                          className={`${monoFieldClass} min-h-24`}
+                          onChange={(event) => {
+                            const nextConfigJson = event.target.value;
+                            setEditConfigJson(nextConfigJson);
+                            setEditUserAgent(readUserAgentFromConfig(parseJsonObject(nextConfigJson)));
+                            setEditModelMappings(parseModelMappingsFromConfig(nextConfigJson));
+                            setEditModelMappingsError(null);
+                            setEditFetchedModels([]);
+                            setEditFetchModelsError(null);
+                          }}
+                          value={editConfigJson}
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                  <label className={labelClass}>
+                    Preview JSON
+                    <textarea
+                      aria-label="编辑 Preview JSON"
+                      className={`${monoFieldClass} min-h-24`}
+                      onChange={(event) => setEditPreviewJson(event.target.value)}
+                      readOnly={editingCredential.kind === "api"}
+                      value={editingCredential.kind === "api" ? generatedEditApiPreviewJson : editPreviewJson}
+                    />
+                    {editingCredential.kind === "api" && (
+                      <span className="text-[11px] font-medium text-stone-500">
+                        API 账号预览会根据 API Key、Base URL、接口格式和模型映射自动同步。
+                      </span>
+                    )}
+                  </label>
+                </>
+              ) : null}
+            </div>
+
+            {updateMutation.error && (
+              <p className="mt-4 rounded-xl bg-red-50 p-3 text-[13px] font-semibold text-red-700">
+                {formatApiError(updateMutation.error, "保存账号失败。")}
+              </p>
+            )}
+            {deleteMutation.error && (
+              <p className="mt-4 rounded-xl bg-red-50 p-3 text-[13px] font-semibold text-red-700">删除账号失败。</p>
+            )}
+
+            <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-stone-100 pt-3">
+              <button
+                className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2 text-[13px] font-semibold text-red-700 motion-control hover:bg-red-50"
+                disabled={deleteMutation.isPending}
+                onClick={() =>
+                  setPendingDelete({
+                    kind: "single",
+                    id: editingCredential.id,
+                    name: editingCredential.display_name,
+                  })
+                }
+                type="button"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                删除账号
+              </button>
+              <div className="flex gap-2">
+                <button
+                  className={secondaryButtonClass}
+                  onClick={() => setEditingCredential(null)}
+                  type="button"
+                >
+                  取消
+                </button>
+                <button
+                  className={primaryButtonClass}
+                  disabled={updateMutation.isPending}
+                  onClick={() => updateMutation.mutate()}
+                  type="button"
+                >
+                  {updateMutation.isPending ? "正在保存..." : "保存修改"}
+                </button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
+    </section>
+  );
+}

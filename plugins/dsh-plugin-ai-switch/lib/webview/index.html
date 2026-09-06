@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <title>AI Switch</title>
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        overflow: hidden;
+      }
+    </style>
+    <script>
+      /*
+       * The shell decides the language, not this document.
+       *
+       * The app reads `localStorage['ai-switch.language']` before it renders and
+       * otherwise defaults to English. The dsh host knows what the user picked
+       * (DSH_DESKTOP_LANG / LANG), and the client half puts it on the iframe URL, so
+       * seeding the same key here is what makes the panel come up in the shell's
+       * language on first open. A stored choice made INSIDE the panel wins, so
+       * switching the language in the app's own selector still sticks.
+       */
+      ;(function () {
+        try {
+          var params = new URLSearchParams(window.location.search)
+          var lang = params.get('lang') || ''
+          if (lang.length === 0) {
+            return
+          }
+          var normalized = /^zh/i.test(lang) ? 'zh-CN' : 'en'
+          if (window.localStorage.getItem('ai-switch.language') === null) {
+            window.localStorage.setItem('ai-switch.language', normalized)
+          }
+        } catch (error) {
+          /* private mode, blocked storage: the app falls back to its own default */
+        }
+      })()
+    </script>
+    <script type="module" crossorigin src="./assets/index-CgI-WIhD.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/markdown-BsUwCzpJ.js">
+    <link rel="modulepreload" crossorigin href="./assets/xterm-BXcP0KD3.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-BZS7PEhh.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2020"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "paths": {
+      "@tauri-apps/api/core": ["./src/shims/tauri-core.ts"],
+      "@tauri-apps/api/event": ["./src/shims/tauri-event.ts"],
+      "@tauri-apps/plugin-dialog": ["./src/shims/tauri-dialog.ts"],
+      "@tauri-apps/plugin-opener": ["./src/shims/tauri-opener.ts"],
+      "@tauri-apps/plugin-autostart": ["./src/shims/tauri-autostart.ts"],
+      "@tauri-apps/plugin-process": ["./src/shims/tauri-process.ts"],
+      "@tauri-apps/plugin-updater": ["./src/shims/tauri-updater.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

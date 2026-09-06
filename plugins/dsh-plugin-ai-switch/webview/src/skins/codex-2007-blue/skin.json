@@ -1,0 +1,341 @@
+{
+  "id": "codex-2007-blue",
+  "name": "Codex 2007 Blue",
+  "author": "AI Switch",
+  "version": "2.0.0",
+  "ui": {
+    "accent": "#1678d8",
+    "accentText": "#ffffff",
+    "background": "linear-gradient(180deg, #63b9fb 0%, #2b89df 42%, #0e62b8 100%)",
+    "backgroundOverlay": "radial-gradient(circle at 18% 6%, rgba(255,255,255,0.72), transparent 17rem), radial-gradient(circle at 82% 12%, rgba(163,222,255,0.56), transparent 16rem), linear-gradient(180deg, rgba(255,255,255,0.24), rgba(8,63,126,0.24))",
+    "panel": "rgba(226, 245, 255, 0.88)",
+    "panelStrong": "rgba(255, 255, 255, 0.96)",
+    "panelSubtle": "rgba(188, 226, 250, 0.8)",
+    "border": "rgba(14, 99, 181, 0.42)",
+    "text": "#0d315d",
+    "mutedText": "#3d6d9f",
+    "button": "linear-gradient(180deg, #63c7ff 0%, #1678d8 48%, #0c5cab 100%)",
+    "buttonText": "#ffffff",
+    "buttonHover": "linear-gradient(180deg, #7bd3ff 0%, #2088e5 48%, #0b539e 100%)",
+    "dangerBackground": "linear-gradient(180deg, #ff7e87, #b72434)",
+    "dangerText": "#ffffff",
+    "tabBar": "linear-gradient(180deg, rgba(239,250,255,0.94), rgba(183,226,252,0.9))",
+    "tabActive": "linear-gradient(180deg, #ffffff 0%, #f5fcff 48%, #d7f0ff 100%)",
+    "tabInactive": "linear-gradient(180deg, rgba(151,210,247,0.54), rgba(103,176,229,0.38))",
+    "tabHover": "rgba(255, 255, 255, 0.72)",
+    "focus": "#44a7ff"
+  },
+  "terminal": {
+    "background": "transparent",
+    "black": "#1f4b75",
+    "blue": "#0d6ec9",
+    "brightBlack": "#6088ad",
+    "brightBlue": "#268fe8",
+    "brightCyan": "#20a6c9",
+    "brightGreen": "#3d9b5c",
+    "brightMagenta": "#9b63c6",
+    "brightRed": "#d94b5a",
+    "brightWhite": "#ffffff",
+    "brightYellow": "#d4931f",
+    "cyan": "#1685a8",
+    "foreground": "#12375f",
+    "green": "#2f854d",
+    "magenta": "#7c55ab",
+    "red": "#b73546",
+    "white": "#d9edf8",
+    "yellow": "#b37613"
+  },
+  "regions": {
+    "app": {
+      "background": "linear-gradient(180deg, #6fc5ff 0%, #2f91e5 36%, #126bc4 100%)",
+      "backgroundOverlay": "radial-gradient(circle at 12% 2%, rgba(255,255,255,0.94), transparent 12rem), radial-gradient(circle at 92% 0%, rgba(195,240,255,0.68), transparent 15rem), linear-gradient(90deg, rgba(255,255,255,0.18), transparent 28%, rgba(0,61,129,0.16))",
+      "border": "rgba(7, 86, 160, 0.72)",
+      "color": "#0d315d"
+    },
+    "titlebar": {
+      "background": "linear-gradient(180deg, #e7fbff 0%, #8bd7ff 18%, #34a0ef 45%, #0f6bc4 100%)",
+      "backgroundOverlay": "linear-gradient(90deg, rgba(255,255,255,0.48), transparent 32%, rgba(255,255,255,0.2) 64%, transparent)",
+      "border": "rgba(5, 82, 150, 0.65)",
+      "color": "#ffffff",
+      "shadow": "inset 0 1px 0 rgba(255,255,255,0.86), 0 1px 0 rgba(7,74,139,0.35)"
+    },
+    "sidebar": {
+      "background": "linear-gradient(180deg, rgba(231,249,255,0.96) 0%, rgba(179,225,252,0.92) 42%, rgba(96,169,226,0.86) 100%)",
+      "backgroundOverlay": "radial-gradient(circle at 18% 8%, rgba(255,255,255,0.9), transparent 9rem), linear-gradient(90deg, rgba(255,255,255,0.32), transparent 72%)",
+      "border": "rgba(13, 104, 190, 0.52)",
+      "shadow": "inset -1px 0 0 rgba(255,255,255,0.42)"
+    },
+    "sidebarHeader": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(221,246,255,0.96) 48%, rgba(159,218,252,0.94) 100%)",
+      "border": "rgba(31, 132, 211, 0.42)",
+      "shadow": "0 12px 22px rgba(15,99,184,0.16), inset 0 1px 0 rgba(255,255,255,0.86)",
+      "backdropFilter": "blur(14px)"
+    },
+    "controlPanel": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.88), rgba(207,237,255,0.82))",
+      "border": "rgba(31, 132, 211, 0.38)",
+      "shadow": "0 10px 20px rgba(15,99,184,0.12)",
+      "backdropFilter": "blur(14px)",
+      "borderRadius": "16px",
+      "padding": "0.75rem"
+    },
+    "sessionList": {
+      "background": "linear-gradient(180deg, rgba(241,251,255,0.62), rgba(188,226,250,0.42))",
+      "border": "rgba(31, 132, 211, 0.24)",
+      "shadow": "inset 0 1px 0 rgba(255,255,255,0.62), 0 10px 20px rgba(15,99,184,0.08)",
+      "borderRadius": "18px",
+      "padding": "0.65rem"
+    },
+    "listTrigger": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.68), rgba(197,232,252,0.48))",
+      "border": "rgba(31, 132, 211, 0.2)",
+      "color": "#154b7e",
+      "borderRadius": "12px",
+      "padding": "0.5rem 0.65rem"
+    },
+    "sessionRow": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.9), rgba(220,243,255,0.72))",
+      "border": "rgba(31, 132, 211, 0.3)",
+      "shadow": "inset 0 1px 0 rgba(255,255,255,0.84)",
+      "borderRadius": "13px",
+      "padding": "0.58rem 0.68rem"
+    },
+    "groupPanel": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.96), rgba(225,246,255,0.94) 48%, rgba(193,229,251,0.9))",
+      "border": "rgba(38, 143, 222, 0.34)",
+      "shadow": "0 10px 18px rgba(13,104,190,0.1), inset 0 1px 0 rgba(255,255,255,0.9)",
+      "borderRadius": "16px",
+      "padding": "0.55rem"
+    },
+    "workspace": {
+      "background": "linear-gradient(180deg, rgba(231,248,255,0.94), rgba(198,233,252,0.92) 46%, rgba(154,209,244,0.88))",
+      "backgroundOverlay": "linear-gradient(90deg, rgba(255,255,255,0.4), transparent 34%), radial-gradient(circle at 86% 12%, rgba(255,255,255,0.64), transparent 12rem)",
+      "border": "rgba(13, 104, 190, 0.5)",
+      "shadow": "inset 1px 0 0 rgba(255,255,255,0.42), 0 18px 44px rgba(4,54,112,0.16)"
+    },
+    "tabBar": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.96), rgba(214,241,255,0.94) 54%, rgba(159,217,251,0.92))",
+      "border": "rgba(31, 132, 211, 0.38)",
+      "shadow": "inset 0 -1px 0 rgba(28,121,203,0.2)"
+    },
+    "terminalShell": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.62), rgba(219,243,255,0.38))",
+      "border": "rgba(20, 105, 184, 0.36)",
+      "shadow": "inset 0 1px 0 rgba(255,255,255,0.95), 0 18px 34px rgba(18,91,166,0.14)",
+      "borderRadius": "16px"
+    },
+    "emptyState": {
+      "background": "radial-gradient(circle at 50% 38%, rgba(255,255,255,0.98), rgba(233,248,255,0.82) 44%, rgba(186,226,251,0.42) 72%, transparent)",
+      "color": "#0d315d"
+    },
+    "modal": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(226,247,255,0.96) 52%, rgba(184,225,251,0.94))",
+      "border": "rgba(10, 92, 168, 0.48)",
+      "shadow": "0 22px 54px rgba(4,54,112,0.24), inset 0 1px 0 rgba(255,255,255,0.92)",
+      "borderRadius": "18px",
+      "padding": "1.1rem"
+    },
+    "launchPanel": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(224,246,255,0.94) 52%, rgba(176,222,250,0.88))",
+      "border": "rgba(31, 132, 211, 0.36)",
+      "shadow": "0 20px 38px rgba(10,82,154,0.16), inset 0 1px 0 rgba(255,255,255,0.92)",
+      "borderRadius": "20px",
+      "padding": "1rem"
+    },
+    "agentStrip": {
+      "background": "linear-gradient(180deg, rgba(226,247,255,0.9), rgba(183,226,252,0.72))",
+      "border": "rgba(31, 132, 211, 0.28)",
+      "borderRadius": "14px",
+      "padding": "0.55rem"
+    },
+    "agentOption": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.86), rgba(214,241,255,0.68))",
+      "border": "rgba(31, 132, 211, 0.24)",
+      "borderRadius": "11px",
+      "padding": "0.52rem 0.7rem"
+    },
+    "agentOptionActive": {
+      "background": "linear-gradient(180deg, #ffffff 0%, #f5fcff 50%, #cbeaff 100%)",
+      "border": "rgba(22, 120, 216, 0.46)",
+      "shadow": "0 8px 18px rgba(13,104,190,0.18)"
+    },
+    "composer": {
+      "background": "linear-gradient(180deg, rgba(238,250,255,0.94), rgba(196,232,252,0.76))",
+      "border": "rgba(31, 132, 211, 0.32)",
+      "shadow": "inset 0 1px 0 rgba(255,255,255,0.88), 0 12px 22px rgba(13,104,190,0.1)",
+      "borderRadius": "16px",
+      "padding": "0.68rem"
+    },
+    "composerInput": {
+      "background": "linear-gradient(180deg, #ffffff, #e9f8ff)",
+      "border": "rgba(31, 132, 211, 0.34)",
+      "borderRadius": "13px",
+      "padding": "0.78rem 0.9rem"
+    },
+    "composerMetaBar": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.74), rgba(212,240,255,0.58))",
+      "border": "rgba(31, 132, 211, 0.22)",
+      "borderRadius": "13px",
+      "padding": "0.55rem 0.65rem"
+    },
+    "composerControl": {
+      "background": "linear-gradient(180deg, #ffffff, #e7f7ff)",
+      "border": "rgba(31, 132, 211, 0.32)",
+      "borderRadius": "11px",
+      "padding": "0 0.7rem"
+    },
+    "composerSendButton": {
+      "borderRadius": "12px",
+      "padding": "0.68rem 0.95rem"
+    },
+    "rightRail": {
+      "background": "linear-gradient(180deg, rgba(216,243,255,0.92), rgba(151,211,247,0.86) 56%, rgba(74,157,222,0.8))",
+      "backgroundOverlay": "radial-gradient(circle at 68% 8%, rgba(255,255,255,0.94), transparent 8rem), linear-gradient(90deg, rgba(255,255,255,0.24), transparent)",
+      "border": "rgba(13, 104, 190, 0.46)",
+      "shadow": "inset 1px 0 0 rgba(255,255,255,0.48)"
+    },
+    "rightCard": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.96), rgba(226,247,255,0.94) 50%, rgba(172,224,252,0.92))",
+      "border": "rgba(31, 132, 211, 0.38)",
+      "shadow": "0 16px 28px rgba(10,82,154,0.16), inset 0 1px 0 rgba(255,255,255,0.92)"
+    },
+    "statusBar": {
+      "background": "linear-gradient(180deg, rgba(211,239,255,0.94), rgba(139,204,244,0.92))",
+      "border": "rgba(13, 104, 190, 0.48)",
+      "color": "#174a7c",
+      "shadow": "inset 0 1px 0 rgba(255,255,255,0.7)"
+    },
+    "button": {
+      "border": "rgba(255,255,255,0.58)",
+      "shadow": "0 10px 20px rgba(13,104,190,0.18), inset 0 1px 0 rgba(255,255,255,0.54)",
+      "borderRadius": "12px",
+      "padding": "0.58rem 0.9rem"
+    },
+    "ghostButton": {
+      "background": "linear-gradient(180deg, rgba(255,255,255,0.72), rgba(201,233,252,0.52))",
+      "border": "rgba(31, 132, 211, 0.3)",
+      "borderRadius": "12px"
+    },
+    "field": {
+      "background": "linear-gradient(180deg, #ffffff, #e7f7ff)",
+      "border": "rgba(31, 132, 211, 0.42)",
+      "shadow": "inset 0 1px 2px rgba(13,104,190,0.1)",
+      "borderRadius": "11px",
+      "padding": "0.62rem 0.78rem"
+    },
+    "select": {
+      "background": "linear-gradient(180deg, #ffffff, #e2f4ff)",
+      "border": "rgba(31, 132, 211, 0.42)",
+      "borderRadius": "11px",
+      "padding": "0.62rem 0.78rem"
+    },
+    "danger": {
+      "border": "rgba(142, 26, 43, 0.38)",
+      "shadow": "0 10px 18px rgba(183,36,52,0.12)",
+      "borderRadius": "12px"
+    }
+  },
+  "blocks": {
+    "titlebar": {
+      "title": "Codex 2007 - 优化 KV 读写成本",
+      "subtitle": "QQ2007 蓝色经典",
+      "badge": "在线"
+    },
+    "profile": {
+      "name": "Codex 小蓝",
+      "status": "手机在线",
+      "signature": "代码有问题？找我！",
+      "badge": "蓝钻 LV7"
+    },
+    "showcase": {
+      "enabled": true,
+      "title": "Codex 小蓝",
+      "subtitle": "QQ2007 Blue",
+      "body": "今天也在陪你写代码。",
+      "badge": "Codex 好友",
+      "footer": "双击发送消息"
+    },
+    "statusbar": {
+      "left": "Codex 已连接",
+      "right": "QQ2007 皮肤模式"
+    },
+    "taskbar": {
+      "enabled": true,
+      "startButton": {
+        "label": "开始"
+      },
+      "startMenu": {
+        "items": [
+          {
+            "label": "外观设置",
+            "action": "openAppearance"
+          },
+          {
+            "label": "切换到皮肤模式",
+            "action": "setTheme",
+            "theme": "skin"
+          },
+          {
+            "label": "切换亮色主题",
+            "action": "setTheme",
+            "theme": "light"
+          },
+          {
+            "label": "切换暗色主题",
+            "action": "setTheme",
+            "theme": "dark"
+          },
+          {
+            "label": "导入皮肤...",
+            "action": "importSkin"
+          },
+          {
+            "type": "separator"
+          },
+          {
+            "label": "AI Switch 终端",
+            "disabled": true
+          }
+        ]
+      },
+      "items": [
+        {
+          "label": "AI Switch 终端",
+          "active": true
+        }
+      ],
+      "tray": [
+        "Vibe",
+        "在线"
+      ],
+      "clockFormat": "HH:mm"
+    }
+  },
+  "decorations": {
+    "variant": "codex-2007",
+    "titlebarMark": "Q",
+    "showcaseTemplate": "qq-mascot",
+    "rightCards": [
+      {
+        "template": "qq-person",
+        "title": "我的好友 (2/8)",
+        "badge": "QQ秀",
+        "items": [
+          {
+            "label": "小希",
+            "badge": "在线",
+            "template": "qq-person"
+          }
+        ]
+      }
+    ]
+  },
+  "showcase": {
+    "enabled": true,
+    "title": "Codex 2007",
+    "subtitle": "Blue chrome skin",
+    "body": "Region-based skinning keeps terminal output clear while the shell, panels, and showcase stay expressive.",
+    "badge": "Vibe Skin",
+    "footer": "QQ2007-inspired layout"
+  }
+}
