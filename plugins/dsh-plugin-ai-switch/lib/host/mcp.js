@@ -623,12 +623,20 @@ async function removeTomlEntry(path, prefix, id) {
 }
 
 /**
- * Drop a whole `[table]` block — its header, its keys, and the blank line that separated it
- * from the next one.
+ * Drop a whole `[table]` block: its header, its keys, the comment lines that introduce it,
+ * and the blank line that separated it from what follows.
  *
  * `configwrite/toml.js` can delete keys but not a header, because nothing else in this
- * plugin ever removes a table. It lives here rather than there because it is MCP's need,
- * and the module owner rule says that file is not mine to extend.
+ * plugin ever removes a table; that file is another agent's and not mine to extend, so the
+ * one extra operation MCP needs lives here.
+ *
+ * The block's boundaries are drawn the way a person reads the file:
+ *
+ * - a run of `#` comments directly above the header introduces THIS table, so it goes;
+ * - a run of `#` comments directly above the NEXT header introduces that one, so it stays,
+ *   which is why the end is pulled back over it;
+ * - the blank lines inside the deleted range go with it, leaving the surviving blocks
+ *   separated by exactly the one blank line that was already above this block.
  */
 function removeTomlTable(text, table) {
   const original = String(text ?? '')
@@ -638,7 +646,6 @@ function removeTomlTable(text, table) {
   if (trailing) {
     lines.pop()
   }
-  const isHeader = (line) => /^\[\[?[^\]]+\]\]?/.test(line.trim())
   const headerName = (line) => {
     const match = /^\[\[?([^\]]+)\]\]?/.exec(line.trim())
     return match === null ? null : match[1].trim()
@@ -649,20 +656,25 @@ function removeTomlTable(text, table) {
   }
   let end = lines.length
   for (let index = start + 1; index < lines.length; index += 1) {
-    if (isHeader(lines[index])) {
+    if (headerName(lines[index]) !== null) {
       end = index
       break
     }
   }
-  // Comment lines immediately above the header belong to this table; take them with it.
   let from = start
   while (from > 0 && lines[from - 1].trim().startsWith('#')) {
     from -= 1
   }
-  // And the blank line that separated it from what came before.
-  while (from > 0 && lines[from - 1].trim().length === 0 && end < lines.length) {
-    from -= 1
-    break
+  if (end < lines.length) {
+    while (end > start + 1 && lines[end - 1].trim().startsWith('#')) {
+      end -= 1
+    }
+  } else {
+    // Last block in the file: also take the blank line above it, so the file does not end
+    // with a gap where the entry used to be.
+    while (from > 0 && lines[from - 1].trim().length === 0) {
+      from -= 1
+    }
   }
   lines.splice(from, end - from)
   const body = lines.join(newline)

@@ -101,6 +101,23 @@ describe('the command table', () => {
       'kill_terminal_session',
       'list_batch_groups',
       'create_batch',
+      'mcp_scan_local',
+      'mcp_list_marketplaces',
+      'mcp_search_marketplace',
+      'mcp_get_marketplace_server_detail',
+      'mcp_install_from_marketplace',
+      'mcp_upsert_local_server',
+      'mcp_set_server_apps',
+      'mcp_remove_server',
+      'skills_list_agents',
+      'skills_list',
+      'skills_list_packages',
+      'skills_read_package',
+      'skills_install_package',
+      'skills_uninstall_package',
+      'skills_read',
+      'skills_save',
+      'skills_delete',
     ]
     for (const name of required) {
       assert.equal(typeof commands[name], 'function', `${name} must be answerable`)

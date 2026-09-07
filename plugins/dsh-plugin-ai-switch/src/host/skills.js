@@ -329,7 +329,7 @@ export function validateSkillId(value) {
     id.includes('\\') ||
     id.includes(':') ||
     /\s/.test(id) ||
-    // eslint-disable-next-line no-control-regex -- escapes only; never a literal control char.
+    // Control characters, spelled as escapes — never as literal bytes in this source.
     /[\u0000-\u001F\u007F]/.test(id)
   ) {
     throw validation('validation.skill_id', 'Skill id is not a safe file name', id)

@@ -107,11 +107,37 @@ const CONTENT_TYPES = {
  */
 export async function serveStatic(res, root, requestPath, options = {}) {
   const rootDir = resolve(root)
-  const relative = normalize(decodeURIComponent(requestPath)).replace(/^([/\\])+/, '')
+  let decoded
+  try {
+    decoded = decodeURIComponent(String(requestPath ?? ''))
+  } catch {
+    // A malformed escape is not a path.
+    res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end('bad request')
+    return
+  }
+
+  // Reject `..` on the DECODED path, before normalize gets a chance to collapse it.
+  //
+  // Order matters here and it is the trap: `/..%2f..%2fsecret` decodes to `/../../secret`,
+  // which `path.normalize` flattens to `/secret` — back inside the root, so a prefix check
+  // alone says "fine" and the file simply appears to be missing. Nothing escapes either way,
+  // but "missing" then becomes the SPA fallback and a 200, which reads as though the path
+  // were legitimate. Refusing the segment outright is both honest and easier to verify.
+  const segments = decoded.split(/[/\\]+/)
+  if (segments.includes('..')) {
+    res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end('forbidden')
+    return
+  }
+
+  const relative = normalize(decoded).replace(/^[/\\]+/, '')
   const target = resolve(join(rootDir, relative))
+  // Separator included, so a sibling directory whose name merely begins with the root's
+  // (`…/webview-secrets`) cannot pass a bare startsWith.
   if (target !== rootDir && !target.startsWith(rootDir + sep)) {
-    res.writeHead(403)
-    res.end()
+    res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end('forbidden')
     return
   }
 

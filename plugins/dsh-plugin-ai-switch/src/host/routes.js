@@ -17,6 +17,7 @@
  *
  * @module dsh-plugin-ai-switch/host/routes
  */
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -27,8 +28,10 @@ import { ConfigWriteService } from './configwrite/index.js'
 import { fail, json as okJson, readJsonBody, serveStatic } from './http.js'
 import { ProxyKeyService } from './keys.js'
 import { Activity, UsageLedger } from './ledger.js'
+import * as mcp from './mcp.js'
 import { buildCatalog } from './models.js'
 import { listPlatformCapabilities, parsePlatform, PLATFORM_IDS } from './platforms.js'
+import * as skills from './skills.js'
 import { RouteProxy } from './proxy.js'
 import { PLUGIN_ID, panelLanguage, pluginHomePath, userHome, uuid } from './sdk.js'
 import { getSettings, saveSettings } from './settings.js'
@@ -41,8 +44,20 @@ import { getSessionUsageStats, getUsageOverview } from './usage.js'
 export const ROUTE_PREFIX = `/${PLUGIN_ID}`
 export const SSE_PATH = `${ROUTE_PREFIX}/events`
 
-/** Where `npm run build` puts the panel bundle. */
-const WEBVIEW_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'webview')
+/**
+ * Where the built panel lives.
+ *
+ * In the published package this file is `lib/host/routes.js` and the bundle is its sibling
+ * `lib/webview`. Running straight from `src/` — which the tests and a `link:` install both
+ * do — that path does not exist, because Vite only ever writes into `lib/`. So the sibling
+ * is preferred and `../../lib/webview` is the fallback, rather than making the source tree
+ * carry a copy of a 3 MB bundle.
+ */
+const WEBVIEW_DIR = (() => {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const sibling = join(here, '..', 'webview')
+  return existsSync(sibling) ? sibling : join(here, '..', '..', 'lib', 'webview')
+})()
 
 /**
  * Build everything the routes need. Split out so the tests can drive the command table
@@ -232,6 +247,101 @@ export function buildCommands(context) {
     // ---------------------------------------------------------------- batches
     list_batch_groups: (args) => listBatchGroups(context, arg(args, 'search') ?? null),
     create_batch: (args) => createBatch(context, arg(args, 'input')),
+
+    // -------------------------------------------------------------------- MCP
+    mcp_scan_local: () => mcp.scanLocal(),
+    mcp_list_marketplaces: () => mcp.listMarketplaces(),
+    mcp_search_marketplace: (args) =>
+      mcp.searchMarketplace({
+        providerId: arg(args, 'providerId', 'provider_id'),
+        query: arg(args, 'query') ?? '',
+        limit: arg(args, 'limit') ?? null,
+      }),
+    mcp_get_marketplace_server_detail: (args) =>
+      mcp.getMarketplaceServerDetail({
+        providerId: arg(args, 'providerId', 'provider_id'),
+        serverId: arg(args, 'serverId', 'server_id'),
+      }),
+    mcp_install_from_marketplace: (args) =>
+      mcp.installFromMarketplace({
+        providerId: arg(args, 'providerId', 'provider_id'),
+        serverId: arg(args, 'serverId', 'server_id'),
+        apps: arg(args, 'apps') ?? [],
+        optionId: arg(args, 'optionId', 'option_id') ?? null,
+        protocol: arg(args, 'protocol') ?? null,
+        parameterValues: arg(args, 'parameterValues', 'parameter_values') ?? {},
+      }),
+    mcp_upsert_local_server: (args) =>
+      mcp.upsertLocalServer({
+        serverId: arg(args, 'serverId', 'server_id'),
+        spec: arg(args, 'spec'),
+        apps: arg(args, 'apps') ?? [],
+      }),
+    mcp_set_server_apps: (args) =>
+      mcp.setServerApps({ serverId: arg(args, 'serverId', 'server_id'), apps: arg(args, 'apps') ?? [] }),
+    mcp_remove_server: (args) =>
+      mcp.removeServer({ serverId: arg(args, 'serverId', 'server_id'), apps: arg(args, 'apps') ?? null }),
+
+    // ----------------------------------------------------------------- skills
+    skills_list_agents: () => skills.listAgents(),
+    skills_list: (args) =>
+      skills.listSkills({
+        agentType: arg(args, 'agentType', 'agent_type'),
+        scope: arg(args, 'scope'),
+        workspacePath: arg(args, 'workspacePath', 'workspace_path') ?? null,
+      }),
+    skills_list_packages: (args) =>
+      skills.listPackages({
+        agentType: arg(args, 'agentType', 'agent_type') ?? null,
+        scope: arg(args, 'scope') ?? null,
+        workspacePath: arg(args, 'workspacePath', 'workspace_path') ?? null,
+      }),
+    skills_read_package: (args) =>
+      skills.readPackage({
+        packageId: arg(args, 'packageId', 'package_id'),
+        agentType: arg(args, 'agentType', 'agent_type') ?? null,
+        scope: arg(args, 'scope') ?? null,
+        workspacePath: arg(args, 'workspacePath', 'workspace_path') ?? null,
+      }),
+    skills_install_package: (args) =>
+      skills.installPackage({
+        packageId: arg(args, 'packageId', 'package_id'),
+        agentType: arg(args, 'agentType', 'agent_type') ?? null,
+        scope: arg(args, 'scope') ?? null,
+        workspacePath: arg(args, 'workspacePath', 'workspace_path') ?? null,
+        skillIds: arg(args, 'skillIds', 'skill_ids') ?? null,
+      }),
+    skills_uninstall_package: (args) =>
+      skills.uninstallPackage({
+        packageId: arg(args, 'packageId', 'package_id'),
+        agentType: arg(args, 'agentType', 'agent_type') ?? null,
+        scope: arg(args, 'scope') ?? null,
+        workspacePath: arg(args, 'workspacePath', 'workspace_path') ?? null,
+        skillIds: arg(args, 'skillIds', 'skill_ids') ?? null,
+      }),
+    skills_read: (args) =>
+      skills.readSkill({
+        agentType: arg(args, 'agentType', 'agent_type'),
+        scope: arg(args, 'scope'),
+        skillId: arg(args, 'skillId', 'skill_id'),
+        workspacePath: arg(args, 'workspacePath', 'workspace_path') ?? null,
+      }),
+    skills_save: (args) =>
+      skills.saveSkill({
+        agentType: arg(args, 'agentType', 'agent_type'),
+        scope: arg(args, 'scope'),
+        skillId: arg(args, 'skillId', 'skill_id'),
+        content: arg(args, 'content'),
+        layout: arg(args, 'layout') ?? null,
+        workspacePath: arg(args, 'workspacePath', 'workspace_path') ?? null,
+      }),
+    skills_delete: (args) =>
+      skills.deleteSkill({
+        agentType: arg(args, 'agentType', 'agent_type'),
+        scope: arg(args, 'scope'),
+        skillId: arg(args, 'skillId', 'skill_id'),
+        workspacePath: arg(args, 'workspacePath', 'workspace_path') ?? null,
+      }),
   }
 }
 
