@@ -26,11 +26,14 @@ import { ApiError, nowIso, requireText } from '../shared/protocol.js'
 import { AccountService } from './accounts.js'
 import { ConfigWriteService } from './configwrite/index.js'
 import { fail, json as okJson, readJsonBody, serveStatic } from './http.js'
+import * as importers from './importers.js'
 import { ProxyKeyService } from './keys.js'
 import { Activity, UsageLedger } from './ledger.js'
 import * as mcp from './mcp.js'
+import { fetchRouteModels } from './model-fetch.js'
 import { buildCatalog } from './models.js'
 import { listPlatformCapabilities, parsePlatform, PLATFORM_IDS } from './platforms.js'
+import * as quota from './quota.js'
 import * as skills from './skills.js'
 import { RouteProxy } from './proxy.js'
 import {
@@ -216,6 +219,90 @@ export function buildCommands(context) {
       accounts.clearModelState(arg(args, 'id'), arg(args, 'model_key', 'modelKey')),
     set_route_credential_recovery: (args) => accounts.setRecovery(arg(args, 'id'), arg(args, 'rule')),
 
+    // ------------------------------------------------------ import / export
+    export_route_credentials: (args) => {
+      const input = arg(args, 'input') ?? {}
+      return importers.exportCredentials(
+        {
+          selectionContext: input.selection_context,
+          credentialIds: input.credential_ids,
+          includeEnhancedMetadata: input.include_enhanced_metadata,
+        },
+        { stores, accounts },
+      )
+    },
+    preview_route_credential_import: (args) => {
+      const input = arg(args, 'input') ?? {}
+      return importers.previewTransferImport(
+        { text: input.text, ambiguousPlatformChoices: input.ambiguous_platform_choices ?? [] },
+        { stores, accounts },
+      )
+    },
+    import_route_credentials: (args) => {
+      const input = arg(args, 'input') ?? {}
+      return importers.importTransferCredentials(
+        {
+          text: input.text,
+          ambiguousPlatformChoices: input.ambiguous_platform_choices ?? [],
+          restorePoolMembership: input.restore_pool_membership === true,
+        },
+        { stores, accounts },
+      )
+    },
+    preview_external_client_import: (args) => {
+      const input = arg(args, 'input') ?? {}
+      return importers.previewExternalClientImport(
+        { client: input.client, platform: input.platform, sourcePath: input.source_path ?? null },
+        { stores, accounts },
+      )
+    },
+    import_external_client_accounts: (args) => {
+      const input = arg(args, 'input') ?? {}
+      return importers.importExternalClientAccounts(
+        {
+          client: input.client,
+          platform: input.platform,
+          sourcePath: input.source_path ?? null,
+          sourceIds: input.source_ids ?? [],
+        },
+        { stores, accounts },
+      )
+    },
+    import_official_route_credentials_from_text: (args) => {
+      const input = arg(args, 'input') ?? {}
+      return importers.importOfficialFromText(
+        { platform: input.platform, text: input.text, batchName: input.batch_name },
+        { stores, accounts },
+      )
+    },
+    import_official_route_credentials_from_files: (args) => {
+      const input = arg(args, 'input') ?? {}
+      return importers.importOfficialFromFiles(
+        { platform: input.platform, filePaths: input.file_paths ?? [], batchName: input.batch_name },
+        { stores, accounts },
+      )
+    },
+
+    // ------------------------------------------------------- quota / balance
+    refresh_route_credential_quota: async (args) =>
+      quota.refreshQuota(await accounts.requireRow(requireText(arg(args, 'id'), 'id')), { accounts }),
+    refresh_route_credentials_quota: async (args) => {
+      const rows = await accounts.list(parsePlatform(arg(args, 'platform')))
+      const outcomes = []
+      for (const row of rows) {
+        if (row.kind === 'official') outcomes.push(await quota.refreshQuota(row, { accounts }))
+      }
+      return outcomes
+    },
+    refresh_route_credential_relay_balance: async (args) =>
+      quota.refreshRelayBalance(await accounts.requireRow(requireText(arg(args, 'id'), 'id')), { accounts }),
+    refresh_route_credentials_relay_balance: async (args) => {
+      const rows = await accounts.list(parsePlatform(arg(args, 'platform')))
+      const outcomes = []
+      for (const row of rows) outcomes.push(await quota.refreshRelayBalance(row, { accounts }))
+      return outcomes
+    },
+
     // ------------------------------------------------------------------ pool
     get_route_pool: (args) =>
       accounts.getPool(arg(args, 'platform'), {
@@ -232,6 +319,7 @@ export function buildCommands(context) {
       return accounts.setModelMode(input.platform, input.mode)
     },
     route_pool_route_once: (args) => accounts.routeOnce(arg(args, 'request')),
+    fetch_route_models: (args) => fetchRouteModels(arg(args, 'request')),
 
     // --------------------------------------------------------------- sessions
     list_sessions: (args) => listSessions({ platform: arg(args, 'platform') ?? null }),
