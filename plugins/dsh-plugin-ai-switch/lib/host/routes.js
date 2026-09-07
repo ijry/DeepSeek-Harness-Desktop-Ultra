@@ -31,6 +31,7 @@ import { ProxyKeyService } from './keys.js'
 import { Activity, UsageLedger } from './ledger.js'
 import * as mcp from './mcp.js'
 import { fetchRouteModels } from './model-fetch.js'
+import { routePoolTestModel } from './model-test.js'
 import { buildCatalog } from './models.js'
 import { listPlatformCapabilities, parsePlatform, PLATFORM_IDS } from './platforms.js'
 import * as quota from './quota.js'
@@ -319,6 +320,8 @@ export function buildCommands(context) {
       return accounts.setModelMode(input.platform, input.mode)
     },
     route_pool_route_once: (args) => accounts.routeOnce(arg(args, 'request')),
+    route_pool_test_model: (args) =>
+      routePoolTestModel(arg(args, 'request'), { accounts, proxy, keys }),
     fetch_route_models: (args) => fetchRouteModels(arg(args, 'request')),
 
     // --------------------------------------------------------------- sessions
@@ -377,6 +380,7 @@ export function buildCommands(context) {
     // ---------------------------------------------------------------- batches
     list_batch_groups: (args) => listBatchGroups(context, arg(args, 'search') ?? null),
     create_batch: (args) => createBatch(context, arg(args, 'input')),
+    import_example_json: (args) => importExampleJson(context, arg(args, 'request')),
 
     // -------------------------------------------------------------------- MCP
     mcp_scan_local: () => mcp.scanLocal(),
@@ -492,16 +496,28 @@ async function listBatchGroups(context, search) {
     if (needle.length > 0 && !batch.name.toLowerCase().includes(needle)) {
       continue
     }
-    const children = (rows.credentials ?? [])
-      .filter((row) => row.batch_id === batch.id && row.archived_at === null)
-      .map((row) => ({
-        item_type: row.kind === 'official' ? 'official_account' : 'provider',
-        id: row.id,
-        title: row.display_name,
-        subtitle: row.email ?? null,
-        platform: row.platform,
-        status: row.status,
-      }))
+    const children = [
+      ...(rows.credentials ?? [])
+        .filter((row) => row.batch_id === batch.id && row.archived_at === null)
+        .map((row) => ({
+          item_type: row.kind === 'official' ? 'official_account' : 'provider',
+          id: row.id,
+          title: row.display_name,
+          subtitle: row.email ?? null,
+          platform: row.platform,
+          status: row.status,
+        })),
+      ...(document.legacy_items ?? [])
+        .filter((row) => row.batch_id === batch.id)
+        .map((row) => ({
+          item_type: row.item_type,
+          id: row.id,
+          title: row.title,
+          subtitle: row.subtitle ?? null,
+          platform: row.platform ?? null,
+          status: row.status ?? 'ok',
+        })),
+    ]
     const health = children.some((child) => child.status === 'error' || child.status === 'revoked')
       ? 'error'
       : children.some((child) => child.status === 'warning' || child.status === 'paused')
@@ -527,6 +543,73 @@ async function createBatch(context, input) {
     document.batches = [...(document.batches ?? []), batch]
   })
   return batch
+}
+
+/**
+ * The reference's old demo importer. It predates route_credentials and writes Provider /
+ * OfficialAccount rows only so the Batches and Imports screens have something to show.
+ */
+async function importExampleJson(context, request) {
+  const batchName = requireText(request?.batch_name, 'batch_name', 200)
+  let payload
+  try {
+    payload = JSON.parse(requireText(request?.json, 'json', 8 * 1024 * 1024))
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    throw new ApiError('validation.json', 'Example import JSON is invalid', {
+      details: String(error?.message ?? error),
+    })
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new ApiError('validation.json', 'Example import JSON must be an object')
+  }
+  const batch = await createBatch(context, {
+    name: batchName,
+    source: 'example_json',
+    notes: String(request?.source_label ?? '').trim() || null,
+  })
+  const stamp = nowIso()
+  const providers = Array.isArray(payload.providers) ? payload.providers : []
+  const official = Array.isArray(payload.accounts) ? payload.accounts : []
+  const legacyItems = [
+    ...providers.map((row, index) => ({
+      id: uuid(),
+      batch_id: batch.id,
+      item_type: 'provider',
+      title: String(row?.name ?? `Provider ${index + 1}`),
+      subtitle: row?.base_url ?? null,
+      platform: null,
+      status: row?.status ?? 'ok',
+    })),
+    ...official.map((row, index) => ({
+      id: uuid(),
+      batch_id: batch.id,
+      item_type: 'official_account',
+      title: String(row?.display_name ?? `Account ${index + 1}`),
+      subtitle: row?.email ?? null,
+      platform: row?.platform ?? null,
+      status: row?.status ?? 'ok',
+    })),
+  ]
+  const job = {
+    id: uuid(),
+    source_type: 'example_json',
+    source_label: String(request?.source_label ?? '').trim() || 'manual',
+    batch_id: batch.id,
+    strategy: String(request?.strategy ?? 'skip'),
+    status: 'completed',
+    success_count: legacyItems.length,
+    failure_count: 0,
+    conflict_count: 0,
+    summary_json: JSON.stringify({ batch_id: batch.id, created: legacyItems.length }),
+    created_at: stamp,
+    completed_at: stamp,
+  }
+  await context.stores.batches.update((document) => {
+    document.legacy_items = [...(document.legacy_items ?? []), ...legacyItems]
+    document.jobs = [...(document.jobs ?? []), job]
+  })
+  return job
 }
 
 /**

@@ -98,6 +98,7 @@ describe('the command table', () => {
       'set_route_pool_members',
       'set_route_pool_model_mode',
       'route_pool_route_once',
+      'route_pool_test_model',
       'fetch_route_models',
       'list_sessions',
       'get_session_messages',
@@ -118,6 +119,7 @@ describe('the command table', () => {
       'kill_terminal_session',
       'list_batch_groups',
       'create_batch',
+      'import_example_json',
       'mcp_scan_local',
       'mcp_list_marketplaces',
       'mcp_search_marketplace',
@@ -163,6 +165,23 @@ describe('the command table', () => {
     assert.equal(gemini.operations.official_quota.availability, 'unavailable')
     assert.equal(gemini.operations.official_quota.reason_code, 'capability.quota_unavailable')
     assert.equal(gemini.operations.official_import.availability, 'supported')
+  })
+
+  it('imports the legacy example JSON into a visible batch', async () => {
+    const { commands } = await freshCommands()
+    const job = await commands.import_example_json({ request: {
+      batch_name: 'Examples',
+      source_label: 'manual paste',
+      strategy: 'skip',
+      json: JSON.stringify({
+        providers: [{ name: 'Relay', kind: 'openai', base_url: 'https://relay.example/v1' }],
+        accounts: [{ platform: 'codex', display_name: 'Official', email: 'a@example.test' }],
+      }),
+    } })
+    assert.equal(job.status, 'completed')
+    assert.equal(job.success_count, 2)
+    const groups = await commands.list_batch_groups({})
+    assert.equal(groups.find((group) => group.batch.id === job.batch_id).children.length, 2)
   })
 
   it('reports desktop-only settings honestly without blanking the Settings screen', async () => {
