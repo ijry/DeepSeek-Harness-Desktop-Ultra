@@ -93,6 +93,11 @@ describe('the command table', () => {
       'get_usage_overview',
       'get_model_price_configs',
       'save_model_price_configs',
+      'get_disk_space_status',
+      'get_route_proxy_https_status',
+      'get_web_service_config',
+      'get_web_server_status',
+      'get_tailscale_status',
       'list_agent_launch_options',
       'list_terminal_sessions',
       'create_terminal_session',
@@ -146,6 +151,38 @@ describe('the command table', () => {
     assert.equal(gemini.operations.official_quota.availability, 'unavailable')
     assert.equal(gemini.operations.official_quota.reason_code, 'capability.quota_unavailable')
     assert.equal(gemini.operations.official_import.availability, 'supported')
+  })
+
+  it('reports desktop-only settings honestly without blanking the Settings screen', async () => {
+    const { commands, context } = await freshCommands()
+    const disk = await commands.get_disk_space_status({})
+    assert.equal(disk.threshold_bytes, 1_073_741_824)
+    assert.equal(typeof disk.low, 'boolean')
+    assert.ok(Array.isArray(disk.volumes))
+
+    const https = await commands.get_route_proxy_https_status({})
+    assert.equal(https.enabled, false)
+    assert.equal(https.certReady, false)
+    assert.equal(https.trustStatus, 'unknown')
+    assert.match(https.message, /plugin/i)
+
+    const web = await commands.get_web_service_config({})
+    assert.equal(web.host, '127.0.0.1')
+    assert.equal(web.port, 3090)
+    assert.equal(web.token, null)
+    const webStatus = await commands.get_web_server_status({})
+    assert.equal(webStatus.running, true)
+    assert.equal(webStatus.host, '127.0.0.1')
+
+    const tailscale = await commands.get_tailscale_status({})
+    assert.equal(tailscale.state, 'disabled')
+    assert.match(tailscale.message, /plugin/i)
+
+    assert.throws(
+      () => commands.enable_route_proxy_https({}),
+      (error) => error.code === 'transport.desktop_only',
+    )
+    assert.equal(context.proxy.status().running, false)
   })
 
   it('rejects an unknown command name with the code the panel knows', async () => {

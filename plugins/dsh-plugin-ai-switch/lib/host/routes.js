@@ -33,6 +33,14 @@ import { buildCatalog } from './models.js'
 import { listPlatformCapabilities, parsePlatform, PLATFORM_IDS } from './platforms.js'
 import * as skills from './skills.js'
 import { RouteProxy } from './proxy.js'
+import {
+  desktopOnly,
+  getDiskSpaceStatus,
+  getRouteProxyHttpsStatus,
+  getTailscaleStatus,
+  getWebServerStatus,
+  getWebServiceConfig,
+} from './runtime-status.js'
 import { PLUGIN_ID, panelLanguage, pluginHomePath, userHome, uuid } from './sdk.js'
 import { getSettings, saveSettings } from './settings.js'
 import { getSessionMessages, listSessions } from './sessions.js'
@@ -63,7 +71,7 @@ const WEBVIEW_DIR = (() => {
  * Build everything the routes need. Split out so the tests can drive the command table
  * without a web server.
  */
-export function createContext({ home = pluginHomePath(), userHomeDir = userHome(), emit = () => {} } = {}) {
+export function createContext({ home = pluginHomePath(), userHomeDir = userHome(), emit = () => {}, webServer = null } = {}) {
   const stores = createStores(home)
   const activity = new Activity(emit)
   const ledger = new UsageLedger({ store: stores.usage })
@@ -72,7 +80,20 @@ export function createContext({ home = pluginHomePath(), userHomeDir = userHome(
   const proxy = new RouteProxy({ accounts, keys, ledger, activity, emit })
   const configWrite = new ConfigWriteService({ stores, accounts, keys, proxy, home: userHomeDir })
   const terminals = new TerminalManager({ emit })
-  return { stores, activity, ledger, keys, accounts, proxy, configWrite, terminals, home, userHomeDir, emit }
+  return {
+    stores,
+    activity,
+    ledger,
+    keys,
+    accounts,
+    proxy,
+    configWrite,
+    terminals,
+    home,
+    userHomeDir,
+    webServer,
+    emit,
+  }
 }
 
 /** The advertised catalog for one platform — shared by the proxy and the launch options. */
@@ -121,6 +142,27 @@ export function buildCommands(context) {
     // ---------------------------------------------------------------- settings
     get_settings: () => getSettings(stores.settings, context.home),
     save_settings: (args) => saveSettings(stores.settings, context.home, arg(args, 'settings')),
+
+    // ------------------------------------------------------- runtime status
+    get_disk_space_status: () => getDiskSpaceStatus(context.home),
+    get_route_proxy_https_status: () => getRouteProxyHttpsStatus(context.home),
+    enable_route_proxy_https: () => desktopOnly('enable_route_proxy_https'),
+    disable_route_proxy_https: () => desktopOnly('disable_route_proxy_https'),
+    reimport_route_proxy_root_ca: () => desktopOnly('reimport_route_proxy_root_ca'),
+    regenerate_route_proxy_https_certificates: () =>
+      desktopOnly('regenerate_route_proxy_https_certificates'),
+    uninstall_route_proxy_root_ca: () => desktopOnly('uninstall_route_proxy_root_ca'),
+    delete_route_proxy_https_certificates: () => desktopOnly('delete_route_proxy_https_certificates'),
+    get_web_service_config: () => getWebServiceConfig(),
+    save_web_service_config: () => desktopOnly('save_web_service_config'),
+    get_web_server_status: () => getWebServerStatus(context.webServer),
+    start_web_server: () => desktopOnly('start_web_server'),
+    stop_web_server: () => desktopOnly('stop_web_server'),
+    get_tailscale_status: () => getTailscaleStatus(),
+    create_mobile_pairing: () => desktopOnly('create_mobile_pairing'),
+    start_tailscale_login: () => desktopOnly('start_tailscale_login'),
+    start_tailscale_with_auth_key: () => desktopOnly('start_tailscale_with_auth_key'),
+    disconnect_tailscale: () => desktopOnly('disconnect_tailscale'),
 
     // ------------------------------------------------------ platform + targets
     list_platform_capabilities: () => listPlatformCapabilities(),
@@ -407,7 +449,7 @@ async function createBatch(context, input) {
  */
 export function registerAiSwitchRoutes(ctx, options = {}) {
   const hub = new EventHub()
-  const context = createContext({ ...options, emit: hub.emit })
+  const context = createContext({ ...options, webServer: ctx.webServer, emit: hub.emit })
   const commands = buildCommands(context)
 
   // The ledger is read once so the usage screen and the per-account statistics have history
