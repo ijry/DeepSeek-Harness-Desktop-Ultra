@@ -132,7 +132,7 @@ src/
   index.js                    cordis 入口：只 inject webServer
   shared/protocol.js          ApiError 信封 + 校验器（面板按 code 分支）
   host/
-    routes.js                 命令表（52 条）+ 路由挂载
+    routes.js                 命令表（101 条，含桌面功能的诚实禁用状态）+ 路由挂载
     http.js                   信封、body、静态文件
     socket.js                 面板事件 WebSocket（SSE 兜底）
     sdk.js                    DSH 家目录、原子写、语言（不 import @deepseek-ai/*）
@@ -173,7 +173,7 @@ npm run typecheck   # 面板的 tsc
 ## 已知限制
 
 - 面板 JS 约 3.4 MB（React + three.js 的 Vibe 座舱 + xterm），首次打开要下。iframe 是点开才建的，不点不下。
-- `route_pool_test_model`（模型连通性测试）没做 —— 参考实现那是 4009 行 Rust，且它的价值大部分被「实时日志 + 真实请求」覆盖了。
+- 模型连通性测试已走完整本地链路（客户端协议 → 本地代理 → 模型映射 → 协议桥 → 上游）；结果页会同时展示入口、命中账号、上游接口和原始响应。
 - 官方账号的额度刷新覆盖了参考实现的六种端点风格，但官方端点会变；失败会在卡片上写明原因而不是显示 0。
 - 用量总览读的是各 CLI 自己的记录文件加本插件的账本；本插件之外发生的请求（直连上游）在账本里没有，这和参考实现一样。
 
