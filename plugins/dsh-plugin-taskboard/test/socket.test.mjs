@@ -78,6 +78,7 @@ const upgradeRequest = (headers = {}) => ({
     host: '127.0.0.1:1234',
     origin: 'http://127.0.0.1:1234',
     'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==',
+    'sec-websocket-version': '13',
     ...headers,
   },
 })

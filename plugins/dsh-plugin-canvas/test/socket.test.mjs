@@ -6,7 +6,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { acceptKey, createEventSocket, encodeFrame, readFrame } from '../src/host/socket.js'
+import { acceptKey, createEventSocket, createSocketHub, encodeFrame, readFrame } from '../src/host/socket.js'
 // socket.js 是跨插件共享的副本，不再自带路径常量；路由归调用方所有。从 routes.js 取，
 // 这样这条测试同时盯住「插件真的把自己的那条路径接上了」。
 import { SOCKET_PATH } from '../src/host/routes.js'
@@ -49,12 +49,16 @@ class FakeSocket {
 }
 
 /** One client text frame, masked the way a browser masks it. */
-function maskedFrame(text, opcode = 0x1) {
-  const payload = Buffer.from(text, 'utf8')
+function maskedFrame(text, opcode = 0x1, options = {}) {
+  const payload = Buffer.isBuffer(text) ? text : Buffer.from(text, 'utf8')
   const mask = Buffer.from([0x11, 0x22, 0x33, 0x44])
   const masked = Buffer.allocUnsafe(payload.length)
   for (let i = 0; i < payload.length; i += 1) masked[i] = payload[i] ^ mask[i % 4]
-  return Buffer.concat([Buffer.from([0x80 | opcode, 0x80 | payload.length]), mask, masked])
+  if (payload.length >= 126) throw new Error('test helper only supports short payloads')
+  const fin = options.fin === false ? 0 : 0x80
+  const maskedBit = options.masked === false ? 0 : 0x80
+  const header = Buffer.from([fin | opcode, maskedBit | payload.length])
+  return options.masked === false ? Buffer.concat([header, payload]) : Buffer.concat([header, mask, masked])
 }
 
 function fakeCtx() {
@@ -77,6 +81,7 @@ const upgradeRequest = (headers = {}) => ({
     host: '127.0.0.1:1234',
     origin: 'http://127.0.0.1:1234',
     'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==',
+    'sec-websocket-version': '13',
     ...headers,
   },
 })
@@ -214,6 +219,96 @@ test('head 里预读到的帧不会被丢掉', () => {
   ctx.registered.handler(upgradeRequest(), socket, maskedFrame('', 0x8))
   assert.equal(hub.size(), 0)
   assert.equal(socket.destroyed, true)
+})
+
+test('raw hub：upgrade head 已含 close 时不调用 onOpen', () => {
+  const ctx = fakeCtx()
+  let opened = 0
+  const hub = createSocketHub(ctx, {
+    path: '/test/socket',
+    authorize: () => true,
+    onOpen: () => { opened += 1 },
+    onMessage() {},
+    onClose() {},
+    serialize: JSON.stringify,
+    maxBacklogBytes: 1024 * 1024,
+  })
+  const socket = new FakeSocket()
+  ctx.registered.handler(upgradeRequest(), socket, maskedFrame('', 0x8))
+  assert.equal(opened, 0)
+  assert.equal(hub.size(), 0)
+  assert.equal(socket.destroyed, true)
+  hub.dispose()
+})
+
+test('raw hub：分片文本中间允许 ping，只在完整后交给 onMessage', () => {
+  const ctx = fakeCtx()
+  const messages = []
+  const hub = createSocketHub(ctx, {
+    path: '/test/socket', authorize: () => true,
+    onOpen() {}, onMessage: (_client, value) => messages.push(value), onClose() {},
+    serialize: JSON.stringify, maxBacklogBytes: 1024 * 1024,
+  })
+  const socket = new FakeSocket()
+  ctx.registered.handler(upgradeRequest(), socket, Buffer.alloc(0))
+  socket.emit('data', maskedFrame('{"ok":', 0x1, { fin: false }))
+  socket.emit('data', maskedFrame('hi', 0x9))
+  assert.deepEqual(messages, [])
+  socket.emit('data', maskedFrame('true}', 0x0))
+  assert.deepEqual(messages, [{ ok: true }])
+  assert.equal(socket.writes.some(chunk => Buffer.isBuffer(chunk) && (chunk[0] & 0x0f) === 0xa), true)
+  hub.dispose()
+})
+
+test('raw hub：拒绝未掩码文本和无起始帧的 continuation', () => {
+  for (const bad of [
+    maskedFrame('{}', 0x1, { masked: false }),
+    maskedFrame('{}', 0x0),
+  ]) {
+    const ctx = fakeCtx()
+    let messages = 0
+    const hub = createSocketHub(ctx, {
+      path: '/test/socket', authorize: () => true,
+      onOpen() {}, onMessage: () => { messages += 1 }, onClose() {},
+      serialize: JSON.stringify, maxBacklogBytes: 1024 * 1024,
+    })
+    const socket = new FakeSocket()
+    ctx.registered.handler(upgradeRequest(), socket, bad)
+    assert.equal(messages, 0)
+    assert.equal(hub.size(), 0)
+    const close = socket.writes.find(chunk => Buffer.isBuffer(chunk) && (chunk[0] & 0x0f) === 0x8)
+    assert.equal(readFrame(close).payload.readUInt16BE(0), 1002)
+    hub.dispose()
+  }
+})
+
+test('raw hub：非法 UTF-8 以 1007 关闭', () => {
+  const ctx = fakeCtx()
+  const hub = createSocketHub(ctx, {
+    path: '/test/socket', authorize: () => true,
+    onOpen() {}, onMessage() {}, onClose() {},
+    serialize: JSON.stringify, maxBacklogBytes: 1024 * 1024,
+  })
+  const socket = new FakeSocket()
+  ctx.registered.handler(upgradeRequest(), socket, maskedFrame(Buffer.from([0xc3, 0x28])))
+  const close = socket.writes.find(chunk => Buffer.isBuffer(chunk) && (chunk[0] & 0x0f) === 0x8)
+  assert.equal(readFrame(close).payload.readUInt16BE(0), 1007)
+  assert.equal(hub.size(), 0)
+  hub.dispose()
+})
+
+test('raw hub：authorization 可以拒绝握手', () => {
+  const ctx = fakeCtx()
+  const hub = createSocketHub(ctx, {
+    path: '/test/socket', authorize: () => false,
+    onOpen() {}, onMessage() {}, onClose() {},
+    serialize: JSON.stringify, maxBacklogBytes: 1024 * 1024,
+  })
+  const socket = new FakeSocket()
+  ctx.registered.handler(upgradeRequest(), socket, Buffer.alloc(0))
+  assert.match(String(socket.writes[0]), /^HTTP\/1\.1 401 Unauthorized/)
+  assert.equal(socket.destroyed, true)
+  hub.dispose()
 })
 
 test('真实握手：Node 自带的 WebSocket 客户端能连上并收到 hello 与 change', async () => {
