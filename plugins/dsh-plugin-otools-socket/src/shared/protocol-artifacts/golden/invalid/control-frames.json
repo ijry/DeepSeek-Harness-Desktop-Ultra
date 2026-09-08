@@ -1,0 +1,113 @@
+[
+  {
+    "name": "wrong-version",
+    "code": "bad_version",
+    "frame": { "v": 1, "kind": "subscribe", "source": "example.notes" }
+  },
+  {
+    "name": "unknown-kind",
+    "code": "bad_frame",
+    "frame": { "v": 2, "kind": "mystery" }
+  },
+  {
+    "name": "hello-without-instance",
+    "code": "bad_frame",
+    "frame": { "v": 2, "kind": "hello", "catalogRevision": 1, "limits": {} }
+  },
+  {
+    "name": "bad-source-id",
+    "code": "bad_frame",
+    "frame": { "v": 2, "kind": "subscribe", "source": "Bad Source" }
+  },
+  {
+    "name": "empty-request-id",
+    "code": "bad_frame",
+    "frame": {
+      "v": 2,
+      "kind": "request",
+      "source": "example.notes",
+      "requestId": "",
+      "name": "notes/read",
+      "data": {}
+    }
+  },
+  {
+    "name": "long-request-id",
+    "code": "bad_frame",
+    "frame": {
+      "v": 2,
+      "kind": "request",
+      "source": "example.notes",
+      "requestId": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "name": "notes/read",
+      "data": {}
+    }
+  },
+  {
+    "name": "reserved-plugin-event",
+    "code": "bad_frame",
+    "frame": {
+      "v": 2,
+      "kind": "event",
+      "source": "example.notes",
+      "name": "$private",
+      "data": {}
+    }
+  },
+  {
+    "name": "catalog-count-too-large",
+    "code": "bad_frame",
+    "frame": {
+      "v": 2,
+      "kind": "catalog",
+      "revision": 1,
+      "index": 0,
+      "count": 7,
+      "encoding": "base64url",
+      "data": "e30"
+    }
+  },
+  {
+    "name": "catalog-index-out-of-range",
+    "code": "bad_frame",
+    "frame": {
+      "v": 2,
+      "kind": "catalog",
+      "revision": 1,
+      "index": 2,
+      "count": 2,
+      "encoding": "base64url",
+      "data": "e30"
+    }
+  },
+  {
+    "name": "response-without-ok",
+    "code": "bad_frame",
+    "frame": {
+      "v": 2,
+      "kind": "response",
+      "source": "example.notes",
+      "requestId": "req-1"
+    }
+  },
+  {
+    "name": "error-response-without-error",
+    "code": "bad_frame",
+    "frame": {
+      "v": 2,
+      "kind": "response",
+      "source": "example.notes",
+      "requestId": "req-1",
+      "ok": false
+    }
+  },
+  {
+    "name": "unknown-error-code",
+    "code": "bad_frame",
+    "frame": {
+      "v": 2,
+      "kind": "error",
+      "error": { "code": "secret_exception", "message": "bad" }
+    }
+  }
+]
