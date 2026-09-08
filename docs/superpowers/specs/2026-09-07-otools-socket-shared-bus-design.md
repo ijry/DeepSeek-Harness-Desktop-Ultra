@@ -47,8 +47,8 @@ DSH 外壳和全部面板插件共用一个 HTTP/1.1 origin。常驻 SSE 会占�
 插件使用嵌套注入，以免形成硬依赖：
 
 ```js
-ctx.inject(['otoolsSocket'], (socketCtx) =>
-  socketCtx.otoolsSocket.registerSource({
+ctx.inject(['otoolsSocket'], (socketCtx) => {
+  const registration = socketCtx.otoolsSocket.registerSource({
     id: 'dsh-plugin-taskboard',
     protocolVersion: 1,
     exposure: 'paired',
@@ -56,10 +56,11 @@ ctx.inject(['otoolsSocket'], (socketCtx) =>
     hello,
     onRequest,
   })
-)
+  return () => registration.dispose()
+})
 ```
 
-`registerSource()` 返回 disposer；Cordis 在插件或服务卸载时自动清理。总线晚加载时，注入 fiber 自动激活；没有总线时，插件其余功能照常运行。
+`registerSource()` 返回 `{ emit(name, data, priority?), updateCatalog(catalog), dispose() }` 注册句柄。`emit` 绑定当前注册源和注册代次，不能冒用其他 source；已销毁句柄不能向同名新源发布。`dispose()` 幂等；注入回调返回调用它的函数，Cordis 在插件或服务卸载时清理。业务事件订阅也必须在该函数中解除。总线晚加载时，注入 fiber 自动激活；没有总线时，插件其余功能照常运行。
 
 暴露级别：
 
@@ -90,7 +91,7 @@ MCode 保留单一 `targetAgent: 'dsh'`：
 
 ## 3. 生命周期与失败策略
 
-基础插件安装失败不得阻止其他插件启动。业务插件的桌面客户端使用以下顺序：
+基础插件安装失败不得阻止其他插件启动。基础插件的浏览器 bundle 唯一创建控制连接，并通过 `ctx.provide('otoolsSocket', client)` 提供客户端服务。业务插件通过嵌套注入消费；不得在各 bundle 复制总线连接实现或依赖全局 Symbol 单例。可构建期复制的辅助代码仅负责可选服务绑定与降级。业务插件的桌面客户端使用以下顺序：
 
 1. 等待页面级 `otoolsSocket` 客户端服务的短暂宽限。
 2. 成功时订阅共享总线。
@@ -163,7 +164,8 @@ registerSource({
 - 断线或 `cancel` 中止请求的 `AbortSignal`。
 - 单次插件异常只返回该 `requestId` 的稳定错误码和安全消息，不返回堆栈。
 - 同一 source 对同一客户端在 60 秒内连续五次超时或协议违规，熔断 30 秒。
-- 控制帧上限 256 KiB；声明式页面 catalog 上限 512 KiB。
+- 控制帧上限 256 KiB；完整可见 catalog 序列化后上限 512 KiB。catalog 使用应用层分片：UTF-8 字节每片最多 96 KiB，base64url 编码放入 `{v:2,kind:'catalog',revision,index,count,encoding:'base64url',data}`，每条完整信封仍不得超过 256 KiB，最多六片。
+- 客户端只接收同一 revision 从零开始的连续片段，在校验累计字节数及完整 JSON 后原子替换目录；未收齐时保留旧目录。重复、乱序、超限拒绝；新 revision 的首片替换未完成组装，断线清空组装，30 秒未完成则失效。
 - 每客户端待发送控制数据上限 1 MiB。
 - 低优先级事件可以丢弃并发送一次 `overflow`；响应和 catalog 不丢。无法继续发送时关闭慢客户端，由重连恢复。
 
