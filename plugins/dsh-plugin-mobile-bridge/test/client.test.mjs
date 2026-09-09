@@ -50,6 +50,12 @@ test('the panel exports the client plugin shape and no default', () => {
   assert.ok(!/export default/.test(source), 'cordis function plugins have no default export')
 })
 
+test('the sidebar entry keeps its phone icon when the language changes', () => {
+  assert.ok(source.includes("el('span', 'mbridge__entryIcon', String.fromCodePoint(0x1f4f1))"))
+  assert.ok(source.includes("entry.querySelector('.mbridge__entryLabel')"))
+  assert.ok(!source.includes("entry.textContent = t('title')"), 'relabeling must not replace the icon')
+})
+
 test('the manifest declares the client half dsh has to serve', () => {
   assert.equal(manifest.exports['./client'], './lib/client.js')
   assert.deepEqual(manifest.dsh.client, { inject: [], platform: 'web' })

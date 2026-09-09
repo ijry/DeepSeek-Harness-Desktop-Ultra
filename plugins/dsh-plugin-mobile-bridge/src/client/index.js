@@ -608,10 +608,13 @@
   }
 
   function buildEntry() {
-    var button = el('button', 'mbridge__entry', t('title'))
+    var button = el('button', 'mbridge__entry')
     button.type = 'button'
     button.setAttribute('data-dsh-mbridge-entry', '')
+    button.setAttribute('aria-label', t('title'))
     button.title = t('entryHint')
+    button.appendChild(el('span', 'mbridge__entryIcon', String.fromCodePoint(0x1f4f1)))
+    button.appendChild(el('span', 'mbridge__entryLabel', t('title')))
     button.addEventListener('click', function () {
       setOpen(!model.open)
     })
@@ -624,8 +627,10 @@
    */
   function relabelEntry() {
     if (entry !== null) {
-      entry.textContent = t('title')
+      var label = entry.querySelector('.mbridge__entryLabel')
+      if (label !== null) label.textContent = t('title')
       entry.title = t('entryHint')
+      entry.setAttribute('aria-label', t('title'))
     }
     if (panel !== null) panel.setAttribute('aria-label', t('title'))
   }
@@ -712,9 +717,11 @@
     var style = el('style')
     style.id = STYLE_ID
     style.textContent = [
-      '.mbridge__entry{display:block;width:100%;box-sizing:border-box;margin:2px 8px;padding:8px 10px;',
+      '.mbridge__entry{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;margin:2px 8px;padding:8px 10px;',
       'border:0;border-radius:8px;background:transparent;color:var(--dsw-text-primary,#e8e8ea);',
       'font:inherit;text-align:left;cursor:pointer}',
+      '.mbridge__entryIcon{display:inline-flex;width:20px;flex:0 0 20px;justify-content:center}',
+      '.mbridge__entryLabel{min-width:0}',
       '.mbridge__entry:hover{background:var(--dsw-hover,rgba(255,255,255,.07))}',
       'html[' + OPEN_ATTR + '] .mbridge__entry{background:var(--dsw-active,rgba(255,255,255,.12))}',
       '.mbridge{display:none}',
