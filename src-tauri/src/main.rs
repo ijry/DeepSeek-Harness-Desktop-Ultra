@@ -115,8 +115,7 @@ struct Prompt {
 impl Prompt {
     fn payload(&self) -> PluginPrompt {
         PluginPrompt {
-            plugins: plugins::BUNDLED
-                .iter()
+            plugins: plugins::selectable()
                 .map(|plugin| PromptPlugin {
                     id: plugin.id,
                     title: plugin.title(),
@@ -254,7 +253,7 @@ fn plugin_prompt(state: tauri::State<'_, AppState>) -> Option<PluginPrompt> {
 /// 某个复选框被切换。存到 Rust 侧——dsh 装完时以它为准，用户不需要点任何按钮。
 #[tauri::command]
 fn set_plugin_choice(state: tauri::State<'_, AppState>, id: String, install: bool) {
-    if plugins::find(&id).is_none() {
+    if plugins::find_selectable(&id).is_none() {
         return;
     }
     let (mutex, _) = &*state.prompt;
@@ -273,7 +272,7 @@ fn confirm_plugins(state: tauri::State<'_, AppState>, ids: Vec<String>) {
         let mut prompt = lock(mutex);
         prompt.selected = ids
             .into_iter()
-            .filter(|id| plugins::find(id).is_some())
+            .filter(|id| plugins::find_selectable(id).is_some())
             .collect();
         prompt.confirmed = true;
     }
@@ -307,7 +306,7 @@ async fn change_plugin(
     install: bool,
 ) -> Result<Vec<plugins::Status>, String> {
     // id 来自前端，查表落到静态定义上，绝不拿它去拼命令行。
-    let plugin = plugins::find(&id).ok_or_else(|| {
+    let plugin = plugins::find_selectable(&id).ok_or_else(|| {
         if i18n::is_zh() {
             format!("未知的内置插件：{id}")
         } else {
@@ -625,6 +624,8 @@ fn boot(app: tauri::AppHandle) {
         }
     };
 
+    install_infrastructure(&app, &runtime, &entry);
+
     if asking {
         settle_prompt(&app, &runtime, &entry);
     }
@@ -701,8 +702,7 @@ fn start_prompt(app: &tauri::AppHandle, requires_click: bool) {
     let payload = {
         let mut prompt = lock(mutex);
         prompt.asking = true;
-        prompt.selected = plugins::BUNDLED
-            .iter()
+        prompt.selected = plugins::selectable()
             .map(|plugin| plugin.id.to_string())
             .collect();
         prompt.confirmed = false;
@@ -770,10 +770,7 @@ fn settle_prompt(app: &tauri::AppHandle, node: &node::NodeRuntime, entry: &Path)
     }
 
     // 逐个装：每个插件都是独立的一次 `dsh plugin add`，一个失败不该拖累其它的。
-    for plugin in plugins::BUNDLED
-        .iter()
-        .filter(|plugin| chosen.iter().any(|id| id == plugin.id))
-    {
+    for plugin in plugins::selectable().filter(|plugin| chosen.iter().any(|id| id == plugin.id)) {
         transition(
             app,
             BootState::ConfiguringPlugin {
@@ -797,6 +794,21 @@ fn settle_prompt(app: &tauri::AppHandle, node: &node::NodeRuntime, entry: &Path)
         }
     }
     plugins::save_choice(&choice);
+}
+
+/// 隐藏基础设施不需要用户选择，并且必须先于所有可选插件进入 profile。
+/// 安装失败只写诊断：共享总线不可用不应阻止桌面和其余插件启动。
+fn install_infrastructure(app: &tauri::AppHandle, node: &node::NodeRuntime, entry: &Path) {
+    for plugin in plugins::infrastructure() {
+        let (result, log) = plugins::install(app, node, entry, plugin);
+        {
+            let state = app.state::<AppState>();
+            *lock(&state.plugin_log) = Some(log);
+        }
+        if let Err(error) = result {
+            eprintln!("[plugins] 启用基础设施 {} 失败：{error}", plugin.id);
+        }
+    }
 }
 
 /// 停掉当前运行的 dsh 实例（若有）。

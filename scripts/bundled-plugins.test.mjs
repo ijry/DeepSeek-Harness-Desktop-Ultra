@@ -58,6 +58,24 @@ test("三处内置插件清单完全一致", () => {
   assert.deepEqual([...inResources].sort(), [...inRust].sort());
 });
 
+test("共享总线是唯一、排第一且对用户隐藏的基础插件", () => {
+  const rows = [...rust.matchAll(/pub const (\w+): Bundled = Bundled \{([\s\S]*?)\n\};/g)]
+    .map(([, name, body]) => ({
+      name,
+      id: body.match(/id: "([^"]+)"/)?.[1],
+      hidden: body.match(/hidden: (true|false)/)?.[1] === "true",
+      infrastructure: body.match(/infrastructure: (true|false)/)?.[1] === "true",
+    }))
+  const infrastructure = rows.filter(row => row.infrastructure)
+  assert.deepEqual(infrastructure.map(row => row.id), ["dsh-plugin-otools-socket"])
+  assert.equal(infrastructure[0].hidden, true)
+  assert.equal(PACKED[0], "dsh-plugin-otools-socket")
+  assert.equal(rustBundled()[0], "dsh-plugin-otools-socket")
+  assert.match(rust, /pub fn selectable\(\)[\s\S]*?filter\(\|plugin\| !plugin\.hidden\)/)
+  assert.match(rust, /pub fn find_selectable\(id: &str\)[\s\S]*?selectable\(\)\.find/)
+  assert.match(rust, /pub fn status\([\s\S]*?selectable\(\)[\s\S]*?\.map\(\|plugin\| Status/)
+})
+
 test("每个内置插件的资源路径与 stage() 的约定一致", () => {
   // stage() 按 `plugins/{id}.tgz` 去 Resource 目录里找，源头则是 pack-plugins.mjs
   // 固定输出的 `plugins/.pack/{id}.tgz`（不带版本号，路径才稳定）。

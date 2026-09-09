@@ -34,6 +34,7 @@ export const PLUGIN_ID = 'dsh-plugin-otools-git'
  * both defines apply() and performs the module.exports assignment.
  */
 export const CLIENT_PARTS = [
+  'panel-channel.js',
   'vocab.js',
   'dom.js',
   'styles.js',
@@ -71,7 +72,7 @@ export const GENERATED_HEADER = [
 export function wrapClient(parts) {
   const body = parts
     .map((part) => {
-      const source = String(part.source).replace(/\s+$/, '')
+      const source = String(part.source).replace(/^export /gm, '').replace(/\s+$/, '')
       return `// ===== src/client/${part.name} =====\n${source}`
     })
     .join('\n\n')

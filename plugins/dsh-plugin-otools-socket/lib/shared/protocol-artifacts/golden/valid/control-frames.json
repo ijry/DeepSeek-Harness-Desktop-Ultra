@@ -1,0 +1,116 @@
+[
+  {
+    "name": "hello",
+    "frame": {
+      "v": 2,
+      "kind": "hello",
+      "serverInstanceId": "8efbc934-195a-46ec-8d28-67e09edc1be7",
+      "catalogRevision": 4,
+      "limits": {
+        "controlFrameBytes": 262144,
+        "catalogBytes": 524288,
+        "clientBacklogBytes": 1048576,
+        "requestTimeoutMs": 30000
+      }
+    }
+  },
+  {
+    "name": "catalog-single-chunk",
+    "frame": {
+      "v": 2,
+      "kind": "catalog",
+      "revision": 4,
+      "index": 0,
+      "count": 1,
+      "encoding": "base64url",
+      "data": "eyJyZXZpc2lvbiI6NCwic291cmNlcyI6W119"
+    }
+  },
+  {
+    "name": "subscribe",
+    "frame": { "v": 2, "kind": "subscribe", "source": "example.notes" }
+  },
+  {
+    "name": "unsubscribe",
+    "frame": { "v": 2, "kind": "unsubscribe", "source": "example.notes" }
+  },
+  {
+    "name": "snapshot-event",
+    "frame": {
+      "v": 2,
+      "kind": "event",
+      "source": "example.notes",
+      "name": "$snapshot",
+      "data": { "revision": 1, "items": [] }
+    }
+  },
+  {
+    "name": "source-event",
+    "frame": {
+      "v": 2,
+      "kind": "event",
+      "source": "example.notes",
+      "name": "notes/changed",
+      "data": { "revision": 2 }
+    }
+  },
+  {
+    "name": "request",
+    "frame": {
+      "v": 2,
+      "kind": "request",
+      "source": "example.notes",
+      "requestId": "req-1",
+      "name": "notes/read",
+      "data": {}
+    }
+  },
+  {
+    "name": "success-response",
+    "frame": {
+      "v": 2,
+      "kind": "response",
+      "source": "example.notes",
+      "requestId": "req-1",
+      "ok": true,
+      "data": { "items": [] }
+    }
+  },
+  {
+    "name": "error-response",
+    "frame": {
+      "v": 2,
+      "kind": "response",
+      "source": "example.notes",
+      "requestId": "req-2",
+      "ok": false,
+      "error": { "code": "not_found", "message": "not found" }
+    }
+  },
+  {
+    "name": "cancel",
+    "frame": {
+      "v": 2,
+      "kind": "cancel",
+      "source": "example.notes",
+      "requestId": "req-1"
+    }
+  },
+  {
+    "name": "overflow",
+    "frame": {
+      "v": 2,
+      "kind": "overflow",
+      "source": "example.notes",
+      "reason": "client_backlog"
+    }
+  },
+  {
+    "name": "connection-error",
+    "frame": {
+      "v": 2,
+      "kind": "error",
+      "error": { "code": "bad_frame", "message": "invalid frame" }
+    }
+  }
+]

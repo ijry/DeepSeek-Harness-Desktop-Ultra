@@ -195,6 +195,7 @@
 
   /** dsh web-shell entry point. */
   function apply(ctx) {
+  clientContext = ctx
     if (typeof window === 'undefined' || typeof document === 'undefined') return
     const state = { disposed: false }
     let observer = null

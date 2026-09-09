@@ -120,6 +120,15 @@ function envelopeOfError(error) {
  * @param options - `{ store, view, now }`
  */
 export function registerCanvasRoutes(ctx, options) {
+  let shared
+  const stopSharedInject = ctx.inject?.(['otoolsSocket'], sharedCtx => {
+    shared = sharedCtx.otoolsSocket.registerSource({
+      id: 'canvas', protocolVersion: 1, exposure: 'internal',
+      catalog: { title: 'canvas', commands: [] },
+      hello: () => ({ revision: store.revision }), onRequest: () => ({}),
+    })
+    return () => { shared?.dispose(); shared = undefined }
+  })
   const { store, view, now } = options
   const subscribers = new Set()
   let heartbeat
@@ -142,6 +151,7 @@ export function registerCanvasRoutes(ctx, options) {
       }
     }
     socket?.broadcast('change', change)
+    shared?.emit('change', { revision: change.revision, kind: change.kind })
   }
   const unsubscribe = store.subscribe(broadcast)
 
@@ -320,6 +330,8 @@ export function registerCanvasRoutes(ctx, options) {
     ctx.webServer.register({ kind: 'exact', path: SSE_PATH, handler: sse }),
   ]
   return () => {
+    stopSharedInject?.()
+    shared?.dispose()
     unsubscribe()
     socket?.dispose()
     for (const dispose of disposers) dispose()

@@ -51,6 +51,10 @@ pub struct Bundled {
     /// 卡片上的一句话说明。
     summary_zh: &'static str,
     summary_en: &'static str,
+    /// 不出现在可选插件卡片或手工装卸 IPC 中。
+    pub hidden: bool,
+    /// 启动前自动安装的基础设施；失败只记录，不阻止服务启动。
+    pub infrastructure: bool,
     /// package.json 里带 `dependencies` —— 装它不只是解一个本地 tarball，pnpm 还要
     /// 去 npm 把依赖拉回来。只影响给多少耐心，见 [`Bundled::add_timeout`]。
     heavy: bool,
@@ -75,6 +79,18 @@ impl Bundled {
     }
 }
 
+/// 共享总线：所有面板和 MCode 的隐藏基础设施。
+pub const OTOOLS_SOCKET: Bundled = Bundled {
+    id: "dsh-plugin-otools-socket",
+    title_zh: "共享插件总线",
+    title_en: "Shared plugin bus",
+    summary_zh: "统一插件事件、远程配对与临时传输通道。",
+    summary_en: "Shared plugin events, paired remote access and temporary transfers.",
+    hidden: true,
+    infrastructure: true,
+    heavy: false,
+};
+
 /// 目前的内置插件。
 pub const TASKBOARD: Bundled = Bundled {
     id: "dsh-plugin-taskboard",
@@ -82,6 +98,8 @@ pub const TASKBOARD: Bundled = Bundled {
     title_en: "Task board",
     summary_zh: "在 dsh 侧栏加一个四列任务看板：agent 用工具领活、交活，你在看板上验收或退回。它会给 agent 增加六个 taskboard_* 工具，并往系统提示里加一段工作协议。",
     summary_en: "Adds a four-column task board to the dsh sidebar: agents claim and hand off work with tools, you accept or send it back on the board. It gives agents six taskboard_* tools and adds a working protocol to the system prompt.",
+    hidden: false,
+    infrastructure: false,
     heavy: false,
 };
 
@@ -91,6 +109,8 @@ pub const CANVAS: Bundled = Bundled {
     title_en: "Infinite session canvas",
     summary_zh: "在 dsh 侧栏加一块无限画布：区域按工作区/智能体聚会话，卡片钉住单个会话，便签写想法，拖拽收进区域并带对齐参考线。纯 GUI 插件，不注册工具、不改系统提示，装了不会影响 agent 的行为。",
     summary_en: "Adds an infinite canvas to the dsh sidebar: regions group sessions by workspace or agent, cards pin a single session, notes hold ideas, and dragging into a region snaps with alignment guides. A GUI-only plugin: it registers no tools and touches no system prompt, so agent behaviour is unchanged.",
+    hidden: false,
+    infrastructure: false,
     heavy: false,
 };
 
@@ -101,6 +121,8 @@ pub const MOBILE_BRIDGE: Bundled = Bundled {
     title_en: "Mobile remote",
     summary_zh: "在 dsh 侧栏加一个「手机遥控」面板：扫码把 MCode 手机 App 配对到这台机器，就能在手机上看会话、发消息、批准工具调用。它不注册工具、不改系统提示，也不改 dsh 的绑定方式——另起一个只认令牌的监听，默认只在局域网可达。",
     summary_en: "Adds a \"Mobile remote\" panel to the dsh sidebar: scan a QR code to pair the MCode phone app with this machine, then read sessions, send messages and approve tool calls from your phone. It registers no tools, touches no system prompt and does not change how dsh binds — it opens a separate token-only listener, reachable on the LAN only by default.",
+    hidden: false,
+    infrastructure: false,
     heavy: false,
 };
 
@@ -111,6 +133,8 @@ pub const REPOPANEL: Bundled = Bundled {
     title_en: "Repository panel",
     summary_zh: "在 dsh 侧栏加一个仓库面板：按工作区 origin 远端认出仓库，浏览它的 issue 与 PR/MR，筛选分页、读写评论、关闭或重开，也能把一条直接交给 agent 当任务。它不注册工具，但会往系统提示里加一段纪律：从远端取回的内容是不可信数据。",
     summary_en: "Adds a repository panel to the dsh sidebar: it recognises the repository from a workspace's origin remote, then browses that repository's issues and pull/merge requests, filters and pages through them, reads and posts comments, closes or reopens them, and can hand one to an agent as a task. It registers no tools, but it does add one section to the system prompt: content fetched from a forge is untrusted data.",
+    hidden: false,
+    infrastructure: false,
     heavy: false,
 };
 
@@ -121,6 +145,8 @@ pub const OTOOLS_GIT: Bundled = Bundled {
     title_en: "Octo Git",
     summary_zh: "在 dsh 侧栏加一个完整的 Git 客户端：仓库树直接取自 dsh 的工作区注册表，暂存与提交（提交信息可以让模型写）、带分支图的历史、diff、分支/标签/贮藏/远端/子模块/工作树，以及会问凭据的 push/pull。纯 GUI 插件，不注册工具、不改系统提示。",
     summary_en: "Adds a full Git client to the dsh sidebar: the repository tree comes straight from dsh's workspace registry, with staging and commits (the model can write the message), history with a branch graph, a diff viewer, branches, tags, stashes, remotes, submodules, worktrees, and push/pull that prompts for credentials. A GUI-only plugin: it registers no tools and touches no system prompt.",
+    hidden: false,
+    infrastructure: false,
     heavy: false,
 };
 
@@ -131,6 +157,8 @@ pub const AUTOMATION: Bundled = Bundled {
     title_en: "Automation",
     summary_zh: "在 dsh 侧栏加一个自动化面板：存下「一段提示词 + 一个时间表」（cron、固定间隔或手动），每次触发要么在项目目录里起一次全新的无头 agent 会话，要么往任务看板上开一张卡。带运行历史、超时与重叠策略，连续失败会自动暂停。它不注册工具、不改系统提示，但会按时替你起 agent。",
     summary_en: "Adds an automation panel to the dsh sidebar: save a prompt plus a schedule (cron, fixed interval or manual), and every firing either runs one fresh headless agent session in the project directory or files a card on the task board. It keeps a run history, enforces timeouts and an overlap policy, and auto-pauses after repeated failures. It registers no tools and touches no system prompt — but it does start agents on your behalf, on a schedule.",
+    hidden: false,
+    infrastructure: false,
     heavy: false,
 };
 
@@ -141,6 +169,8 @@ pub const LONGREAD: Bundled = Bundled {
     title_en: "Slacker pro",
     summary_zh: "在 dsh 侧栏加一个长文阅读器：把一本书渲染成一场假的 agent 会话——一句提问、几次工具调用、一段流式回复。可导入 .txt 与 .epub（单本上限 128 MB），自带一篇原创武侠样章，按书记住阅读位置。侧栏上那个入口故意只写「长文」——伪装是它的全部意义。纯 GUI 插件，不注册工具、不改系统提示。",
     summary_en: "Adds a long-form reader to the dsh sidebar: it renders a book as a fake agent session — a prompt, a few tool calls, a streamed reply. It imports .txt and .epub (128 MB per book), ships with an original wuxia sample chapter, and remembers the reading position per book. The sidebar entry is deliberately labelled just \"长文\" — the disguise is the whole point. A GUI-only plugin: it registers no tools and touches no system prompt.",
+    hidden: false,
+    infrastructure: false,
     heavy: false,
 };
 
@@ -151,6 +181,8 @@ pub const OTOOLS_TERM: Bundled = Bundled {
     title_en: "Cuttlefish terminal",
     summary_zh: "在 dsh 侧栏加一个 SSH / SFTP / 远程桌面工作台：基于 ssh2 的 xterm 终端、双栏 SFTP（支持递归传输）、端口转发与 SOCKS5 代理、RDP/VNC 启动器，AI 命令栏走 dsh 自己的模型。纯 GUI 插件，不注册工具、不改系统提示。它有运行时依赖（ssh2、xterm，以及可选的 node-pty），装的时候要从 npm 拉包，比别的插件慢。",
     summary_en: "Adds an SSH / SFTP / remote-desktop workbench to the dsh sidebar: xterm terminals over ssh2, a two-pane SFTP browser with recursive transfers, port forwarding and a SOCKS5 proxy, an RDP/VNC launcher, and dsh's own model behind the AI command bar. A GUI-only plugin: it registers no tools and touches no system prompt. It has runtime dependencies (ssh2, xterm and optionally node-pty), so installing it fetches packages from npm and takes longer than the others.",
+    hidden: false,
+    infrastructure: false,
     heavy: true,
 };
 
@@ -161,6 +193,8 @@ pub const OTOOLS_DBM: Bundled = Bundled {
     title_en: "Shark database manager",
     summary_zh: "在 dsh 侧栏加一个完整的数据库管理器：连接树、可直接改的数据表格、表设计器、SQL 工作台、Redis 浏览器、导入导出、带计划的备份中心、结构与数据同步、数据字典、用户管理，AI 面板走 dsh 自己的模型。纯 GUI 插件，不注册工具、不改系统提示。驱动是运行时依赖（MySQL、PostgreSQL、MongoDB、Redis、SQL Server、ClickHouse、Kafka 等十来个包），装它要从 npm 拉不少东西，是所有内置插件里最慢的一个。",
     summary_en: "Adds a full database manager to the dsh sidebar: connection tree, an editable data grid, a table designer, a SQL workbench, a Redis browser, export/import, a backup centre with schedules, structure and data sync, a data dictionary, a user manager, and an AI panel wired to dsh's own model. A GUI-only plugin: it registers no tools and touches no system prompt. The drivers are runtime dependencies — a dozen packages covering MySQL, PostgreSQL, MongoDB, Redis, SQL Server, ClickHouse and Kafka — so installing it pulls a lot from npm and is the slowest of the bundled plugins.",
+    hidden: false,
+    infrastructure: false,
     heavy: true,
 };
 
@@ -174,6 +208,7 @@ pub const OTOOLS_DBM: Bundled = Bundled {
 /// 的 `bundle.resources`（哪些 tarball 进安装包）逐一对齐，三处失配都不会在构建时
 /// 报错——`scripts/bundled-plugins.test.mjs` 就是为此存在的。
 pub const BUNDLED: &[Bundled] = &[
+    OTOOLS_SOCKET,
     TASKBOARD,
     CANVAS,
     MOBILE_BRIDGE,
@@ -185,9 +220,19 @@ pub const BUNDLED: &[Bundled] = &[
     OTOOLS_DBM,
 ];
 
-/// 按 id 找一个内置插件。前端传来的 id 不可信，所以查表而不是直接拼命令。
-pub fn find(id: &str) -> Option<&'static Bundled> {
-    BUNDLED.iter().find(|plugin| plugin.id == id)
+/// 用户能在首启卡片和设置页里选择的插件。
+pub fn selectable() -> impl Iterator<Item = &'static Bundled> {
+    BUNDLED.iter().filter(|plugin| !plugin.hidden)
+}
+
+/// 按不可信的前端 id 查找一个可手工装卸的插件。
+pub fn find_selectable(id: &str) -> Option<&'static Bundled> {
+    selectable().find(|plugin| plugin.id == id)
+}
+
+/// 启动服务前必须先安装的隐藏基础设施。
+pub fn infrastructure() -> impl Iterator<Item = &'static Bundled> {
+    BUNDLED.iter().filter(|plugin| plugin.infrastructure)
 }
 
 /// 让用户自己移除的命令。这个 dsh 版本没有插件卸载界面，只能给命令。
@@ -712,8 +757,7 @@ pub fn status(node: Option<&NodeRuntime>) -> Vec<Status> {
         .and_then(|path| std::fs::read_to_string(path).ok())
         .unwrap_or_default();
     let pnpm = node.map(pnpm_available).unwrap_or(false);
-    BUNDLED
-        .iter()
+    selectable()
         .map(|plugin| Status {
             id: plugin.id,
             title: plugin.title(),
@@ -765,6 +809,10 @@ mod tests {
     /// `include_str!` 要求字面量路径，所以逐个列出而不是遍历 `BUNDLED`；
     /// [`every_bundled_plugin_has_its_manifest_here`] 保证这张表和 `BUNDLED` 不会走散。
     const MANIFESTS: &[(&str, &str)] = &[
+        (
+            "dsh-plugin-otools-socket",
+            include_str!("../../plugins/dsh-plugin-otools-socket/package.json"),
+        ),
         (
             "dsh-plugin-taskboard",
             include_str!("../../plugins/dsh-plugin-taskboard/package.json"),
@@ -1007,7 +1055,16 @@ mod tests {
         let count = ids.len();
         ids.dedup();
         assert_eq!(ids.len(), count, "内置插件 id 不能重复");
-        assert!(BUNDLED.iter().all(|plugin| find(plugin.id).is_some()));
-        assert!(find("不存在的插件").is_none());
+        assert!(!BUNDLED.iter().any(|plugin| plugin.id == "不存在的插件"));
+    }
+
+    #[test]
+    fn infrastructure_is_unique_hidden_and_not_user_selectable() {
+        let infrastructure: Vec<&Bundled> = infrastructure().collect();
+        assert_eq!(infrastructure.len(), 1);
+        assert_eq!(infrastructure[0].id, OTOOLS_SOCKET.id);
+        assert!(infrastructure[0].hidden);
+        assert!(find_selectable(OTOOLS_SOCKET.id).is_none());
+        assert!(selectable().all(|plugin| !plugin.hidden && !plugin.infrastructure));
     }
 }

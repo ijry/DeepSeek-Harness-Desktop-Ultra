@@ -7,6 +7,71 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;
+/** Optional attachment to the shared browser bus with delayed legacy fallback. */
+function openPanelChannel(ctx, options) {
+  const clock = options.clock ?? { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: id => clearTimeout(id) }
+  const graceMs = options.graceMs ?? 2500
+  let disposed = false
+  let generation = 0
+  let ready = false
+  let graceTimer
+  let fallback
+  let shared
+
+  function closeFallback() {
+    const stop = fallback
+    fallback = undefined
+    try { stop?.() } catch { /* gone */ }
+  }
+
+  function startFallback() {
+    if (disposed || ready || fallback !== undefined) return
+    fallback = options.startFallback?.() ?? (() => undefined)
+  }
+
+  graceTimer = clock.setTimeout(() => { graceTimer = undefined; startFallback() }, graceMs)
+
+  const stopInject = ctx?.inject?.(['otoolsSocket'], serviceCtx => {
+    const mine = ++generation
+    shared = serviceCtx.otoolsSocket.subscribe(options.source, {
+      onReady(snapshot) {
+        if (disposed || mine !== generation) return
+        ready = true
+        closeFallback()
+        options.onOpen?.(snapshot)
+      },
+      onEvent(name, data) {
+        if (disposed || mine !== generation) return
+        options.onFrame?.(name, data)
+      },
+      onUnavailable() {
+        if (disposed || mine !== generation) return
+        ready = false
+        options.onClose?.()
+        startFallback()
+      },
+    })
+    return () => {
+      if (mine !== generation) return
+      generation += 1
+      shared?.()
+      shared = undefined
+      ready = false
+      if (!disposed) { options.onClose?.(); startFallback() }
+    }
+  })
+
+  return () => {
+    if (disposed) return
+    disposed = true
+    generation += 1
+    if (graceTimer !== undefined) clock.clearTimeout(graceTimer)
+    shared?.()
+    stopInject?.()
+    closeFallback()
+  }
+}
+
 /**
  * Browser half of dsh-plugin-taskboard — a codeg-plus-style 任务看板 view for
  * the DSH web GUI, built in dependency-free vanilla DOM on purpose: the host
@@ -33,6 +98,8 @@ window.__ModuleLoader__.load({
   'use strict'
 
   const PLUGIN_ID = 'dsh-plugin-taskboard'
+  let clientContext
+
   const ROUTE_PREFIX = '/dsh-plugin-taskboard'
   const SSE_PATH = '/dsh-plugin-taskboard/events'
   const SOCKET_PATH = '/dsh-plugin-taskboard/socket'
@@ -795,6 +862,8 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
   // socket rides its own pool. SSE stays as the fallback for a DSH build whose
   // webserver has no upgrade hook, and for the test DOM, which has no WebSocket.
   let stream = null
+  let legacyStream = null
+  let legacyGeneration = 0
   let retry = null
 
   function onHello(data) {
@@ -803,27 +872,52 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
 
   function startStream() {
     stopStream()
-    if (!startSocket()) startSse()
+    stream = openPanelChannel(clientContext, {
+      source: 'taskboard',
+      startFallback: () => startLegacyStream(),
+      onOpen: () => { void refresh(); model.connected = true; emit() },
+      onFrame: (name, data) => { if (name === 'change') { try { applyChange(data) } catch { void refresh() } } },
+      onClose: () => { model.connected = false; emit() },
+    })
   }
 
   function stopStream() {
+    const stop = stream
+    stream = null
+    if (typeof stop === 'function') stop()
+    stopLegacyStream()
+  }
+
+  function stopLegacyStream() {
+    legacyGeneration += 1
     if (retry !== null) {
       clearTimeout(retry)
       retry = null
     }
-    const current = stream
-    stream = null
+    const current = legacyStream
+    legacyStream = null
     if (current === null) return
     try { current.close() } catch { /* already closed */ }
   }
 
-  function scheduleRetry() {
+  function scheduleRetry(generation) {
     if (retry !== null) return
-    retry = setTimeout(() => { retry = null; startStream() }, STREAM_RETRY_MS)
+    retry = setTimeout(() => {
+      retry = null
+      if (generation !== legacyGeneration) return
+      if (!startSocket(generation)) startSse(generation)
+    }, STREAM_RETRY_MS)
   }
 
   /** Open the socket. False means this browser or DSH build cannot use one. */
-  function startSocket() {
+  function startLegacyStream() {
+    stopLegacyStream()
+    const generation = legacyGeneration
+    if (!startSocket(generation)) startSse(generation)
+    return () => { if (generation === legacyGeneration) stopLegacyStream() }
+  }
+
+  function startSocket(generation) {
     if (typeof WebSocket !== 'function') return false
     const scheme = location.protocol === 'https:' ? 'wss://' : 'ws://'
     let socket
@@ -831,8 +925,9 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       console.warn('[dsh-plugin-taskboard] WebSocket failed:', error?.message ?? error)
       return false
     }
-    stream = { kind: 'socket', close: () => socket.close() }
-    const mine = stream
+    legacyStream = { kind: 'socket', close: () => socket.close() }
+    const mine = legacyStream
+    const active = () => generation === legacyGeneration && legacyStream === mine
     let opened = false
     // A handshake nobody answers must not strand the panel without a stream:
     // closing on the deadline routes us to SSE through the close handler.
@@ -843,12 +938,12 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     socket.addEventListener('open', () => {
       opened = true
       clearTimeout(deadline)
-      if (stream !== mine) return
+      if (!active()) return
       model.connected = true
       emit()
     })
     socket.addEventListener('message', (event) => {
-      if (stream !== mine) return
+      if (!active()) return
       let frame
       try { frame = JSON.parse(event.data) } catch { return }
       if (frame.event === 'hello') {
@@ -863,34 +958,39 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       // Only the attempt currently holding the seat may act on its own close: a
       // close arriving after stopStream() (or after a newer attempt took over)
       // must not resurrect anything.
-      if (stream !== mine) return
-      stream = null
+      if (!active()) return
+      legacyStream = null
       model.connected = false
       emit()
       // Opened once means the carrier works and the host went away: come back.
       // Never opened means no upgrade hook here — switch to SSE for good.
-      if (opened) scheduleRetry()
-      else startSse()
+      if (opened) scheduleRetry(generation)
+      else startSse(generation)
     })
     return true
   }
 
-  function startSse() {
+  function startSse(generation) {
+    if (generation !== legacyGeneration) return
     if (typeof EventSource === 'undefined') return
     let source
     try { source = new EventSource(SSE_PATH) } catch (error) {
       console.warn('[dsh-plugin-taskboard] EventSource failed:', error?.message ?? error)
       return
     }
-    stream = { kind: 'sse', close: () => source.close() }
-    source.addEventListener('open', () => { model.connected = true; emit() })
-    source.addEventListener('error', () => { model.connected = false; emit() })
+    legacyStream = { kind: 'sse', close: () => source.close() }
+    const mine = legacyStream
+    const active = () => generation === legacyGeneration && legacyStream === mine
+    source.addEventListener('open', () => { if (active()) { model.connected = true; emit() } })
+    source.addEventListener('error', () => { if (active()) { model.connected = false; emit() } })
     source.addEventListener('hello', (event) => {
+      if (!active()) return
       try {
         onHello(JSON.parse(event.data))
       } catch { /* malformed frame; full refresh stays safe */ }
     })
     source.addEventListener('change', (event) => {
+      if (!active()) return
       try { applyChange(JSON.parse(event.data)) } catch { void refresh() }
     })
   }
@@ -1592,6 +1692,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
 
   /** DSH web-shell entry: mount the sidebar entry + board view, then sync. */
   function apply(ctx) {
+    clientContext = ctx
     if (typeof window === 'undefined' || typeof document === 'undefined') return
     if (bootState.running) return
     bootState.running = true

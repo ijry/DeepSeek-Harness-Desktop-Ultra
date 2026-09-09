@@ -34,6 +34,7 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "resources": {
+      "../plugins/.pack/dsh-plugin-otools-socket.tgz": "plugins/dsh-plugin-otools-socket.tgz",
       "../plugins/.pack/dsh-plugin-taskboard.tgz": "plugins/dsh-plugin-taskboard.tgz",
       "../plugins/.pack/dsh-plugin-canvas.tgz": "plugins/dsh-plugin-canvas.tgz",
       "../plugins/.pack/dsh-plugin-mobile-bridge.tgz": "plugins/dsh-plugin-mobile-bridge.tgz",

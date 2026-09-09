@@ -9,6 +9,7 @@ const bootState = { running: false }
 
 /** DSH web-shell entry: mount the sidebar entry + panel view, then listen. */
 function apply(ctx) {
+  clientContext = ctx
   if (typeof window === 'undefined' || typeof document === 'undefined') return
   if (bootState.running) return
   bootState.running = true

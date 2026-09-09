@@ -66,8 +66,14 @@ export function killTree(child, signal = 'SIGTERM') {
   if (child.pid === undefined || child.exitCode !== null) return
   if (process.platform === 'win32') {
     // Windows has no process groups to signal; taskkill /T walks the tree. Args
-    // are passed as an array, never a command string.
-    execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {})
+    // are passed as an array, never a command string. Kill the direct child too:
+    // some restricted Windows hosts can leave taskkill itself waiting forever.
+    try { child.kill(signal) } catch { /* already gone */ }
+    const killer = execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+      windowsHide: true,
+      timeout: KILL_GRACE_MS,
+    }, () => {})
+    killer.unref?.()
     return
   }
   try {

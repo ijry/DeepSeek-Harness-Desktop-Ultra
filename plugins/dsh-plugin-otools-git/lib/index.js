@@ -74,7 +74,8 @@ export function apply(ctx) {
     const repos = createRepoIndex({ workspaces: workspaceFace(wsCtx.workspaceRegistry) })
     let disposeRoutes
     wsCtx.inject(['webServer'], (webCtx) => {
-      disposeRoutes = registerGitRoutes(webCtx, { prefs, repos, credentialsFile, ai })
+      disposeRoutes = registerGitRoutes(webCtx, {
+        prefs, repos, credentialsFile, ai })
       // cordis inject semantics: the callback's return value is the disposer.
       return () => disposeRoutes?.()
     })

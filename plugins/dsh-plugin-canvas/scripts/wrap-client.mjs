@@ -33,6 +33,7 @@ export const SHARED_MODULES = ['lang.js', 'units.js', 'layout.js', 'snap.js', 'm
 /** Browser-only modules inlined ahead of the entry, in dependency order. The
  *  entry (`src/client/index.js`) comes last and is what assigns module.exports. */
 export const CLIENT_MODULES = [
+  'panel-channel.js',
   'styles.js',
   'state.js',
   'viewport.js',

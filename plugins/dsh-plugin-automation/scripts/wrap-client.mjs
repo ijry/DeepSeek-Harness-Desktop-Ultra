@@ -47,7 +47,8 @@ export function wrapClient(source) {
 
 /** Read src/client/index.js and write the wrapped lib/client.js. */
 export async function buildClient() {
-  const source = await readFile(join(root, 'src', 'client', 'index.js'), 'utf8')
+  const helper = await readFile(join(root, 'src', 'client', 'panel-channel.js'), 'utf8')
+  const source = helper.replace(/^export /gm, '') + '\n' + await readFile(join(root, 'src', 'client', 'index.js'), 'utf8')
   const out = join(root, 'lib', 'client.js')
   await writeFile(out, wrapClient(source), 'utf8')
   return out

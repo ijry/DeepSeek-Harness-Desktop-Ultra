@@ -123,6 +123,15 @@ function envelopeOfError(error) {
  * @param options - { store, workspaces, now }
  */
 export function registerTaskboardRoutes(ctx, options) {
+  let shared
+  const stopSharedInject = ctx.inject?.(['otoolsSocket'], sharedCtx => {
+    shared = sharedCtx.otoolsSocket.registerSource({
+      id: 'taskboard', protocolVersion: 1, exposure: 'internal',
+      catalog: { title: 'taskboard', commands: [] },
+      hello: () => ({ revision: store.snapshot().revision }), onRequest: () => ({}),
+    })
+    return () => { shared?.dispose(); shared = undefined }
+  })
   const { store, workspaces, now } = options
   const subscribers = new Set()
   let heartbeat
@@ -140,6 +149,7 @@ export function registerTaskboardRoutes(ctx, options) {
     const frame = `event: change\ndata: ${JSON.stringify(data)}\n\n`
     for (const res of subscribers) res.write(frame)
     socket?.broadcast('change', data)
+    shared?.emit('change', data)
   }
   const unsubscribeBroadcast = store.subscribe(broadcast)
 
@@ -401,6 +411,8 @@ export function registerTaskboardRoutes(ctx, options) {
     ctx.webServer.register({ kind: 'exact', path: SSE_PATH, handler: sse }),
   ]
   return () => {
+    stopSharedInject?.()
+    shared?.dispose()
     unsubscribeBroadcast()
     socket?.dispose()
     for (const dispose of disposers) dispose()

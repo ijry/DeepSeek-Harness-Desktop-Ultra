@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
  * 两个带一堆运行时依赖的排最后，首启逐个装时先把便宜的装完。
  */
 export const BUNDLED = [
+  "dsh-plugin-otools-socket",
   "dsh-plugin-taskboard",
   "dsh-plugin-canvas",
   "dsh-plugin-mobile-bridge",

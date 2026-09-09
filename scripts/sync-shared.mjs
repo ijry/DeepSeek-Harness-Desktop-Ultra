@@ -34,6 +34,16 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
  */
 export const SHARED = [
   {
+    path: "client/panel-channel.js",
+    plugins: [
+      "dsh-plugin-taskboard",
+      "dsh-plugin-canvas",
+      "dsh-plugin-repopanel",
+      "dsh-plugin-otools-git",
+      "dsh-plugin-automation",
+    ],
+  },
+  {
     path: "host/socket.js",
     plugins: [
       "dsh-plugin-taskboard",

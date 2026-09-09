@@ -69,7 +69,8 @@ export function apply(ctx) {
     let disposeRoutes
     wsCtx.inject(['webServer'], (webCtx) => {
       holder.webServer = webCtx.webServer
-      disposeRoutes = registerAutomationRoutes(webCtx, { store, engine, workspaces, taskboardBase: board, now })
+      disposeRoutes = registerAutomationRoutes(webCtx, {
+        store, engine, workspaces, taskboardBase: board, now })
       // cordis inject semantics: the callback's return value is the disposer.
       return () => {
         holder.webServer = undefined

@@ -1090,6 +1090,72 @@ function deriveBoard(input) {
   return { elements: [...top, ...members], regionRects, pinRects, renderedSizes }
 }
 
+    // ---- inlined src/client/panel-channel.js ----
+/** Optional attachment to the shared browser bus with delayed legacy fallback. */
+function openPanelChannel(ctx, options) {
+  const clock = options.clock ?? { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: id => clearTimeout(id) }
+  const graceMs = options.graceMs ?? 2500
+  let disposed = false
+  let generation = 0
+  let ready = false
+  let graceTimer
+  let fallback
+  let shared
+
+  function closeFallback() {
+    const stop = fallback
+    fallback = undefined
+    try { stop?.() } catch { /* gone */ }
+  }
+
+  function startFallback() {
+    if (disposed || ready || fallback !== undefined) return
+    fallback = options.startFallback?.() ?? (() => undefined)
+  }
+
+  graceTimer = clock.setTimeout(() => { graceTimer = undefined; startFallback() }, graceMs)
+
+  const stopInject = ctx?.inject?.(['otoolsSocket'], serviceCtx => {
+    const mine = ++generation
+    shared = serviceCtx.otoolsSocket.subscribe(options.source, {
+      onReady(snapshot) {
+        if (disposed || mine !== generation) return
+        ready = true
+        closeFallback()
+        options.onOpen?.(snapshot)
+      },
+      onEvent(name, data) {
+        if (disposed || mine !== generation) return
+        options.onFrame?.(name, data)
+      },
+      onUnavailable() {
+        if (disposed || mine !== generation) return
+        ready = false
+        options.onClose?.()
+        startFallback()
+      },
+    })
+    return () => {
+      if (mine !== generation) return
+      generation += 1
+      shared?.()
+      shared = undefined
+      ready = false
+      if (!disposed) { options.onClose?.(); startFallback() }
+    }
+  })
+
+  return () => {
+    if (disposed) return
+    disposed = true
+    generation += 1
+    if (graceTimer !== undefined) clock.clearTimeout(graceTimer)
+    shared?.()
+    stopInject?.()
+    closeFallback()
+  }
+}
+
     // ---- inlined src/client/styles.js ----
 /**
  * The board's stylesheet, injected once under one `<style>` id.
@@ -1286,6 +1352,8 @@ const PLUGIN_ID = 'dsh-plugin-canvas'
 const ROUTE_PREFIX = '/dsh-plugin-canvas'
 const SSE_PATH = '/dsh-plugin-canvas/events'
 const SOCKET_PATH = '/dsh-plugin-canvas/socket'
+let clientContext
+
 
 /** Handshake deadline before falling back to SSE. */
 const SOCKET_OPEN_TIMEOUT_MS = 4000
@@ -1593,6 +1661,8 @@ async function refetchSessions(force = false) {
 // rides its own pool. SSE stays as the fallback for a DSH build whose webserver
 // has no upgrade hook, and for the test DOM, which has no WebSocket.
 let stream = null
+let legacyStream = null
+let legacyGeneration = 0
 let retry = null
 
 /** The baseline frame on either carrier only reports where the host is; the
@@ -1627,41 +1697,61 @@ function parseFrame(text) {
 }
 
 function startStream() {
-  // Already streaming, or already waiting to stream again: the board is opened by
-  // a toggle, so a second open must not stack a second carrier.
-  if (stream !== null || retry !== null) return
-  if (!startSocket()) startSse()
+  stopStream()
+  stream = openPanelChannel(clientContext, {
+    source: 'canvas',
+    startFallback: () => startLegacyStream(),
+    onOpen: () => { void refetchState(); model.connected = true; emit() },
+    onFrame: (name, data) => { if (name === 'change') onChange(data) },
+    onClose: () => { model.connected = false; emit() },
+  })
 }
 
 function stopStream() {
+  const stop = stream
+  stream = null
+  if (typeof stop === 'function') stop()
+  stopLegacyStream()
+  model.connected = false
+}
+
+function stopLegacyStream() {
+  legacyGeneration += 1
   if (retry !== null) {
     clearTimeout(retry)
     retry = null
   }
-  const current = stream
-  stream = null
+  const current = legacyStream
+  legacyStream = null
   if (current === null) return
   try {
     current.close()
   } catch {
     /* already closed */
   }
-  model.connected = false
 }
 
 /** An EventSource reconnects itself; a WebSocket does not, so a carrier that
  *  worked once and then dropped is retried by hand. */
-function scheduleRetry() {
+function scheduleRetry(generation) {
   if (retry !== null) return
   retry = setTimeout(() => {
     retry = null
-    startStream()
+    if (generation !== legacyGeneration) return
+    if (!startSocket(generation)) startSse(generation)
   }, STREAM_RETRY_MS)
 }
 
 /** Open the socket. False means this browser or DSH build cannot use one, and the
  *  caller has to fall back. */
-function startSocket() {
+function startLegacyStream() {
+  stopLegacyStream()
+  const generation = legacyGeneration
+  if (!startSocket(generation)) startSse(generation)
+  return () => { if (generation === legacyGeneration) stopLegacyStream() }
+}
+
+function startSocket(generation) {
   if (typeof window.WebSocket !== 'function') return false
   const scheme = window.location?.protocol === 'https:' ? 'wss://' : 'ws://'
   let socket
@@ -1672,7 +1762,8 @@ function startSocket() {
     return false
   }
   const token = { close: () => socket.close() }
-  stream = token
+  legacyStream = token
+  const active = () => generation === legacyGeneration && legacyStream === token
   let opened = false
   // A handshake nobody answers must not strand the board without a stream:
   // closing on the deadline routes us to SSE through the close handler.
@@ -1690,12 +1781,12 @@ function startSocket() {
   socket.addEventListener('open', () => {
     opened = true
     clearTimeout(deadline)
-    if (stream !== token) return
+    if (!active()) return
     model.connected = true
     emit()
   })
   socket.addEventListener('message', (event) => {
-    if (stream !== token) return
+    if (!active()) return
     const frame = parseFrame(event.data)
     if (frame === null) return
     if (frame.event === 'hello') {
@@ -1706,19 +1797,20 @@ function startSocket() {
   })
   socket.addEventListener('close', () => {
     clearTimeout(deadline)
-    if (stream !== token) return
-    stream = null
+    if (!active()) return
+    legacyStream = null
     model.connected = false
     emit()
     // Opened once means the carrier works and the host went away: come back.
     // Never opened means no upgrade hook here — switch to SSE for good.
-    if (opened) scheduleRetry()
-    else startSse()
+    if (opened) scheduleRetry(generation)
+    else startSse(generation)
   })
   return true
 }
 
-function startSse() {
+function startSse(generation) {
+  if (generation !== legacyGeneration) return
   if (typeof window.EventSource !== 'function') return
   let source
   try {
@@ -1729,16 +1821,21 @@ function startSse() {
     console.warn('[dsh-plugin-canvas] event source failed:', error?.message ?? error)
     return
   }
-  stream = { close: () => source.close() }
+  const token = { close: () => source.close() }
+  legacyStream = token
+  const active = () => generation === legacyGeneration && legacyStream === token
   source.addEventListener('open', () => {
+    if (!active()) return
     model.connected = true
     emit()
   })
-  source.addEventListener('hello', onHello)
+  source.addEventListener('hello', () => { if (active()) onHello() })
   source.addEventListener('change', (event) => {
+    if (!active()) return
     onChange(parseFrame(event.data))
   })
   source.addEventListener('error', () => {
+    if (!active()) return
     // EventSource reconnects on its own; only the badge changes.
     model.connected = false
     emit()
@@ -4487,6 +4584,7 @@ function closeMenus() {
 
   /** dsh web-shell entry point. */
   function apply(ctx) {
+  clientContext = ctx
     if (typeof window === 'undefined' || typeof document === 'undefined') return
     const state = { disposed: false }
     let observer = null

@@ -69,3 +69,9 @@ test("SHARED 名单里的插件都是真实存在的内置插件", async () => {
     }
   }
 });
+
+test("面板通道只附着可选服务，不拥有共享 WebSocket", async () => {
+  const source = await readFile(new URL("../plugins/.shared/client/panel-channel.js", import.meta.url), "utf8");
+  assert.ok(source.includes("ctx?.inject?.(['otoolsSocket']"));
+  assert.doesNotMatch(source, /new WebSocket|new window.WebSocket/);
+});

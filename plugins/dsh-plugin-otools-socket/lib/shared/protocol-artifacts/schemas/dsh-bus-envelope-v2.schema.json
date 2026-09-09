@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.local/schemas/dsh-bus-envelope-v2.schema.json",
+  "title": "DSH shared bus v2 control envelope",
+  "type": "object",
+  "required": ["v", "kind"],
+  "properties": {
+    "v": { "const": 2 },
+    "kind": {
+      "enum": [
+        "hello", "catalog", "subscribe", "unsubscribe", "event",
+        "request", "response", "cancel", "overflow", "error"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9._-]{1,127}$"
+    },
+    "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "data": {},
+    "ok": { "type": "boolean" },
+    "revision": { "type": "integer", "minimum": 0 },
+    "catalogRevision": { "type": "integer", "minimum": 0 },
+    "serverInstanceId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "index": { "type": "integer", "minimum": 0, "maximum": 5 },
+    "count": { "type": "integer", "minimum": 1, "maximum": 6 },
+    "encoding": { "const": "base64url" },
+    "reason": { "type": "string", "maxLength": 128 },
+    "limits": {
+      "type": "object",
+      "required": ["controlFrameBytes", "catalogBytes", "clientBacklogBytes", "requestTimeoutMs"],
+      "properties": {
+        "controlFrameBytes": { "const": 262144 },
+        "catalogBytes": { "const": 524288 },
+        "clientBacklogBytes": { "const": 1048576 },
+        "requestTimeoutMs": { "const": 30000 }
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "enum": [
+            "bad_frame", "bad_version", "frame_too_large", "source_unavailable",
+            "not_found", "forbidden", "unauthorized", "rate_limited", "timeout",
+            "cancelled", "circuit_open", "ticket_unavailable", "invalid_input",
+            "conflict", "internal"
+          ]
+        },
+        "message": { "type": "string", "maxLength": 1024 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

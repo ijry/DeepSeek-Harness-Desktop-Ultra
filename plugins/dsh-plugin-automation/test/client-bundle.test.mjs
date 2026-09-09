@@ -64,7 +64,9 @@ test('没有 window / document 时 apply 直接返回，不抛', async () => {
 })
 
 test('lib/client.js 与 src/client/index.js 保持同步（产物不能忘记提交）', async () => {
-  const source = await readFile(join(root, 'src', 'client', 'index.js'), 'utf8')
+  const helper = await readFile(join(root, 'src', 'client', 'panel-channel.js'), 'utf8')
+  const source = helper.replace(/^export /gm, '') + '\n'
+    + await readFile(join(root, 'src', 'client', 'index.js'), 'utf8')
   const built = await readFile(join(root, 'lib', 'client.js'), 'utf8')
   // Line endings are normalized: git's autocrlf rewrites the checkout on Windows,
   // and that is not drift.

@@ -195,6 +195,15 @@ function taskTitle(number, title) {
  * @param options - { store, workspaces, credentialsFile, now, fetchImpl }
  */
 export function registerRepoPanelRoutes(ctx, options) {
+  let shared
+  const stopSharedInject = ctx.inject?.(['otoolsSocket'], sharedCtx => {
+    shared = sharedCtx.otoolsSocket.registerSource({
+      id: 'repopanel', protocolVersion: 1, exposure: 'internal',
+      catalog: { title: 'repopanel', commands: [] },
+      hello: () => ({ revision: store.revision }), onRequest: () => ({}),
+    })
+    return () => { shared?.dispose(); shared = undefined }
+  })
   const { store, workspaces, credentialsFile, now } = options
   const fetchImpl = options.fetchImpl ?? fetch
   const subscribers = new Set()
@@ -215,6 +224,7 @@ export function registerRepoPanelRoutes(ctx, options) {
     const frame = `event: change\ndata: ${JSON.stringify(data)}\n\n`
     for (const res of subscribers) res.write(frame)
     socket?.broadcast('change', data)
+    shared?.emit('change', data)
   }
   const unsubscribeBroadcast = store.subscribe(broadcast)
 
@@ -614,6 +624,8 @@ export function registerRepoPanelRoutes(ctx, options) {
     ctx.webServer.register({ kind: 'exact', path: SSE_PATH, handler: sse }),
   ]
   return () => {
+    stopSharedInject?.()
+    shared?.dispose()
     unsubscribeBroadcast()
     socket?.dispose()
     for (const dispose of disposers) dispose()

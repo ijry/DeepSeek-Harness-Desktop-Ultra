@@ -67,13 +67,21 @@ const HEARTBEAT_MS = 20_000
  * @param options - `{ prefs, repos, credentialsFile, ai, now }`
  */
 export function registerGitRoutes(ctx, options) {
+  const hello = () => ({ revision: prefs.revision, operations: operations.list() })
+  let shared
+  const stopSharedInject = ctx.inject?.(['otoolsSocket'], sharedCtx => {
+    shared = sharedCtx.otoolsSocket.registerSource({
+      id: 'otools-git', protocolVersion: 1, exposure: 'internal',
+      catalog: { title: 'otools-git', commands: [] },
+      hello: () => hello(), onRequest: () => ({}),
+    })
+    return () => { shared?.dispose(); shared = undefined }
+  })
   const { prefs, repos, credentialsFile } = options
   const subscribers = new Set()
   let heartbeat
 
   const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
-  /** The baseline payload both carriers open with. */
-  const hello = () => ({ revision: prefs.revision, operations: operations.list() })
   // Same frames, two carriers: the panel prefers the socket because a persistent
   // SSE holds one of the origin's ~6 HTTP connections for as long as the panel
   // lives (see ./socket.js), and with every bundled plugin installed that budget
@@ -90,6 +98,7 @@ export function registerGitRoutes(ctx, options) {
       }
     }
     socket?.broadcast(event, data)
+    shared?.emit(event, data)
   }
   const unsubscribePrefs = prefs.subscribe((change) => broadcast('prefs', change))
   // The registry is created here so its change events can reach the same stream
@@ -397,6 +406,8 @@ export function registerGitRoutes(ctx, options) {
     ctx.webServer.register({ kind: 'exact', path: SSE_PATH, handler: sse }),
   ]
   return () => {
+    stopSharedInject?.()
+    shared?.dispose()
     unsubscribePrefs()
     socket?.dispose()
     for (const dispose of disposers) dispose()

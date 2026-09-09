@@ -90,6 +90,8 @@ function repoParams(extra) {
 // costs the shell nothing. SSE stays for a DSH build whose webserver has no
 // upgrade hook, and for the test DOM, which has no WebSocket.
 let stream = null
+let legacyStream = null
+let legacyGeneration = 0
 let streamRetry = null
 /** The operation listener, kept so a reconnect can register it again. */
 let opListener = null
@@ -102,6 +104,8 @@ const STREAM_RETRY_MS = 2000
 
 /** Every event name the host sends, on either carrier. */
 const STREAM_EVENTS = ['hello', 'prefs', 'operation']
+let clientContext
+
 
 /**
  * Subscribe to the host's change stream. Three event kinds, identical on both
@@ -112,17 +116,30 @@ const STREAM_EVENTS = ['hello', 'prefs', 'operation']
 function startStream(onOperation) {
   stopStream()
   if (onOperation !== undefined) opListener = onOperation
-  if (!startSocket()) startSse()
+  stream = openPanelChannel(clientContext, {
+    source: 'otools-git',
+    startFallback: () => startLegacyStream(),
+    onOpen: () => { void refreshAll(); model.connected = true; emit() },
+    onFrame: (name, data) => { applyStreamEvent(name, data) },
+    onClose: () => { model.connected = false; emit() },
+  })
 }
 
-/** Drop the current carrier, and any reconnect it had queued. */
 function stopStream() {
+  const stop = stream
+  stream = null
+  if (typeof stop === 'function') stop()
+  stopLegacyStream()
+}
+
+function stopLegacyStream() {
+  legacyGeneration += 1
   if (streamRetry !== null) {
     clearTimeout(streamRetry)
     streamRetry = null
   }
-  const current = stream
-  stream = null
+  const current = legacyStream
+  legacyStream = null
   if (current === null) return
   try {
     current.close()
@@ -130,16 +147,24 @@ function stopStream() {
 }
 
 /** Come back after a carrier that used to work dropped. */
-function scheduleStreamRetry() {
+function scheduleStreamRetry(generation) {
   if (streamRetry !== null) return
   streamRetry = setTimeout(() => {
     streamRetry = null
-    startStream()
+    if (generation !== legacyGeneration) return
+    if (!startSocket(generation)) startSse(generation)
   }, STREAM_RETRY_MS)
 }
 
 /** Open the socket. False means this browser or this DSH build cannot use one. */
-function startSocket() {
+function startLegacyStream() {
+  stopLegacyStream()
+  const generation = legacyGeneration
+  if (!startSocket(generation)) startSse(generation)
+  return () => { if (generation === legacyGeneration) stopLegacyStream() }
+}
+
+function startSocket(generation) {
   if (typeof window.WebSocket !== 'function') return false
   let socket
   try {
@@ -149,8 +174,9 @@ function startSocket() {
     console.warn(LOG + ' socket unavailable:', messageOf(error))
     return false
   }
-  stream = { kind: 'socket', close: () => socket.close() }
-  const mine = stream
+  legacyStream = { kind: 'socket', close: () => socket.close() }
+  const mine = legacyStream
+  const active = () => generation === legacyGeneration && legacyStream === mine
   let opened = false
   // A handshake nobody answers must not strand the panel without a stream:
   // closing on the deadline routes us to SSE through the close handler.
@@ -163,12 +189,12 @@ function startSocket() {
   socket.addEventListener('open', () => {
     opened = true
     clearTimeout(deadline)
-    if (stream !== mine) return
+    if (!active()) return
     model.connected = true
     emit()
   })
   socket.addEventListener('message', (event) => {
-    if (stream !== mine) return
+    if (!active()) return
     const payload = parseEvent(event)
     if (payload === undefined) return
     applyStreamEvent(payload.event, payload.data)
@@ -178,19 +204,20 @@ function startSocket() {
     // Only the attempt currently holding the seat may act on its own close: a
     // close arriving after stopStream() — or after a newer attempt took over —
     // must not clear the live connection's bookkeeping or start a second stream.
-    if (stream !== mine) return
-    stream = null
+    if (!active()) return
+    legacyStream = null
     model.connected = false
     emit()
     // Opened once means the carrier works and the host went away: come back.
     // Never opened means there is no upgrade hook here — take SSE for good.
-    if (opened) scheduleStreamRetry()
-    else startSse()
+    if (opened) scheduleStreamRetry(generation)
+    else startSse(generation)
   })
   return true
 }
 
-function startSse() {
+function startSse(generation) {
+  if (generation !== legacyGeneration) return
   if (typeof window.EventSource !== 'function') return
   let source
   try {
@@ -199,18 +226,22 @@ function startSse() {
     console.warn(LOG + ' event stream unavailable:', messageOf(error))
     return
   }
-  stream = { kind: 'sse', close: () => source.close() }
+  legacyStream = { kind: 'sse', close: () => source.close() }
+  const mine = legacyStream
+  const active = () => generation === legacyGeneration && legacyStream === mine
   source.addEventListener('open', () => {
+    if (!active()) return
     model.connected = true
     emit()
   })
   source.addEventListener('error', () => {
+    if (!active()) return
     // EventSource reconnects on its own; the panel only reflects the state.
     model.connected = false
     emit()
   })
   for (const name of STREAM_EVENTS) {
-    source.addEventListener(name, (event) => applyStreamEvent(name, parseEvent(event)))
+    source.addEventListener(name, (event) => { if (active()) applyStreamEvent(name, parseEvent(event)) })
   }
 }
 

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.local/schemas/dsh-declarative-ui-v1.schema.json",
+  "title": "DSH declarative UI v1 source catalog",
+  "type": "object",
+  "required": ["title", "commands"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "icon": { "type": "string", "maxLength": 64 },
+    "uiVersion": { "const": 1 },
+    "commands": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "required": ["name", "effect", "confirmation", "input"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "effect": { "enum": ["read", "write"] },
+          "confirmation": { "enum": ["none", "confirm", "danger"] },
+          "input": {
+            "type": "object",
+            "required": ["type", "properties", "additionalProperties"],
+            "properties": {
+              "type": { "const": "object" },
+              "properties": { "type": "object" },
+              "required": {
+                "type": "array",
+                "items": { "type": "string" },
+                "uniqueItems": true
+              },
+              "additionalProperties": { "const": false }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "pages": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "layout"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "title": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "layout": { "type": "object" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
