@@ -19,7 +19,8 @@
     },
     "compatibility": {
       "dshReleases": {
-        "0.1.1-rc.2": "compatible"
+        "0.1.1-rc.2": "compatible",
+        "0.1.5-rc.1": "compatible"
       }
     }
   },
@@ -58,7 +59,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node scripts/check.mjs",
-    "test": "npm run build && node --test",
+    "test": "npm run build && node --test --import ./test/setup-env.mjs",
     "prepack": "npm run build"
   }
 }
