@@ -228,7 +228,8 @@ window.__ModuleLoader__.load({
 }
 .dsh-lr-entry:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,.12)); color: var(--dsw-alias-label-primary, inherit); }
 .dsh-lr-entry[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,.18)); color: var(--dsw-alias-label-primary, inherit); font-weight: 500; }
-.dsh-lr-entry-icon { display: inline-flex; flex: none; }
+.dsh-lr-entry-icon { display: inline-flex; flex: none; color: inherit; filter: grayscale(1); opacity: .85; }
+.dsh-lr-entry:hover .dsh-lr-entry-icon, .dsh-lr-entry:focus-visible .dsh-lr-entry-icon { filter: none; opacity: 1; }
 .dsh-lr-entry-stats { margin-left: auto; font-size: 11px; line-height: 1; color: var(--dsw-alias-label-tertiary, gray); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* The panel itself: it replaces the conversation column's own children while
    open, rather than floating over them — no dependency on the column being a
@@ -274,6 +275,11 @@ html[data-dsh-lr-open] .dsh-lr-view {
 }
 .dsh-lr-think-body { margin: -4px 0 12px; padding-left: 18px; font-size: 12px; line-height: 20px; color: var(--lr-text-3); display: none; }
 .dsh-lr-think[data-open="true"] + .dsh-lr-think-body { display: block; }
+.dsh-lr-reading-think { display: flex; align-items: center; gap: 8px; margin: 12px 0 20px; color: var(--lr-text-3); font-size: 13px; }
+.dsh-lr-reading-indicator { width: 14px; height: 14px; border: 1.5px solid var(--lr-border-2); border-top-color: currentColor; border-radius: 50%; animation: dsh-lr-thinking 1.4s linear infinite; }
+@keyframes dsh-lr-thinking { to { transform: rotate(360deg); } }
+.dsh-lr-view[data-playback="paused"] .dsh-lr-caret::after { display: none; }
+@media (prefers-reduced-motion: reduce) { .dsh-lr-reading-indicator { animation: none; } }
 .dsh-lr-prose { font-size: calc(16px * var(--lr-scale, 1)); line-height: 1.85; color: var(--lr-text); word-break: break-word; }
 .dsh-lr-p { margin: 0 0 16px; white-space: pre-wrap; }
 .dsh-lr-p:last-child { margin-bottom: 0; }
@@ -391,13 +397,18 @@ html[data-dsh-lr-open] .dsh-lr-view {
     progress: {},
     settings: {
       speed: 36, turnChars: 420, toolDensity: 'medium', persona: 'refactor',
-      useRealPaths: true, showThinking: true, autoPlay: true, fontScale: 100,
+      useRealPaths: true, showThinking: true, autoPlay: false, waitForReading: true, fontScale: 100,
     },
     bookId: null,
     plan: null,
     /** Index of the next turn to play. */
     turnIndex: 0,
     playing: false,
+    paused: false,
+    waiting: false,
+    loading: false,
+    autoPending: false,
+    ended: false,
     /** Characters of prose revealed this session, for the fake token counter. */
     charsRead: 0,
     startedAt: 0,
@@ -435,15 +446,25 @@ html[data-dsh-lr-open] .dsh-lr-view {
   // started under. Changing chapter, closing the panel or disposing bumps the
   // token, so anything still queued becomes a no-op instead of typing prose into
   // a detached node.
-  const timers = new Set()
+  const timers = new Map()
   /** Timers that outlive a run (toast dismissal, progress debounce). */
   const chores = new Set()
   let runToken = 0
+  let resumePlaybackWaiter = null
 
   function bumpToken() {
     runToken += 1
-    for (const id of timers) clearTimeout(id)
+    for (const [id, resolve] of timers) {
+      clearTimeout(id)
+      resolve()
+    }
     timers.clear()
+    model.paused = false
+    model.waiting = false
+    model.autoPending = false
+    const resume = resumePlaybackWaiter
+    resumePlaybackWaiter = null
+    if (resume !== null) resume()
     return runToken
   }
 
@@ -453,7 +474,7 @@ html[data-dsh-lr-open] .dsh-lr-view {
         timers.delete(id)
         resolve()
       }, ms)
-      timers.add(id)
+      timers.set(id, resolve)
     })
   }
 
@@ -465,7 +486,7 @@ html[data-dsh-lr-open] .dsh-lr-view {
           timers.delete(id)
           resolve()
         }, 16)
-        timers.add(id)
+        timers.set(id, resolve)
       }
     })
   }
@@ -501,6 +522,8 @@ html[data-dsh-lr-open] .dsh-lr-view {
   let headSubEl = null
   let inputEl = null
   let sendBtn = null
+  let stopBtn = null
+  let readingThinkEl = null
   let hintEl = null
 
   function injectStyles() {
@@ -524,12 +547,12 @@ html[data-dsh-lr-open] .dsh-lr-view {
 
   function createEntry() {
     const button = el('button', {
-      type: 'button', class: 'dsh-lr-entry', 'data-dsh-lr-entry': '', 'aria-label': '长文阅读',
+      type: 'button', class: 'dsh-lr-entry', 'data-dsh-lr-entry': '', 'aria-label': '摸鱼会话',
       onClick: () => { setOpen(!model.open) },
     })
     button.append(
       el('span', { class: 'dsh-lr-entry-icon', text: '📄' }),
-      el('span', { class: 'dsh-lr-entry-label', text: '长文' }),
+      el('span', { class: 'dsh-lr-entry-label', text: '摸鱼会话' }),
       el('span', { class: 'dsh-lr-entry-stats' }),
     )
     return button
@@ -589,13 +612,17 @@ html[data-dsh-lr-open] .dsh-lr-view {
     inputEl = el('textarea', { class: 'dsh-lr-input', rows: 1, placeholder: '输入消息…' })
     inputEl.addEventListener('keydown', onComposerKey)
     sendBtn = el('button', {
-      class: 'dsh-lr-btn', 'data-kind': 'primary', type: 'button', text: '发送',
+      class: 'dsh-lr-btn dsh-lr-send', 'data-kind': 'primary', type: 'button', text: '发送',
       onClick: () => { void submitComposer() },
+    })
+    stopBtn = el('button', {
+      class: 'dsh-lr-btn dsh-lr-stop', 'data-kind': 'ghost', type: 'button', text: '停止',
+      title: '停止推进，保留当前内容；点继续可恢复', onClick: () => pausePlayback(),
     })
     hintEl = el('div', { class: 'dsh-lr-hint' })
     const composer = el('div', { class: 'dsh-lr-composer' },
       inputEl,
-      el('div', { class: 'dsh-lr-composer-row' }, hintEl, el('div', { class: 'dsh-lr-spacer' }), sendBtn))
+      el('div', { class: 'dsh-lr-composer-row' }, hintEl, el('div', { class: 'dsh-lr-spacer' }), stopBtn, sendBtn))
     const foot = el('div', { class: 'dsh-lr-foot' }, composer)
 
     view.append(head, scrollEl, foot)
@@ -637,23 +664,79 @@ html[data-dsh-lr-open] .dsh-lr-view {
 
   function renderHint() {
     if (hintEl === null) return
-    if (model.playing) hintEl.textContent = '正在输出 · Enter 跳到本段末尾 · Esc 收起'
-    else hintEl.textContent = 'Enter 继续 · /help 看命令 · Esc 收起'
-    if (sendBtn !== null) sendBtn.textContent = model.playing ? '跳过' : '发送'
+    const holding = model.paused || model.waiting
+    const hint = model.paused ? '已停止推进 · Enter 继续 · Esc 收起'
+      : model.waiting ? '思考中 · Enter 继续 · Esc 收起'
+      : model.loading ? '正在加载…'
+      : model.playing ? '正在输出 · Enter 跳到本段末尾 · Esc 收起'
+      : model.ended ? '任务完成 · /lib 换一本 · Esc 收起'
+      : 'Enter 继续 · /help 看命令 · Esc 收起'
+    if (hintEl.textContent !== hint) hintEl.textContent = hint
+    if (sendBtn !== null) {
+      const label = holding ? '继续' : model.playing ? '跳过' : model.ended ? '已结束' : '发送'
+      if (sendBtn.textContent !== label) sendBtn.textContent = label
+      sendBtn.disabled = (model.loading && !model.paused) || model.ended
+    }
+    if (stopBtn !== null) stopBtn.disabled = model.paused || !(model.playing || model.loading || model.autoPending)
+    const playback = model.paused ? 'paused' : model.waiting ? 'waiting' : model.playing ? 'playing' : 'idle'
+    if (view !== null && view.dataset.playback !== playback) view.dataset.playback = playback
+    if (holding && model.open && streamEl !== null) {
+      if (readingThinkEl === null || readingThinkEl.parentElement !== streamEl) {
+        if (readingThinkEl !== null) readingThinkEl.remove()
+        readingThinkEl = el('div', { class: 'dsh-lr-reading-think', 'data-dsh-lr-thinking': '', role: 'status' },
+          el('span', { class: 'dsh-lr-reading-indicator', 'aria-hidden': 'true' }),
+          el('span', { text: '思考中…' }))
+        streamEl.append(readingThinkEl)
+      }
+    } else if (readingThinkEl !== null) {
+      readingThinkEl.remove()
+      readingThinkEl = null
+    }
+  }
+
+  function autoPlayEnabled() {
+    return model.settings.autoPlay === true && model.settings.waitForReading === false
+  }
+
+  function pausePlayback() {
+    if (model.paused || !(model.playing || model.loading || model.autoPending)) return
+    if (model.autoPending) {
+      bumpToken()
+      model.waiting = true
+    } else model.paused = true
+    skipRequested = false
+    renderHint()
+  }
+
+  function resumePlayback() {
+    model.paused = false
+    const resume = resumePlaybackWaiter
+    resumePlaybackWaiter = null
+    if (resume !== null) resume()
+    renderHint()
+  }
+
+  async function waitForPlayback(token) {
+    // 停止可能在唤醒排队期间再次按下（resume 的微任务还没轮到执行），
+    // 所以唤醒后要重查暂停态，直到真正恢复或被令牌作废。
+    while (token === runToken && model.open && model.paused) {
+      await new Promise((resolve) => { resumePlaybackWaiter = resolve })
+    }
+    return token === runToken && model.open
   }
 
   function renderEntry() {
     if (entry === null) return
-    if (model.open) entry.dataset.active = 'true'
-    else delete entry.dataset.active
+    if (model.open) {
+      if (entry.dataset.active !== 'true') entry.dataset.active = 'true'
+    } else if (entry.dataset.active !== undefined) delete entry.dataset.active
     const stats = entry.querySelector('.dsh-lr-entry-stats')
     if (stats === null) return
     const book = currentBook()
-    if (book === undefined || model.plan === null) {
-      stats.textContent = model.books.length > 0 ? String(model.books.length) : ''
-      return
-    }
-    stats.textContent = (model.plan.chapterIndex + 1) + '/' + Math.max(1, book.chapters.length)
+    const text = book === undefined || model.plan === null
+      ? (model.books.length > 0 ? String(model.books.length) : '')
+      : (model.plan.chapterIndex + 1) + '/' + Math.max(1, book.chapters.length)
+    if (stats.textContent !== text) stats.textContent = text
   }
 
   // -------------------------------------------------------- open / close
@@ -673,6 +756,7 @@ html[data-dsh-lr-open] .dsh-lr-view {
       // Closing is also the panic key: stop typing immediately, leave nothing moving.
       bumpToken()
       model.playing = false
+      model.loading = false
       rootEl.removeAttribute(OPEN_ATTR)
       closeModal()
       renderHint()
@@ -683,7 +767,7 @@ html[data-dsh-lr-open] .dsh-lr-view {
   // ------------------------------------------------------------ transcript
   /** Scroll the transcript to the bottom, best effort. */
   function stickToBottom() {
-    if (scrollEl === null) return
+    if (scrollEl === null || model.paused || model.waiting) return
     const height = scrollEl.scrollHeight
     if (typeof height === 'number') scrollEl.scrollTop = height
   }
@@ -792,12 +876,20 @@ html[data-dsh-lr-open] .dsh-lr-view {
         node.classList.remove('dsh-lr-caret')
         return false
       }
+      if (model.paused) {
+        if (!await waitForPlayback(token)) {
+          node.classList.remove('dsh-lr-caret')
+          return false
+        }
+        last = Date.now()
+      }
       if (skipRequested) break
       await nextFrame()
       if (token !== runToken) {
         node.classList.remove('dsh-lr-caret')
         return false
       }
+      if (model.paused) continue
       const stamp = Date.now()
       const step = Math.max(1, Math.round(speed * Math.max(1, stamp - last) / 1000))
       last = stamp
@@ -827,34 +919,41 @@ html[data-dsh-lr-open] .dsh-lr-view {
   /** Render one turn the way a session would: tools first, then the reply. */
   async function playTurnAnimated(turn, token, userText) {
     const node = turnNode()
-    userBlock(node, userText !== undefined && userText.length > 0 ? userText : turn.prompt)
-    stickToBottom()
-    await sleep(160)
-    if (token !== runToken) return false
-    if (turn.thinking !== null && turn.thinking !== undefined && model.settings.showThinking !== false) {
-      thinkingBlock(node, turn.thinking)
+    let completed = false
+    try {
+      userBlock(node, userText !== undefined && userText.length > 0 ? userText : turn.prompt)
       stickToBottom()
-      await sleep(220)
-      if (token !== runToken) return false
-    }
-    for (const call of turn.calls) {
-      const row = callBlock(node, call, false)
+      await sleep(160)
+      if (!await waitForPlayback(token)) return false
+      if (turn.thinking !== null && turn.thinking !== undefined && model.settings.showThinking !== false) {
+        thinkingBlock(node, turn.thinking)
+        stickToBottom()
+        await sleep(220)
+        if (!await waitForPlayback(token)) return false
+      }
+      for (const call of turn.calls) {
+        const row = callBlock(node, call, false)
+        stickToBottom()
+        await sleep(Math.min(MAX_CALL_MS, Math.max(120, Number(call.ms) || 200)))
+        if (!await waitForPlayback(token)) return false
+        row.settle()
+      }
+      const prose = el('div', { class: 'dsh-lr-prose' })
+      node.append(prose)
+      for (const paragraph of turn.paragraphs) {
+        if (!await waitForPlayback(token)) return false
+        const line = el('div', { class: 'dsh-lr-p' })
+        prose.append(line)
+        const done = await typeInto(line, paragraph, token)
+        if (!done) return false
+      }
+      trimTranscript()
       stickToBottom()
-      await sleep(Math.min(MAX_CALL_MS, Math.max(120, Number(call.ms) || 200)))
-      if (token !== runToken) return false
-      row.settle()
+      completed = true
+      return true
+    } finally {
+      if (!completed) node.remove()
     }
-    const prose = el('div', { class: 'dsh-lr-prose' })
-    node.append(prose)
-    for (const paragraph of turn.paragraphs) {
-      const line = el('div', { class: 'dsh-lr-p' })
-      prose.append(line)
-      const done = await typeInto(line, paragraph, token)
-      if (!done) return false
-    }
-    trimTranscript()
-    stickToBottom()
-    return true
   }
 
   /** Debounced progress write; the ledger does not need every keystroke. */
@@ -883,6 +982,11 @@ html[data-dsh-lr-open] .dsh-lr-view {
 
   /** Play the next turn, or roll into the next chapter when this one is done. */
   async function advance(userText) {
+    if (model.paused) {
+      resumePlayback()
+      return
+    }
+    if (model.loading || model.ended) return
     if (model.plan === null) {
       toast('先在书架里选一本')
       return
@@ -891,12 +995,12 @@ html[data-dsh-lr-open] .dsh-lr-view {
       skipRequested = true
       return
     }
+    const token = bumpToken()
     const turn = model.plan.turns[model.turnIndex]
     if (turn === undefined) {
-      await nextChapter()
+      await nextChapter({ autostart: true })
       return
     }
-    const token = runToken
     model.playing = true
     skipRequested = false
     renderHint()
@@ -918,9 +1022,22 @@ html[data-dsh-lr-open] .dsh-lr-view {
     scheduleProgressSave()
     renderHead()
     renderEntry()
-    if (model.settings.autoPlay === false) return
+    if (!autoPlayEnabled()) {
+      model.waiting = true
+      renderHint()
+      return
+    }
+    model.autoPending = true
+    renderHint()
     await sleep(AUTO_GAP_MS)
-    if (token === runToken && model.open) void advance()
+    if (token === runToken && model.open && model.autoPending) {
+      model.autoPending = false
+      if (autoPlayEnabled()) void advance()
+      else {
+        model.waiting = true
+        renderHint()
+      }
+    }
   }
 
   /**
@@ -932,10 +1049,13 @@ html[data-dsh-lr-open] .dsh-lr-view {
     if (book === undefined) return
     const token = bumpToken()
     model.playing = false
+    model.loading = true
+    model.ended = false
     skipRequested = false
+    renderHint()
     try {
       const plan = await api.plan(book.id, index)
-      if (token !== runToken) return
+      if (!await waitForPlayback(token)) return
       model.plan = plan
       model.turnIndex = 0
       // A chapter roll keeps the transcript so the seam reads like one long
@@ -951,29 +1071,43 @@ html[data-dsh-lr-open] .dsh-lr-view {
         model.charsRead += plan.turns.slice(0, resumeTurn).reduce((sum, turn) => sum + turn.chars, 0)
         stickToBottom()
       }
+      model.loading = false
+      model.waiting = resumeTurn > 0 && !autoPlayEnabled()
       renderHead()
       renderEntry()
-      if (options?.autostart !== false && model.settings.autoPlay !== false) void advance()
+      if (options?.autostart === true || (options?.autostart !== false && autoPlayEnabled())) void advance()
     } catch (error) {
       if (token !== runToken) return
       model.error = messageOf(error)
       toast('打开失败：' + model.error, 'error')
       renderEmpty('这一章打不开：' + model.error)
+    } finally {
+      if (token === runToken) {
+        model.loading = false
+        renderHint()
+      }
     }
   }
 
   /** Roll into the next chapter, dressed as a context compaction. */
-  async function nextChapter() {
+  async function nextChapter(options) {
     const book = currentBook()
     if (book === undefined || model.plan === null) return
     const next = model.plan.chapterIndex + 1
     if (next >= book.chapters.length) {
-      divider('任务完成 · 无更多输出')
-      toast('读完了')
+      bumpToken()
+      model.playing = false
+      model.loading = false
+      if (!model.ended) {
+        divider('任务完成 · 无更多输出')
+        toast('读完了')
+      }
+      model.ended = true
+      renderHint()
       return
     }
     divider('上下文已压缩 · 继续')
-    await loadChapter(next, { resumeTurn: 0, keep: true })
+    await loadChapter(next, { resumeTurn: 0, keep: true, autostart: options?.autostart })
   }
 
   /** Open a book at its saved position. */
@@ -1049,12 +1183,13 @@ html[data-dsh-lr-open] .dsh-lr-view {
   const HELP_TEXT = [
     '/lib 书架 · /toc 目录 · /next 下一章 · /prev 上一章 · /goto N 跳章',
     '/speed N 字/秒（600=立即） · /font N 字号% · /persona refactor|debug|review|docs',
-    '/density off|low|medium|high · /auto 自动播放开关 · /stop 停',
+    '/density off|low|medium|high · /auto 连续播放开关 · /stop 停止 · /resume 继续',
   ].join('\n')
 
   /** Apply one settings patch locally and on the host. */
   async function patchSettings(patch, note) {
     model.settings = { ...model.settings, ...patch }
+    if (model.autoPending && !autoPlayEnabled()) pausePlayback()
     renderHead()
     try {
       const saved = await api.settings(patch)
@@ -1102,10 +1237,12 @@ html[data-dsh-lr-open] .dsh-lr-view {
     if (name === 'persona') { void patchSettings({ persona: arg }, '伪装：' + arg); return true }
     if (name === 'density') { void patchSettings({ toolDensity: arg }, '工具调用：' + arg); return true }
     if (name === 'auto') {
-      void patchSettings({ autoPlay: model.settings.autoPlay === false }, model.settings.autoPlay === false ? '自动播放已开' : '自动播放已关')
+      const enabled = !autoPlayEnabled()
+      void patchSettings({ autoPlay: enabled, waitForReading: !enabled }, enabled ? '连续播放已开' : '逐轮等待已开')
       return true
     }
-    if (name === 'stop') { bumpToken(); model.playing = false; renderHint(); return true }
+    if (name === 'stop' || name === 'pause') { pausePlayback(); return true }
+    if (name === 'resume' || name === 'continue') { void advance(); return true }
     toast('没有这个命令：/' + name)
     return true
   }
@@ -1123,6 +1260,11 @@ html[data-dsh-lr-open] .dsh-lr-view {
       runCommand(text)
       return
     }
+    if (model.paused) {
+      resumePlayback()
+      return
+    }
+    if (model.loading) return
     if (model.playing) {
       skipRequested = true
       renderHint()
@@ -1481,7 +1623,7 @@ html[data-dsh-lr-open] .dsh-lr-view {
         void patchSettings({ toolDensity: value }, '下一章生效')
       }), '每轮插几条'),
       field('思考块', toggle(settings.showThinking, (value) => { void patchSettings({ showThinking: value }) }), '显示「思考 3.4s」'),
-      field('自动播放', toggle(settings.autoPlay, (value) => { void patchSettings({ autoPlay: value }) }), '关掉就一轮一轮按'),
+      field('自动播放', toggle(autoPlayEnabled(), (value) => { void patchSettings({ autoPlay: value, waitForReading: !value }) }), '默认关闭：每轮结束后思考等待，点继续才推进'),
       field('真实路径', toggle(settings.useRealPaths, (value) => {
         void patchSettings({ useRealPaths: value }, '下一章生效')
       }), '工具调用引用工作区里真实存在的文件'),
@@ -1571,12 +1713,15 @@ html[data-dsh-lr-open] .dsh-lr-view {
       closeModal()
       model.open = false
       model.playing = false
+      model.loading = false
+      model.ended = false
       model.hydrated = false
       model.plan = null
       if (entry !== null) { try { entry.remove() } catch { /* noop */ } entry = null }
       if (view !== null) { try { view.remove() } catch { /* noop */ } view = null }
       if (toastWrap !== null) { try { toastWrap.remove() } catch { /* noop */ } toastWrap = null }
       streamEl = null
+      readingThinkEl = null
       const style = document.getElementById(STYLE_ID)
       if (style !== null) style.remove()
       bootState.running = false

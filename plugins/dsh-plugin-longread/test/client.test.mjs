@@ -133,6 +133,7 @@ async function boot(routes) {
 async function pump(dom, rounds) {
   for (let i = 0; i < (rounds ?? 14); i++) {
     dom.flush()
+    dom.flushMutations()
     await new Promise((resolve) => setImmediate(resolve))
   }
 }
@@ -150,7 +151,8 @@ test('挂载：侧栏多一个入口，会话列多一个面板容器，样式�
   const env = await boot()
   const entry = env.dom.html.querySelector('[data-dsh-lr-entry]')
   assert.ok(entry !== null)
-  assert.ok(entry.textContent.includes('长文'))
+  assert.equal(entry.querySelector('.dsh-lr-entry-label').textContent, '摸鱼会话')
+  assert.equal(entry.getAttribute('aria-label'), '摸鱼会话')
   const view = env.dom.html.querySelector('[data-dsh-lr-view]')
   assert.ok(view !== null, '面板容器要挂在会话列里')
   assert.equal(view.parentElement, env.column)
@@ -283,7 +285,7 @@ const PARAGRAPH_C = '陈九把那半页纸缝进他的衣领，说这不是武�
 
 test('自动播放：起一轮之后自己往下读，读到章末换章，分隔线伪装成上下文压缩', async () => {
   const state = structuredClone(STATE)
-  state.settings = { ...SETTINGS, autoPlay: true }
+  state.settings = { ...SETTINGS, autoPlay: true, waitForReading: false }
   const second = structuredClone(PLAN)
   second.chapterIndex = 1
   second.chapterTitle = '第二章 药铺的第九味'
@@ -520,5 +522,281 @@ test('书架每次打开都重新拉一次状态 —— 面板刚开、书架先
   const modal = await openShelf(env)
   assert.ok(hits >= 2, '书架打开时要再拉一次状态，实际拉了 ' + hits + ' 次')
   assert.ok(modal.textContent.includes('九阴真经'), '重新拉到的书要画出来：' + modal.textContent)
+})
+
+test('书架打开和关闭后 DOM 监听会收敛，不会反复改写相同的侧栏数字', async () => {
+  const env = await boot()
+  try {
+    await open(env)
+    assert.ok(env.dom.flushMutations() <= 2, '面板打开后的监听应能停止')
+    assert.equal(env.dom.html.querySelector('.dsh-lr-entry-stats').textContent, '1/2')
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const modal = await openShelf(env)
+      assert.ok(modal.textContent.includes('九阴真经'))
+      assert.ok(env.dom.flushMutations() <= 2, '打开书架不能形成监听循环')
+      assert.equal(env.dom.flushMutations(), 0, '没有新改动时不再触发回调')
+      modal.querySelectorAll('.dsh-lr-btn').find((button) => button.textContent === '✕').dispatch('click')
+      assert.ok(env.dom.flushMutations() <= 2, '关闭书架后仍可继续交互')
+      assert.equal(env.dom.html.querySelector('[data-dsh-lr-modal]'), null)
+    }
+  } finally {
+    env.dispose()
+  }
+})
+
+test('空书架补到有书后仍可响应，非空书籍数量不会触发无限监听', async () => {
+  let requests = 0
+  const env = await boot({
+    [PREFIX + '/state']: () => ({ ...structuredClone(STATE), books: requests++ === 0 ? [] : structuredClone(STATE.books) }),
+  })
+  try {
+    await open(env)
+    env.dom.flushMutations()
+    const modal = await openShelf(env)
+    assert.ok(modal.textContent.includes('九阴真经'))
+    assert.equal(env.dom.html.querySelector('.dsh-lr-entry-stats').textContent, '1')
+    assert.ok(env.dom.flushMutations() <= 2)
+    assert.equal(env.dom.flushMutations(), 0)
+  } finally {
+    env.dispose()
+  }
+})
+
+test('宿主重建侧栏后重新挂载一次，保留名称、数字且监听不循环', async () => {
+  const env = await boot()
+  try {
+    await open(env)
+    env.dom.flushMutations()
+    const originalEntry = env.dom.html.querySelector('[data-dsh-lr-entry]')
+    const replacement = new StubElement('div')
+    env.sidebar.firstElementChild.replaceWith(replacement)
+    assert.ok(env.dom.flushMutations() <= 3)
+    assert.equal(env.dom.html.querySelector('[data-dsh-lr-entry]'), originalEntry)
+    assert.equal(originalEntry.parentElement, replacement)
+    assert.equal(originalEntry.querySelector('.dsh-lr-entry-label').textContent, '摸鱼会话')
+    assert.equal(originalEntry.querySelector('.dsh-lr-entry-stats').textContent, '1/2')
+    assert.equal(env.dom.flushMutations(), 0)
+  } finally {
+    env.dispose()
+  }
+  assert.equal(env.dom.flushMutations(), 0, '卸载时应断开观察器')
+})
+
+async function pumpUntil(env, predicate, label, rounds = 140) {
+  for (let attempt = 0; attempt < rounds; attempt++) {
+    if (predicate()) return
+    await pump(env.dom, 1)
+  }
+  assert.fail('未等到：' + label)
+}
+
+function composerButton(env) {
+  return env.dom.html.querySelector('.dsh-lr-send')
+}
+
+test('默认每轮正文结束后思考等待，即使旧设置开启自动播放也不自行推进', async () => {
+  const state = structuredClone(STATE)
+  state.settings.autoPlay = true
+  const env = await boot({ [PREFIX + '/state']: state })
+  try {
+    await open(env)
+    env.dom.html.querySelector('.dsh-lr-input').dispatch('keydown', { key: 'Enter' })
+    await pump(env.dom, 90)
+    assert.equal(env.dom.html.querySelectorAll('.dsh-lr-p').length, 1)
+    assert.equal(env.dom.html.querySelector('.dsh-lr-p').textContent, PARAGRAPH_A)
+    assert.equal(env.dom.html.querySelector('[data-dsh-lr-thinking]').textContent.includes('思考中'), true)
+    assert.equal(composerButton(env).textContent, '继续')
+    const callsBefore = env.dom.calls.length
+    const waitNode = env.dom.html.querySelector('[data-dsh-lr-thinking]')
+    await pump(env.dom, 90)
+    assert.equal(env.dom.calls.length, callsBefore, '等待时不轮询、不调用模型')
+    assert.equal(env.dom.html.querySelector('[data-dsh-lr-thinking]'), waitNode)
+    assert.equal(env.dom.html.querySelectorAll('.dsh-lr-p').length, 1)
+    composerButton(env).dispatch('click')
+    await pump(env.dom, 60)
+    assert.deepEqual(env.dom.html.querySelectorAll('.dsh-lr-p').map((node) => node.textContent), [PARAGRAPH_A, PARAGRAPH_B])
+    assert.equal(env.dom.html.querySelectorAll('[data-dsh-lr-thinking]').length, 1)
+    assert.equal(env.dom.calls.filter((call) => call.path.includes('/plan?chapter=1')).length, 0)
+  } finally {
+    env.dispose()
+  }
+})
+
+test('停止打字会冻结已显示正文，继续从原处恢复而不重复段落或提前保存进度', async () => {
+  const state = structuredClone(STATE)
+  state.settings.speed = 6
+  const plan = structuredClone(PLAN)
+  plan.turns[0].thinking = null
+  plan.turns[0].calls = []
+  const env = await boot({ [PREFIX + '/state']: state, [PREFIX + '/books/bk1/plan']: plan })
+  try {
+    await open(env)
+    env.dom.html.querySelector('.dsh-lr-input').dispatch('keydown', { key: 'Enter' })
+    await pumpUntil(env, () => (env.dom.html.querySelector('.dsh-lr-p')?.textContent.length ?? 0) >= 2, '开始显示正文')
+    const paragraph = env.dom.html.querySelector('.dsh-lr-p')
+    assert.ok(paragraph.textContent.length < PARAGRAPH_A.length)
+    env.dom.html.querySelector('.dsh-lr-stop').dispatch('click')
+    const stoppedText = paragraph.textContent
+    const scroller = env.dom.html.querySelector('.dsh-lr-scroll')
+    scroller.scrollTop = 17
+    await pump(env.dom, 120)
+    assert.equal(paragraph.textContent, stoppedText)
+    assert.equal(scroller.scrollTop, 17)
+    assert.equal(env.dom.calls.filter((call) => call.path === PREFIX + '/progress').length, 0)
+    assert.ok(env.dom.html.querySelector('[data-dsh-lr-thinking]'))
+    assert.equal(composerButton(env).textContent, '继续')
+    composerButton(env).dispatch('click')
+    await pumpUntil(env, () => paragraph.textContent === PARAGRAPH_A, '原位恢复到完整正文')
+    await pump(env.dom, 12)
+    assert.equal(env.dom.html.querySelectorAll('.dsh-lr-p').length, 1)
+    assert.equal(env.dom.html.querySelectorAll('.dsh-lr-user').length, 1)
+    assert.equal(env.dom.calls.filter((call) => call.path === PREFIX + '/progress').length, 1)
+    assert.ok(env.dom.html.querySelector('[data-dsh-lr-thinking]'))
+  } finally {
+    env.dispose()
+  }
+})
+
+test('/stop 暂停正在运行的假工具，/resume 恢复且不重复工具行', async () => {
+  const env = await boot()
+  try {
+    await open(env)
+    const input = env.dom.html.querySelector('.dsh-lr-input')
+    input.dispatch('keydown', { key: 'Enter' })
+    await pumpUntil(env, () => env.dom.html.querySelector('[data-dsh-lr-call]') !== null, '工具开始运行')
+    const call = env.dom.html.querySelector('[data-dsh-lr-call]')
+    assert.equal(call.getAttribute('data-status'), 'run')
+    input.value = '/stop'
+    input.dispatch('keydown', { key: 'Enter' })
+    await pump(env.dom, 40)
+    assert.equal(call.getAttribute('data-status'), 'run')
+    assert.equal(env.dom.html.querySelectorAll('.dsh-lr-p').length, 0)
+    input.value = '/resume'
+    input.dispatch('keydown', { key: 'Enter' })
+    env.dom.html.querySelector('.dsh-lr-stop').dispatch('click')
+    await pump(env.dom, 12)
+    assert.equal(call.getAttribute('data-status'), 'run', '立即再次停止仍保持原工具状态')
+    input.value = '/resume'
+    input.dispatch('keydown', { key: 'Enter' })
+    await pump(env.dom, 60)
+    assert.equal(env.dom.html.querySelector('[data-dsh-lr-call]'), call)
+    assert.equal(call.getAttribute('data-status'), 'ok')
+    assert.equal(env.dom.html.querySelectorAll('[data-dsh-lr-call]').length, 2)
+    assert.equal(env.dom.html.querySelector('.dsh-lr-p').textContent, PARAGRAPH_A)
+    assert.equal(env.dom.html.querySelectorAll('.dsh-lr-user').length, 1)
+  } finally {
+    env.dispose()
+  }
+})
+
+test('章末等待用户继续再进入下一章，书末等待读完再结束', async () => {
+  const second = structuredClone(PLAN)
+  second.chapterIndex = 1
+  second.turnCount = 1
+  second.turns = [{ index: 0, prompt: '继续', thinking: null, calls: [], paragraphs: [PARAGRAPH_C], chars: PARAGRAPH_C.length }]
+  const env = await boot({ [PREFIX + '/books/bk1/plan?chapter=1']: second })
+  try {
+    await open(env)
+    env.dom.html.querySelector('.dsh-lr-input').dispatch('keydown', { key: 'Enter' })
+    await pump(env.dom, 35)
+    composerButton(env).dispatch('click')
+    await pump(env.dom, 35)
+    assert.equal(env.dom.calls.filter((call) => call.path.includes('/plan?chapter=1')).length, 0)
+    composerButton(env).dispatch('click')
+    await pump(env.dom, 35)
+    assert.ok(env.dom.html.querySelectorAll('.dsh-lr-p').some((node) => node.textContent === PARAGRAPH_C))
+    assert.ok(env.dom.html.querySelector('[data-dsh-lr-thinking]'))
+    assert.equal(env.dom.html.querySelectorAll('.dsh-lr-divider').some((node) => node.textContent.includes('任务完成')), false)
+    composerButton(env).dispatch('click')
+    await pump(env.dom, 8)
+    assert.equal(env.dom.html.querySelector('[data-dsh-lr-thinking]'), null)
+    assert.equal(env.dom.html.querySelectorAll('.dsh-lr-divider').filter((node) => node.textContent.includes('任务完成')).length, 1)
+  } finally {
+    env.dispose()
+  }
+})
+
+test('暂停后换章或卸载会取消等待，不会让旧轮次在后台恢复', async () => {
+  const env = await boot()
+  try {
+    await open(env)
+    const input = env.dom.html.querySelector('.dsh-lr-input')
+    input.dispatch('keydown', { key: 'Enter' })
+    env.dom.html.querySelector('.dsh-lr-stop').dispatch('click')
+    await pump(env.dom, 8)
+    input.value = '/goto 2'
+    input.dispatch('keydown', { key: 'Enter' })
+    await pump(env.dom, 12)
+    assert.equal(env.dom.html.querySelector('[data-dsh-lr-thinking]'), null)
+    assert.equal(env.dom.html.querySelectorAll('.dsh-lr-user').length, 0)
+    input.dispatch('keydown', { key: 'Enter' })
+    env.dom.html.querySelector('.dsh-lr-stop').dispatch('click')
+    await pump(env.dom, 8)
+  } finally {
+    env.dispose()
+  }
+  const nodesAfterDispose = env.dom.html.descendants().length
+  await pump(env.dom, 60)
+  assert.equal(env.dom.html.descendants().length, nodesAfterDispose)
+  assert.equal(env.dom.html.querySelector('[data-dsh-lr-thinking]'), null)
+})
+
+test('连续播放的轮间空档也可停止，排队的下一轮不会抢先恢复', async () => {
+  const state = structuredClone(STATE)
+  state.settings = { ...SETTINGS, autoPlay: true, waitForReading: false }
+  const env = await boot({ [PREFIX + '/state']: state })
+  try {
+    await open(env)
+    env.dom.html.querySelector('.dsh-lr-input').dispatch('keydown', { key: 'Enter' })
+    await pumpUntil(env, () => env.dom.html.querySelector('.dsh-lr-p')?.textContent === PARAGRAPH_A && composerButton(env).textContent === '发送', '连续播放的轮间空档')
+    env.dom.html.querySelector('.dsh-lr-stop').dispatch('click')
+    await pump(env.dom, 90)
+    assert.equal(env.dom.html.querySelectorAll('.dsh-lr-p').length, 1)
+    assert.equal(composerButton(env).textContent, '继续')
+    assert.ok(env.dom.html.querySelector('[data-dsh-lr-thinking]'))
+  } finally {
+    env.dispose()
+  }
+})
+
+test('思考等待时重新打开书架不推进正文，观察器保持收敛', async () => {
+  const env = await boot()
+  try {
+    await open(env)
+    env.dom.html.querySelector('.dsh-lr-input').dispatch('keydown', { key: 'Enter' })
+    await pump(env.dom, 30)
+    const indicator = env.dom.html.querySelector('[data-dsh-lr-thinking]')
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const shelf = await openShelf(env)
+      shelf.querySelectorAll('.dsh-lr-btn').find((button) => button.textContent === '✕').dispatch('click')
+      await pump(env.dom, 20)
+      assert.equal(env.dom.html.querySelector('[data-dsh-lr-thinking]'), indicator)
+      assert.equal(env.dom.html.querySelectorAll('.dsh-lr-p').length, 1)
+      assert.equal(env.dom.flushMutations(), 0)
+    }
+  } finally {
+    env.dispose()
+  }
+})
+
+test('暂停中使用老板键取消未完轮次，重新打开后不会重复已显示的半轮', async () => {
+  const env = await boot()
+  try {
+    await open(env)
+    const input = env.dom.html.querySelector('.dsh-lr-input')
+    input.dispatch('keydown', { key: 'Enter' })
+    env.dom.html.querySelector('.dsh-lr-stop').dispatch('click')
+    await pump(env.dom, 6)
+    input.dispatch('keydown', { key: 'Escape' })
+    await pump(env.dom, 6)
+    assert.equal(env.dom.html.querySelector('[data-dsh-lr-thinking]'), null)
+    await open(env)
+    input.dispatch('keydown', { key: 'Enter' })
+    await pump(env.dom, 40)
+    assert.equal(env.dom.html.querySelectorAll('.dsh-lr-user').length, 1)
+    assert.equal(env.dom.html.querySelector('.dsh-lr-p').textContent, PARAGRAPH_A)
+  } finally {
+    env.dispose()
+  }
 })
 

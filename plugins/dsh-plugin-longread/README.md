@@ -1,4 +1,4 @@
-# dsh-plugin-longread（摸鱼大咖）
+# dsh-plugin-longread（摸鱼会话）
 
 把一本小说读成一场 dsh 会话：上面是一句你自己敲的需求，中间是几条工具调用，下面是一段正在流式输出的「回复」——那段回复其实是小说正文。远看是在 vibe coding，近看在看书。
 
@@ -58,7 +58,11 @@
 - `Esc` **收起面板**——也就是那个「老板键」，正在打的字立刻停住
 - 输入框里敲什么都会变成那一轮的用户消息，所以随便敲
 
-斜杠命令（在输入框里）：`/lib` 书架 · `/toc` 目录 · `/next` · `/prev` · `/goto N` · `/speed N`（字/秒，600 = 立即显示）· `/font N` · `/persona refactor|debug|review|docs` · `/density off|low|medium|high` · `/auto` · `/stop` · `/help`
+斜杠命令（在输入框里）：`/lib` 书架 · `/toc` 目录 · `/next` · `/prev` · `/goto N` · `/speed N`（字/秒，600 = 立即显示）· `/font N` · `/persona refactor|debug|review|docs` · `/density off|low|medium|high` · `/auto` · `/stop` · `/resume` · `/help`
+
+## 摸鱼节奏：默认逐轮等待
+
+默认情况下每轮正文打完会停在「思考中…」——远看是模型在想，其实是在给你留阅读时间；读完按「继续」（或 `Enter`）才推进下一轮。输出过程中随时可以 `/stop` 或点停止：已显示的字原地冻结，`/resume` 从断点接着演，不重复段落、不提前记进度。想要老的一口气连播行为，在设置里开「自动播放」，或输入 `/auto`。
 
 ## 可调的分寸
 
@@ -127,7 +131,7 @@ dsh plugin --profile <profile> add link:plugins/dsh-plugin-longread
 dsh plugin --profile <profile> add dsh-plugin-longread
 ```
 
-重启 `dsh web` 后侧栏出现「长文」入口。
+重启 `dsh web` 后侧栏出现「摸鱼会话」入口。包名和数据路径仍为 `dsh-plugin-longread`，已有书籍与阅读进度不变。
 
 ## 安全须知
 

@@ -63,8 +63,9 @@ export function defaultSettings() {
     useRealPaths: true,
     /** Render the fake reasoning block. */
     showThinking: true,
-    /** Stream on without waiting for a keypress. */
-    autoPlay: true,
+    /** Stream on without waiting for a keypress. Default off: pause after each turn for reading. */
+    autoPlay: false,
+    waitForReading: true,
     /** Prose font scale, percent. */
     fontScale: 100,
   }
@@ -90,7 +91,7 @@ export function sanitizeSettings(patch, base) {
   if ('persona' in input) {
     next.persona = PERSONAS.includes(input.persona) ? input.persona : current.persona
   }
-  for (const flag of ['useRealPaths', 'showThinking', 'autoPlay']) {
+  for (const flag of ['useRealPaths', 'showThinking', 'autoPlay', 'waitForReading']) {
     if (flag in input) next[flag] = input[flag] === true
   }
   return next

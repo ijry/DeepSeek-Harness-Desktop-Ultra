@@ -79,6 +79,16 @@ class ClassList {
   }
 }
 
+function queueChildMutation(target) {
+  for (let node = target; node !== null; node = node.parentElement) {
+    for (const observer of node.mutationObservers) {
+      if (observer.options.childList && (node === target || observer.options.subtree)) {
+        observer.records.push({ type: 'childList', target })
+      }
+    }
+  }
+}
+
 export class StubElement {
   constructor(tagName) {
     this.tagName = String(tagName).toUpperCase()
@@ -87,6 +97,7 @@ export class StubElement {
     this.attributes = new Map()
     this.style = new Proxy({}, { set: () => true, get: () => '' })
     this.listeners = new Map()
+    this.mutationObservers = new Set()
     this._class = ''
     this._text = ''
     this.value = ''
@@ -116,9 +127,11 @@ export class StubElement {
     return this.children.length === 0 ? this._text : this.children.map((c) => c.textContent).join('')
   }
   set textContent(value) {
+    const hadContent = this.children.length > 0 || this._text.length > 0
     for (const child of this.children) child.parentElement = null
     this.children = []
     this._text = String(value)
+    if (hadContent || this._text.length > 0) queueChildMutation(this)
   }
   get firstElementChild() {
     return this.children[0] ?? null
@@ -140,16 +153,20 @@ export class StubElement {
       node.parentElement = this
       this.children.push(node)
     }
+    if (nodes.length > 0) queueChildMutation(this)
   }
   prepend(node) {
     node.parentElement = this
     this.children.unshift(node)
+    queueChildMutation(this)
   }
   insertBefore(node, anchor) {
+    if (node.parentElement !== null) node.parentElement.remove(node)
     const index = this.children.indexOf(anchor)
     node.parentElement = this
     if (index < 0) this.children.push(node)
     else this.children.splice(index, 0, node)
+    queueChildMutation(this)
   }
   remove(child) {
     if (child === undefined) {
@@ -160,6 +177,7 @@ export class StubElement {
     if (index >= 0) {
       this.children.splice(index, 1)
       child.parentElement = null
+      queueChildMutation(this)
     }
   }
   replaceWith(other) {
@@ -169,6 +187,7 @@ export class StubElement {
     parent.children.splice(index, 1, other)
     other.parentElement = parent
     this.parentElement = null
+    queueChildMutation(parent)
   }
   get isConnected() {
     let node = this
@@ -258,6 +277,32 @@ export function createStubDom(routes = {}) {
   const store = new Map()
   const calls = []
   const timers = []
+  const observers = new Set()
+
+  class StubMutationObserver {
+    constructor(callback) {
+      this.callback = callback
+      this.target = null
+      this.records = []
+      this.options = {}
+    }
+    observe(target, options) {
+      this.disconnect()
+      this.target = target
+      this.options = options
+      target.mutationObservers.add(this)
+      observers.add(this)
+    }
+    disconnect() {
+      this.target?.mutationObservers.delete(this)
+      this.target = null
+      this.records = []
+      observers.delete(this)
+    }
+    takeRecords() {
+      return this.records.splice(0)
+    }
+  }
 
   const document = {
     documentElement: html,
@@ -341,6 +386,18 @@ export function createStubDom(routes = {}) {
     body,
     calls,
     routes,
+    flushMutations(limit = 25) {
+      let rounds = 0
+      while ([...observers].some((observer) => observer.records.length > 0)) {
+        if (rounds >= limit) throw new Error(`MutationObserver callbacks did not settle after ${limit} rounds`)
+        rounds += 1
+        const pending = [...observers].map((observer) => [observer, observer.takeRecords()])
+        for (const [observer, records] of pending) {
+          if (records.length > 0 && observers.has(observer)) observer.callback(records, observer)
+        }
+      }
+      return rounds
+    },
     /** Run every queued animation frame (the client coalesces paints into one). */
     flush() {
       while (timers.length > 0) timers.splice(0).forEach((fn) => fn())
@@ -349,10 +406,7 @@ export function createStubDom(routes = {}) {
       window,
       document,
       fetch,
-      MutationObserver: class {
-        observe() {}
-        disconnect() {}
-      },
+      MutationObserver: StubMutationObserver,
       CustomEvent: class {
         constructor(type, init = {}) {
           this.type = type

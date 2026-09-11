@@ -28,6 +28,8 @@ test('缺文件时从空开始，不抛', async () => {
   const snapshot = store.snapshot()
   assert.deepEqual(snapshot.books, [])
   assert.equal(snapshot.revision, 0)
+  assert.equal(snapshot.settings.autoPlay, false)
+  assert.equal(snapshot.settings.waitForReading, true)
 })
 
 test('addBook 先落正文再提交元数据，两边都能读回来', async () => {
@@ -81,6 +83,19 @@ test('设置只接受合法值，非法值退回原值', async () => {
   assert.equal(saved.toolDensity, 'high')
   assert.equal(saved.autoPlay, false)
   assert.equal(store.settings.toolDensity, 'high', '写进账本，不只是回显')
+})
+
+test('旧的自动播放设置默认逐轮等待，显式切换后能持久保存', async () => {
+  const { store, dir } = await freshStore()
+  await writeFile(join(dir, 'library.json'), JSON.stringify({ settings: { autoPlay: true }, books: [], progress: {} }))
+  await store.load()
+  assert.equal(store.settings.waitForReading, true)
+  const saved = await updateSettings(store, { autoPlay: true, waitForReading: false })
+  assert.equal(saved.waitForReading, false)
+  const restored = new LibraryStore({ file: join(dir, 'library.json'), textDir: join(dir, 'books') })
+  await restored.load()
+  assert.equal(restored.settings.waitForReading, false)
+  assert.equal((await updateSettings(restored, { waitForReading: true })).waitForReading, true)
 })
 
 test('示例小说只种一次，删掉之后也不会自己长回来', async () => {
