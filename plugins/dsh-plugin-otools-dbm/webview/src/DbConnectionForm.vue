@@ -632,6 +632,14 @@ const handleSubmit = async () => {
   padding-right: 4px;
 }
 
+.db-connection-form :deep(.el-form-item__label) {
+  height: auto;
+  min-height: 32px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  line-height: 20px;
+}
+
 .host-row {
   display: flex;
   gap: 10px;

@@ -1072,6 +1072,8 @@ defineExpose({ handleOpenTable, handleOpenView, handleOpenProcedure, handleCreat
 }
 
 .dbm-toolbar {
+  overflow-x: auto;
+  min-width: 0;
   height: 55px;
   display: flex;
   align-items: stretch;

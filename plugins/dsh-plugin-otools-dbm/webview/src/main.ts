@@ -15,6 +15,9 @@ import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
+// Tailwind-shaped utility tokens (panel templates use bare class names; the
+// webview has no Tailwind runtime — see utilities.css for the full list).
+import './utilities.css'
 
 import App from './App.vue'
 import { applyLocaleSettings } from './platform/i18n'

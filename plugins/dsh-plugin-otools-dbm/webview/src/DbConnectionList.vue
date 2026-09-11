@@ -3,9 +3,9 @@
     class="connection-list-panel"
     :style="{ '--connection-item-padding-y': `${connectionItemVerticalPadding}px` }"
   >
-      <div class="list-header p-2 flex justify-between items-center">
+      <div class="list-header">
         <div class="list-header-copy">
-          <h3 class="list-title text-lg font-semibold mb-0 flex items-center">SharkDBM</h3>
+          <h3 class="list-title">SharkDBM</h3>
           <div class="list-subtitle">{{ t('subtitle') }}</div>
         </div>
       <el-button 
@@ -14,7 +14,9 @@
         @click="emit('add-connection')"
         :icon="Plus"
         circle
-        class="add-btn w-18px! h-18px p-2px!"
+        class="add-btn"
+        :aria-label="t('add')"
+        :title="t('add')"
       >
       </el-button>
     </div>
@@ -978,6 +980,9 @@ defineExpose({
 }
 
 .list-header {
+  padding: 16px 14px 12px;
+  min-height: 72px;
+  box-sizing: border-box;
   background-color: var(--toolbar-bg-color);
   display: flex;
   justify-content: space-between;
@@ -993,6 +998,9 @@ defineExpose({
 }
 
 .list-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
   line-height: 1.15;
   color: var(--el-text-color-primary);
 }
@@ -1454,6 +1462,10 @@ defineExpose({
 }
 
 .add-btn {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1461,6 +1473,7 @@ defineExpose({
 }
 
 .task-panel-button {
+  padding: 10px 14px;
   border-top: 1px solid var(--layout-border-color);
   background-color: var(--toolbar-bg-color);
 }

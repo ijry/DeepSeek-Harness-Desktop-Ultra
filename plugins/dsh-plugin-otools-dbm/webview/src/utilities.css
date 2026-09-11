@@ -1,0 +1,79 @@
+/* Tailwind-shaped utility classes that the panel templates still rely on.
+ *
+ * The dbm webview never pulled in Tailwind (no tailwind.config, no PostCSS
+ * plugin in vite.config.ts). Several Vue templates still use bare Tailwind
+ * class names — the most recent pass through DbConnectionList replaced them
+ * with scoped CSS, but a sweep found ~25 leftover utility tokens across nine
+ * other .vue files. Re-naming them in every template is invasive; the
+ * narrower fix is to give those tokens the same flat CSS behaviour Tailwind
+ * would have generated, in a single shared sheet loaded before the
+ * components mount.
+ *
+ * Only the tokens actually used in this panel are defined — adding a
+ * missing one is two lines. Width / height / color utilities are NOT
+ * provided: the panel relies on Element Plus for them and we don't want to
+ * silently change the look of arbitrary values.
+ */
+
+/* layout */
+.flex         { display: flex; }
+.flex-col     { display: flex; flex-direction: column; }
+.flex-1       { flex: 1 1 0%; min-width: 0; min-height: 0; }
+.min-h-0      { min-height: 0; }
+.overflow-auto { overflow: auto; }
+
+/* alignment */
+.items-center  { align-items: center; }
+.items-start   { align-items: flex-start; }
+.items-end     { align-items: flex-end; }
+.items-baseline{ align-items: baseline; }
+.items-stretch { align-items: stretch; }
+
+.justify-between{ justify-content: space-between; }
+.justify-center { justify-content: center; }
+.justify-end    { justify-content: flex-end; }
+.justify-start  { justify-content: flex-start; }
+
+/* gaps */
+.gap-1   { gap: 4px; }
+.gap-2   { gap: 8px; }
+.gap-3   { gap: 12px; }
+.gap-4   { gap: 16px; }
+.gap-10px { gap: 10px; }
+
+/* padding — 1/2/3/4 follow Tailwind's 4px scale; 10px variants come from
+ * the older p-10px / p-t-10px that the source used directly. */
+.p-1   { padding: 4px; }
+.p-2   { padding: 8px; }
+.p-3   { padding: 12px; }
+.p-4   { padding: 16px; }
+.p-10px { padding: 10px; }
+.p-t-10px { padding-top: 10px; }
+.p-b-10px { padding-bottom: 10px; }
+.p-l-10px { padding-left: 10px; }
+.p-r-10px { padding-right: 10px; }
+
+.pt-1  { padding-top: 4px; }
+.pt-2  { padding-top: 8px; }
+.pb-1  { padding-bottom: 4px; }
+.pb-2  { padding-bottom: 8px; }
+.pl-1  { padding-left: 4px; }
+.pl-2  { padding-left: 8px; }
+.pr-1  { padding-right: 4px; }
+.pr-2  { padding-right: 8px; }
+
+/* margin */
+.m-1   { margin: 4px; }
+.m-2   { margin: 8px; }
+.mt-1  { margin-top: 4px; }
+.mt-2  { margin-top: 8px; }
+.mb-1  { margin-bottom: 4px; }
+.mb-2  { margin-bottom: 8px; }
+.mb-4  { margin-bottom: 16px; }
+.mb-10px { margin-bottom: 10px; }
+.mr-10px { margin-right: 10px; }
+.ml-10px { margin-left: 10px; }
+.ml-auto { margin-left: auto; }
+.mr-auto { margin-right: auto; }
+.mt-auto { margin-top: auto; }
+.mb-auto { margin-bottom: auto; }

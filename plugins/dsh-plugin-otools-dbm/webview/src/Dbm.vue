@@ -582,9 +582,9 @@ const syncOperationPanelWidth = () => {
 const connectionDrawerSize = computed(() => {
   const width = Math.round(operationPanelWidth.value);
   if (width > 0) {
-    return `${width}px`;
+    return `min(100%, max(640px, ${width}px))`;
   }
-  return '70%';
+  return 'min(100%, max(640px, 70%))';
 });
 
 const loadDbmState = async () => {
@@ -1408,19 +1408,23 @@ watch(
 
 <style scoped>
 .dbm-container {
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background-color: var(--el-bg-color);
 }
 
 .dbm-layout {
+  min-height: 0;
+  min-width: 0;
   flex: 1;
   display: flex;
   overflow: hidden;
 }
 
 .connection-panel {
+  flex-shrink: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -1428,6 +1432,7 @@ watch(
 }
 
 .operation-panel {
+  flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
