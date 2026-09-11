@@ -22,6 +22,7 @@ import {
 } from './host/protocol-text.js'
 import { dshHomePath } from './host/sdk.js'
 import { TaskStore } from './host/store.js'
+import { createLauncher } from './host/launcher.js'
 import { registerTaskboardRoutes } from './host/routes.js'
 import { registerTaskboardTools, workspaceFace } from './host/tools.js'
 import { hostLang } from './shared/lang.js'
@@ -76,6 +77,7 @@ export function apply(ctx) {
         store,
         workspaces: workspaceFace(wsCtx.workspaceRegistry),
         now,
+        launcher: () => launcherBox.current,
       })
       // cordis inject semantics: the callback's return value is the disposer.
       return () => disposeRoutes?.()

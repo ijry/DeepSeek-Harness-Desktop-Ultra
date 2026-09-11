@@ -23,6 +23,7 @@ import {
   userCanMove,
 } from '../shared/protocol.js'
 import { ERR, ToolError, liveTaskAt, versionGuard } from './tools.js'
+import { LAUNCHABLE_STATUSES, buildLaunchMessage, sessionIdOf } from './launcher.js'
 import { createEventSocket } from './socket.js'
 
 /** Route prefix on the shared DSH webserver (same origin as the GUI). */
@@ -62,7 +63,8 @@ function statusOf(code) {
     : code === 'not_found' ? 404
       : code === 'version_conflict' ? 409
         : code === 'forbidden' ? 403
-          : 500
+          : code === 'unavailable' ? 503
+            : 500
 }
 
 /** { ok: false } writer. */
@@ -120,7 +122,9 @@ function envelopeOfError(error) {
 /**
  * Register the board routes (JSON prefix + exact SSE stream) on a webServer
  * context. Returns the disposer.
- * @param options - { store, workspaces, now }
+ * @param options - { store, workspaces, now, launcher }
+ *   `launcher` (from ctx.apiProxy) is either the `{ createSession, prompt }`
+ *   surface or a getter returning it; absent when the composition has none.
  */
 export function registerTaskboardRoutes(ctx, options) {
   let shared
@@ -340,6 +344,56 @@ export function registerTaskboardRoutes(ctx, options) {
               return [task]
             })
             ok(res, { ...store.get(id) })
+            return
+          }
+
+          // launch: turn a todo/queued task into a real DSH session — the
+          // dsh apiProxy creates the session and queues the task's prompt as
+          // the first message; a comment on the task records the session id.
+          // Without the apiProxy service (or before it injects) this fails
+          // loudly with `unavailable` instead of pretending to work.
+          if (action === 'launch') {
+            const launcher = typeof options.launcher === 'function' ? options.launcher() : options.launcher
+            if (launcher === undefined || launcher === null) {
+              throw new ToolError(ERR.unavailable,
+                'launch needs the dsh apiProxy service, which this composition does not provide')
+            }
+            const preflight = store.get(id)
+            if (!LAUNCHABLE_STATUSES.includes(preflight.status)) {
+              throw new ToolError(ERR.invalidTransition,
+                `only a todo/queued task can launch a session; task ${id} is ${preflight.status}`)
+            }
+            const sessionPayload = {}
+            if (typeof preflight.workspaceId === 'string' && preflight.workspaceId !== '') {
+              sessionPayload.workspaceId = preflight.workspaceId
+            }
+            const created = await launcher.createSession(sessionPayload)
+            const sessionId = sessionIdOf(created)
+            if (sessionId === undefined) {
+              throw new ToolError(ERR.internal, 'dsh did not return a session id for the launched task')
+            }
+            await launcher.prompt({
+              sessionId,
+              mode: 'queue',
+              content: [{ type: 'text', text: buildLaunchMessage(preflight) }],
+            })
+            await store.mutate('task-launched', (ledger) => {
+              const task = liveTaskAt(ledger, id)
+              task.comments = task.comments ?? []
+              task.comments.push({
+                id: newCommentId(),
+                body: hostLang() === 'en'
+                  ? `Launched DSH session ${sessionId} for this task.`
+                  : `已发起 DSH 会话执行此任务（session ${sessionId}）。`,
+                createdAt: now(),
+                actor,
+              })
+              task.version += 1
+              task.updatedAt = now()
+              task.updatedBy = actor
+              return [task]
+            })
+            ok(res, { sessionId, taskId: id }, 201)
             return
           }
 

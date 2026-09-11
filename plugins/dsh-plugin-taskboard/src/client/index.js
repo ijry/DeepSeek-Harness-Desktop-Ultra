@@ -116,6 +116,7 @@
       'detail.kvCreated': '创建',
       'detail.noNotes': '暂无备注',
       'detail.edit': '编辑',
+      'detail.launch': '发起会话',
       'detail.accept': '✓ 通过验收',
       'detail.sendBack': '退回待办',
       'detail.reopen': '重新打开',
@@ -219,6 +220,8 @@
       'toast.taskDeleted': 'Task deleted',
       'toast.noteEmpty': 'Write a note first',
       'toast.noteSent': 'Note sent',
+      'toast.launched': (sid) => 'DSH session started' + (sid === '' ? '' : ' ' + sid),
+      'toast.launched': (sid) => 'DSH session started' + (sid === '' ? '' : ' ' + sid),
       'confirm.sendBack': 'Send back to todo? The task returns to the To do column and the claim is released.',
       'confirm.delete': 'Delete this task? This cannot be undone.',
       'action.accept': 'Accept',
@@ -457,7 +460,8 @@
 }
 .dsh-cgtb-entry:hover { background: var(--dsw-hover, var(--cgtb-hover, rgba(128,128,128,.12))); color: var(--dsw-text-primary, var(--cgtb-text, inherit)); }
 .dsh-cgtb-entry[data-active="true"] { background: var(--dsw-active, var(--cgtb-active, rgba(128,128,128,.18))); color: var(--dsw-text-primary, var(--cgtb-text, inherit)); font-weight: 500; }
-.dsh-cgtb-entry-icon { display: inline-flex; flex: none; color: var(--cgtb-st-todo, #5b8cff); }
+.dsh-cgtb-entry-icon { display: inline-flex; flex: none; color: inherit; filter: grayscale(1); opacity: .85; }
+.dsh-cgtb-entry:hover .dsh-cgtb-entry-icon, .dsh-cgtb-entry:focus-visible .dsh-cgtb-entry-icon { color: var(--cgtb-st-todo, #5b8cff); filter: none; opacity: 1; }
 .dsh-cgtb-entry-label { flex: none; }
 .dsh-cgtb-entry-stats { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; line-height: 1; color: var(--cgtb-text-3, gray); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dsh-cgtb-entry-badge { color: var(--cgtb-st-todo, #5b8cff); }
@@ -1417,6 +1421,11 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       const editBtn = el('button', { class: 'dsh-cgtb-btn', type: 'button' }, t('detail.edit'))
       editBtn.addEventListener('click', () => { void editTask() })
       frame.foot.append(editBtn)
+      if (current === 'todo' || current === 'queued') {
+        const launchBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'primary', type: 'button' }, t('detail.launch'))
+        launchBtn.addEventListener('click', () => { void launchTask() })
+        frame.foot.append(launchBtn)
+      }
       if (current === 'review') {
         const acceptBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'ok', type: 'button' }, t('detail.accept'))
         acceptBtn.addEventListener('click', () => {
@@ -1511,6 +1520,27 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
         record = updated
         renderAll()
       })
+    }
+
+    /** 发起会话：让 dsh 为这个任务开一场真实会话并把执行 prompt 排进去。 */
+    async function launchTask() {
+      if (record === null || busy) return
+      busy = true
+      setButtonsEnabled(false)
+      sendBtn.disabled = true
+      try {
+        const result = await api.launch(id, { ifVersion: record.version })
+        const raw = result !== null && typeof result === 'object' ? String(result.sessionId ?? '') : ''
+        const sid = raw.length > 12 ? raw.slice(0, 12) + '…' : raw
+        toast(t('toast.launched', sid), 'success')
+        await syncFull({ silent: true })
+      } catch (error) {
+        toast(friendlyWriteError(t('action.launchTask'), error))
+      } finally {
+        busy = false
+        sendBtn.disabled = false
+        if (!closedRef.current) renderAll()
+      }
     }
 
     async function rejectTask() {

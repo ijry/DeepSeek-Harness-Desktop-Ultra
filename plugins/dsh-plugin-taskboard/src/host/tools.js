@@ -100,6 +100,7 @@ export const ERR = {
   notFound: 'not_found',
   versionConflict: 'version_conflict',
   forbidden: 'forbidden',
+  unavailable: 'unavailable',
   internal: 'internal',
 }
 
