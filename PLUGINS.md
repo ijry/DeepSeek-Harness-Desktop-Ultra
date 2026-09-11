@@ -186,6 +186,7 @@ cat ~/.dsh/profiles/web/package.json
 
 - `0.1.1-rc.2` ✓
 - `0.1.2-alpha.2` ✓（canvas 待验证）
+- `0.1.5-rc.1` ✓（插件级测试全部通过；桌面外壳锁定此版本后**真机 GUI 冒烟待做**）
 
 package.json 的 `dsh.compatibility.dshReleases` 字段记录了详细兼容性。
 

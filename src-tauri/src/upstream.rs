@@ -10,12 +10,14 @@
 /// 锁定的 `@deepseek-ai/dsh` 版本。
 ///
 /// 升级步骤：
-/// 1. 改这个常量
-/// 2. `cargo test -p dsh-desktop-ultra`（校验版本号格式）
-/// 3. 构建并冒烟测试
+/// 1. 跑完每个内置插件的测试，把结论写进插件 `dsh.compatibility.dshReleases`
+/// 2. 改这个常量
+/// 3. `cargo test -p dsh-desktop-ultra`（校验版本号格式 + 兼容性声明守卫）
+/// 4. 构建并冒烟测试
 ///
-/// 当前锁定的是最新的 rc 版本。如需切换到 0.1.2-alpha 分支,改成 `"0.1.2-rc.1"`。
-pub const DSH_VERSION: &str = "0.1.1-rc.2";
+/// 当前锁定的是 npm `latest` 标签指向的 rc 版本（2026-09 查询）。`next`
+/// 标签（0.1.5-rc.2）更新但未进 latest，等上游转正再跟。
+pub const DSH_VERSION: &str = "0.1.5-rc.1";
 
 /// 官方 npm 包名。
 pub const DSH_PACKAGE: &str = "@deepseek-ai/dsh";
