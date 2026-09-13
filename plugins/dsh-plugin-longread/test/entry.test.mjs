@@ -49,8 +49,8 @@ test('导出的是命名空间插件：name / inject / apply，没有 default', 
   assert.deepEqual(plugin.inject, [])
   assert.equal(typeof plugin.apply, 'function')
   assert.equal('default' in plugin, false)
-  assert.equal(plugin.LEDGER_FILE, 'dsh-plugin-longread.json')
-  assert.equal(plugin.TEXT_DIR, 'dsh-plugin-longread-books')
+  assert.equal(plugin.LEDGER_FILE, 'ledger.json')
+  assert.equal(plugin.TEXT_DIR, 'books')
 })
 
 test('挂上 webServer 就注册前缀路由，且不碰工具与系统提示', () => {

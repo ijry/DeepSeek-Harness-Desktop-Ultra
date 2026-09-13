@@ -31,7 +31,7 @@ import { registerWebServerCarrier } from './host/carriers/webserver.js'
 import { startListener } from './host/carriers/listener.js'
 import { LEDGER_FILE, normalizeConfig } from './host/config.js'
 import { bridgeUrls, defaultDisplayName } from './host/net.js'
-import { dshHomePath } from './host/sdk.js'
+import { adoptLegacyData, pluginDataPath } from './host/sdk.js'
 import { createRoutes, createUpgradeHandler } from './host/routes.js'
 import { DeviceStore } from './host/store.js'
 import { EventHub } from './host/stream.js'
@@ -49,7 +49,9 @@ export const inject = ['webServer']
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig)
-  const store = new DeviceStore({ file: dshHomePath(LEDGER_FILE) })
+  // 早期版本把账本散在 DSH home 根部，先收编再开库。
+  adoptLegacyData('dsh-plugin-mobile-bridge.json', LEDGER_FILE)
+  const store = new DeviceStore({ file: pluginDataPath(LEDGER_FILE) })
   void store.load()
   const offers = new PairingOffers()
   const displayName = () => config.displayName || defaultDisplayName()

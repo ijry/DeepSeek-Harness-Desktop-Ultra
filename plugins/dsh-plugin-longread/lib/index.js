@@ -18,15 +18,15 @@
  * @module dsh-plugin-longread
  */
 import { createFilePool, workspaceFace } from './host/files.js'
-import { dshHomePath } from './host/sdk.js'
+import { adoptLegacyData, pluginDataPath } from './host/sdk.js'
 import { LibraryStore } from './host/store.js'
 import { registerLongreadRoutes } from './host/routes.js'
 
-/** Ledger file name under the DSH home. */
-export const LEDGER_FILE = 'dsh-plugin-longread.json'
+/** Ledger file name inside this plugin's data directory (<DSH home>/plugins/dsh-plugin-longread/). */
+export const LEDGER_FILE = 'ledger.json'
 
-/** Directory (under the DSH home) holding one .txt per imported book. */
-export const TEXT_DIR = 'dsh-plugin-longread-books'
+/** Directory (inside the plugin data directory) holding one .txt per imported book. */
+export const TEXT_DIR = 'books'
 
 /** Cordis plugin name. */
 export const name = 'dsh-plugin-longread'
@@ -43,9 +43,12 @@ export const inject = []
  * @param ctx - the plugin context.
  */
 export function apply(ctx) {
+  // 早期版本把账本和书库散在 DSH home 根部，先收编再开库。
+  adoptLegacyData('dsh-plugin-longread.json', LEDGER_FILE)
+  adoptLegacyData('dsh-plugin-longread-books', TEXT_DIR)
   const store = new LibraryStore({
-    file: dshHomePath(LEDGER_FILE),
-    textDir: dshHomePath(TEXT_DIR),
+    file: pluginDataPath(LEDGER_FILE),
+    textDir: pluginDataPath(TEXT_DIR),
   })
   // Eager first load: the state route answers from a snapshot, so a fresh boot
   // would otherwise report an empty library until the first write. load() never

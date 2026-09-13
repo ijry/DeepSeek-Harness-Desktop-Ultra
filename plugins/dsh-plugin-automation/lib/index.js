@@ -25,12 +25,12 @@
  */
 import { AutomationEngine } from './host/engine.js'
 import { registerAutomationRoutes, workspaceFace } from './host/routes.js'
-import { dshHomePath } from './host/sdk.js'
+import { adoptLegacyData, pluginDataPath } from './host/sdk.js'
 import { AutomationStore } from './host/store.js'
 import { taskboardBase } from './host/taskboard.js'
 
-/** Ledger file name under the DSH home. */
-export const LEDGER_FILE = 'dsh-plugin-automation.json'
+/** Ledger file name inside this plugin's data directory (<DSH home>/plugins/dsh-plugin-automation/). */
+export const LEDGER_FILE = 'ledger.json'
 
 /** Cordis plugin name. */
 export const name = 'dsh-plugin-automation'
@@ -46,7 +46,9 @@ export const inject = []
  * @param ctx - the plugin context.
  */
 export function apply(ctx) {
-  const store = new AutomationStore({ file: dshHomePath(LEDGER_FILE) })
+  // 早期版本把账本散在 DSH home 根部，先收编再开库。
+  adoptLegacyData('dsh-plugin-automation.json', LEDGER_FILE)
+  const store = new AutomationStore({ file: pluginDataPath(LEDGER_FILE) })
   // Eager first load: the scheduler must know about the saved jobs before the
   // first tick, and load() never throws — a corrupt ledger is quarantined.
   void store.load()

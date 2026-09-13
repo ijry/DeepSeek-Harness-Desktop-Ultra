@@ -396,7 +396,7 @@ function openFileHistory(path) {
             void (async () => {
               try {
                 state.diff = await apiGet('/diff/file', {
-                  workspaceId: model.workspaceId,
+                  workspaceId: repoTarget(),
                   kind: 'commit',
                   rev: row.hash,
                   path,
@@ -428,7 +428,7 @@ function openFileHistory(path) {
   })
   void (async () => {
     try {
-      state.rows = await apiGet('/file/history', { workspaceId: model.workspaceId, path, limit: 200 })
+      state.rows = await apiGet('/file/history', { workspaceId: repoTarget(), path, limit: 200 })
     } catch (error) {
       toastError(error)
     }

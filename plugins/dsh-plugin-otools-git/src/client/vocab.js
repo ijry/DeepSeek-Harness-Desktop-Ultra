@@ -34,6 +34,7 @@ const SIBLING_ENTRIES =
 const STORAGE_PREFIX = PLUGIN_ID + ':'
 const STORE_KEYS = {
   workspaceId: STORAGE_PREFIX + 'workspaceId',
+  worktreePath: STORAGE_PREFIX + 'worktreePath',
 }
 
 /** The main tabs, in toolbar order. */

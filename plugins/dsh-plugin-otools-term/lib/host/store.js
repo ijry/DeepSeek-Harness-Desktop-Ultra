@@ -30,7 +30,7 @@ import {
 } from '../shared/protocol.js'
 
 /** Ledger file name; the caller joins it onto the DSH home. */
-export const STORE_FILE = 'dsh-plugin-otools-term.json'
+export const STORE_FILE = 'store.json'
 
 /** Stored-file schema version (bump on breaking record changes). */
 const SCHEMA_VERSION = 1

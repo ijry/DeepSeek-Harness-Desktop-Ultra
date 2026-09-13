@@ -163,7 +163,7 @@ async function checkoutBranch(row) {
     : { name: localName }
   try {
     const validation = await withBusy(() => apiPost('/branch/validate-checkout', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       name: row.name,
     }))
     if (validation.canCheckout !== true) {
@@ -215,7 +215,7 @@ async function deleteBranchRow(row) {
   if (!confirmed) return
   try {
     await withBusy(() => apiPost('/branch/delete', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       names: [row.name],
       force: false,
     }))

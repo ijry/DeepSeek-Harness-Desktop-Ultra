@@ -1,15 +1,13 @@
 /**
  * The 工作树 pane: the worktree list with add / lock / remove / prune.
  *
- * The DSH shell already switches workspaces, so a worktree row does not try to
- * become the active repository — it points at the path and says whether DSH has
- * that folder open, which is the honest thing a panel can do here.
+ * Viewing a sibling changes only this panel's target, never its checked-out branch.
  */
 
 /** Render the worktree pane. */
 function renderWorktreePane(host) {
   const rows = model.children.worktrees ?? []
-  const main = currentRepo()
+  const main = model.repos.find((row) => row.workspaceId === model.workspaceId)
   const bar = el('div', { class: 'dsh-og-filters' },
     button('新增工作树...', { kind: 'primary', icon: 'plus', onClick: () => openWorktreeDialog() }),
     button('清理失效记录', { onClick: () => void act('/worktree/prune', {}, '已清理失效工作树记录') }),
@@ -55,8 +53,12 @@ function renderWorktreePane(host) {
     {
       key: 'actions',
       label: '操作',
-      width: 100,
+      width: 160,
       render: (row) => el('div', { style: { display: 'flex', gap: '4px' } },
+        button('查看工作区', { disabled: row.prunable === true, onClick: () => {
+          selectWorktree(row.path)
+          switchTab('status')
+        } }),
         iconButton('more', {
           title: '更多',
           onClick: (event) => menuUnder(event.currentTarget, worktreeMenu(row)),
@@ -73,6 +75,10 @@ function renderWorktreePane(host) {
 function worktreeMenu(row) {
   return [
     { head: row.path },
+    { label: '查看工作区', icon: 'worktree', disabled: row.prunable === true, onClick: () => {
+      selectWorktree(row.path)
+      switchTab('status')
+    } },
     { label: '复制目录路径', icon: 'copy', onClick: () => copyText(row.path, '已复制目录路径') },
     row.isMain === true ? undefined : 'sep',
     row.isMain === true ? undefined : (row.locked === true
@@ -112,7 +118,7 @@ async function removeWorktreeRow(row) {
   if (!confirmed) return
   try {
     await withBusy(() => apiPost('/worktree/remove', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       path: row.path,
       force: false,
     }))

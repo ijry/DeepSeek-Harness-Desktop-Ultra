@@ -10,6 +10,7 @@
  * @module dsh-plugin-otools-dbm/host/sdk
  */
 import { chmod, mkdir, rename, writeFile } from 'node:fs/promises'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
@@ -24,7 +25,38 @@ export function dshHomePath(...segments) {
 
 /** This plugin's own directory under the DSH home. */
 export function pluginHomePath(...segments) {
-  return dshHomePath('dsh-plugin-otools-dbm', ...segments)
+  return dshHomePath('plugins', 'dsh-plugin-otools-dbm', ...segments)
+}
+
+/**
+ * 一次性收编旧布局的数据目录。
+ *
+ * 0.1.x 早期本插件的数据目录直接放在 DSH home 根部（更早的 otools 时代甚至在
+ * ~/.otools）。逐条把旧目录里的内容搬进插件目录：目标已存在的条目绝不动
+ * （留给用户手动处理），其余的 rename 过去。只在插件激活路径上跑一次。
+ */
+export function adoptLegacyDir(legacyRelative) {
+  const from = dshHomePath(legacyRelative)
+  const to = pluginHomePath()
+  if (!existsSync(from)) return
+  mkdirSync(to, { recursive: true })
+  for (const entry of readdirSync(from)) {
+    const source = join(from, entry)
+    const target = join(to, entry)
+    if (existsSync(target)) continue
+    try {
+      renameSync(source, target)
+    } catch (error) {
+      console.warn(`[dsh-plugin-otools-dbm] 迁移旧数据 ${source} 失败，已跳过:`, error?.message ?? error)
+    }
+  }
+  // 全部搬走后旧目录就成了空壳，顺手摘掉；里面还有残留（比如被占用的文件）
+  // 时 rmdir 会失败，留着也无害。
+  try {
+    rmdirSync(from)
+  } catch {
+    // 空目录才删得掉，失败说明还有没收编的残留，留给用户处理。
+  }
 }
 
 /**

@@ -22,14 +22,13 @@ import {
   REPOPANEL_SECTION_ORDER,
   repopanelProtocol,
 } from './host/protocol-text.js'
-import { CREDENTIALS_FILE } from './host/auth.js'
 import { hostLang } from './shared/lang.js'
-import { dshHomePath } from './host/sdk.js'
+import { adoptLegacyData, pluginDataPath } from './host/sdk.js'
 import { PanelStore } from './host/store.js'
 import { registerRepoPanelRoutes, workspaceFace } from './host/routes.js'
 
-/** Ledger file name under the DSH home. */
-export const LEDGER_FILE = 'dsh-plugin-repopanel.json'
+/** Ledger file name inside this plugin's data directory (<DSH home>/plugins/dsh-plugin-repopanel/). */
+export const LEDGER_FILE = 'ledger.json'
 
 /** Cordis plugin name. */
 export const name = 'dsh-plugin-repopanel'
@@ -45,13 +44,16 @@ export const inject = []
  * @param ctx - the plugin context.
  */
 export function apply(ctx) {
-  const store = new PanelStore({ file: dshHomePath(LEDGER_FILE) })
+  // 早期版本把账本和凭据散在 DSH home 根部，先收编再开库。
+  adoptLegacyData('dsh-plugin-repopanel.json', LEDGER_FILE)
+  adoptLegacyData('dsh-plugin-repopanel-credentials.json', 'credentials.json')
+  const store = new PanelStore({ file: pluginDataPath(LEDGER_FILE) })
   // Eager first load: the settings GET and the link join read snapshots without
   // triggering the lazy load, so a fresh boot would otherwise serve default
   // settings and no links until the first write. load() never throws — a corrupt
   // ledger is quarantined instead.
   void store.load()
-  const credentialsFile = dshHomePath(CREDENTIALS_FILE)
+  const credentialsFile = pluginDataPath('credentials.json')
   const now = () => Date.now()
 
   // The untrusted-data discipline, in the shell's language. Optional: a build

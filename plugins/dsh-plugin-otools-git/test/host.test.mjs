@@ -434,6 +434,14 @@ describe('host routes', () => {
     assert.equal(Array.isArray(children.worktrees), true)
   })
 
+  it('does not duplicate the current worktree when Windows path casing differs', {
+    skip: process.platform !== 'win32',
+  }, async () => {
+    const index = createRepoIndex({ workspaces: { list: () => [], get: () => undefined } })
+    const children = await index.children(repo.toUpperCase())
+    assert.equal(children.worktrees.length, 0)
+  })
+
   /**
    * A repository with no commits has no HEAD, so `restore --staged` and `reset`
    * both fail — each with its own wording. Unstaging has to fall back to

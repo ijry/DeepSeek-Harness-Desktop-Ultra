@@ -13,6 +13,8 @@ function apply(ctx) {
   if (typeof window === 'undefined' || typeof document === 'undefined') return
   if (bootState.running) return
   bootState.running = true
+  model.workspaceId = storeGet(STORE_KEYS.workspaceId, '')
+  model.worktreePath = storeGet(STORE_KEYS.worktreePath, '')
   const state = { disposed: false }
   let observer = null
   let timer = null
@@ -68,6 +70,7 @@ function apply(ctx) {
     panelEl = null
     sideEl = null
     toolbarEl = null
+    repoContextEl = null
     bodyEl = null
     statusbarEl = null
     const style = document.getElementById(STYLE_ID)

@@ -57,7 +57,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { homeDir, join } from '@/utils/remotePath';
+import { pluginDataDir, join } from '@/utils/remotePath';
 import { ElMessage } from 'element-plus';
 import { useI18nScope } from '@/platform/i18n';
 
@@ -89,10 +89,12 @@ const usingDefaultExportPath = ref(true);
 const getExportFormatDir = (format: string) => (format === 'excel' ? 'excel' : format);
 
 const buildDefaultExportPath = async (format: string) => {
-  const home = await homeDir();
+  // 默认落在插件自己的数据目录里；不再用 otools 时代的 ~/.otools 旧位置，
+  // 那会和旧版 otools 桌面端的同名目录互相污染。
+  const dataDir = await pluginDataDir();
   const now = new Date();
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  return await join(home, '.otools', 'local', 'dbm', 'export', date, getExportFormatDir(format));
+  return await join(dataDir, 'export', date, getExportFormatDir(format));
 };
 
 const syncDefaultExportPath = async (format: string) => {

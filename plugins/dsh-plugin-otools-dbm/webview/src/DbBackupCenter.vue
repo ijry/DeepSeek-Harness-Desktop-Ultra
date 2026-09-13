@@ -345,7 +345,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openHostFsWindow } from '@/platform/ui/fsWindow';
-import { homeDir, join } from '@/utils/remotePath';
+import { pluginDataDir, join } from '@/utils/remotePath';
 import {
   DbmApi,
   extractDbmErrorMessage,
@@ -505,10 +505,12 @@ const normalizePlan = (value: unknown): BackupPlan | null => {
 };
 
 const buildDefaultBackupDirectory = async (mode: 'manual' | 'schedule') => {
-  const home = await homeDir();
+  // 默认落在插件自己的数据目录里；不再用 otools 时代的 ~/.otools 旧位置，
+  // 那会和旧版 otools 桌面端的同名目录互相污染。
+  const dataDir = await pluginDataDir();
   const now = new Date();
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  return join(home, '.otools', 'local', 'dbm', 'backup', mode, date);
+  return join(dataDir, 'backup', mode, date);
 };
 
 const resolveDatabaseName = (connection: DbConnection | null, rawValue: string) => {

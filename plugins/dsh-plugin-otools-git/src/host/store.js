@@ -16,9 +16,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-/** Ledger file name; the caller joins it onto the DSH home. */
-export const PREFS_FILE = 'dsh-plugin-otools-git.json'
-
 /** Stored-file schema version (bump on breaking record changes). */
 const SCHEMA_VERSION = 1
 

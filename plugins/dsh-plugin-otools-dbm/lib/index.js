@@ -26,6 +26,7 @@
  *
  * @module dsh-plugin-otools-dbm
  */
+import { adoptLegacyDir } from './host/sdk.js'
 import { registerDbmRoutes } from './host/routes.js'
 
 /** Cordis plugin name. */
@@ -45,6 +46,9 @@ export const inject = []
  * @param ctx - the plugin context.
  */
 export function apply(ctx) {
+  // 早期版本把数据目录直接放在 DSH home 根部，先把旧内容收编进
+  // plugins/dsh-plugin-otools-dbm/ 再让各个 store 打开文件。
+  adoptLegacyDir('dsh-plugin-otools-dbm')
   // The model services are optional and may arrive after the routes do, so they
   // are read through a mutable holder rather than captured by value.
   const ai = { llm: undefined, defaultModel: undefined }

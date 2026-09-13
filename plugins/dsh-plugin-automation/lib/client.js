@@ -413,7 +413,8 @@ function openPanelChannel(ctx, options) {
 }
 .dsh-au-entry:hover { background: var(--dsw-hover, var(--au-hover)); color: var(--dsw-text-primary, var(--au-text)); }
 .dsh-au-entry[data-active="true"] { background: var(--dsw-active, var(--au-active)); color: var(--dsw-text-primary, var(--au-text)); font-weight: 500; }
-.dsh-au-entry-icon { display: inline-flex; flex: none; color: var(--au-accent); }
+.dsh-au-entry-icon { display: inline-flex; flex: none; color: inherit; filter: grayscale(1); opacity: .85; }
+.dsh-au-entry:hover .dsh-au-entry-icon, .dsh-au-entry:focus-visible .dsh-au-entry-icon { color: var(--au-accent); filter: none; opacity: 1; }
 .dsh-au-entry-label { flex: none; }
 .dsh-au-entry-stats {
   margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; line-height: 1;

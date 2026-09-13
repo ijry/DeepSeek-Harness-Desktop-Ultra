@@ -17,6 +17,7 @@ const model = {
   repos: [],
   reposLoaded: false,
   workspaceId: '',
+  worktreePath: '',
   install: null,
   aiAvailability: null,
   prefs: null,
@@ -83,7 +84,15 @@ function onModel(fn) {
 
 /** The repository row the panel is pointed at. */
 function currentRepo() {
-  return model.repos.find((row) => row.workspaceId === model.workspaceId)
+  const parent = model.repos.find((row) => row.workspaceId === model.workspaceId)
+  if (parent === undefined || !model.worktreePath) return parent
+  const worktree = model.children.worktrees.find((row) => row.path === model.worktreePath)
+  return { ...parent, ...worktree, root: model.worktreePath, path: model.worktreePath,
+    title: baseName(model.worktreePath), branch: model.status?.branch ?? worktree?.branch }
+}
+
+function repoTarget() {
+  return model.worktreePath || model.workspaceId
 }
 
 /** The effective preference value, per-repo override first. */

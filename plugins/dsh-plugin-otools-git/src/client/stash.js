@@ -181,7 +181,7 @@ async function loadStashFileDiff(file) {
   emit()
   try {
     model.diff = await apiGet('/stash/diff', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       ref: model.activeStash,
       path: file.path,
     })

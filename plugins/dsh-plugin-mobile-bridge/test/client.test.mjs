@@ -12,6 +12,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+import { installDom } from '../../dsh-plugin-otools-dbm/test/dom-stub.mjs'
 
 import { ROUTE_PREFIX } from '../lib/shared/protocol.js'
 import { PLUGIN_ID, wrapClient } from '../scripts/wrap-client.mjs'
@@ -50,10 +51,29 @@ test('the panel exports the client plugin shape and no default', () => {
   assert.ok(!/export default/.test(source), 'cordis function plugins have no default export')
 })
 
-test('the sidebar entry keeps its phone icon when the language changes', () => {
-  assert.ok(source.includes("el('span', 'mbridge__entryIcon', String.fromCodePoint(0x1f4f1))"))
-  assert.ok(source.includes("entry.querySelector('.mbridge__entryLabel')"))
-  assert.ok(!source.includes("entry.textContent = t('title')"), 'relabeling must not replace the icon')
+test('the sidebar keeps a real phone glyph when the host changes the language', async () => {
+  const dom = installDom({ origin: 'http://127.0.0.1', routePrefix: ROUTE_PREFIX })
+  const module = { exports: {} }
+  const run = new Function('module', 'document', 'window', 'navigator', 'HTMLElement',
+    'MutationObserver', 'setInterval', 'clearInterval', 'fetch', source)
+  run(module, dom.document, dom.window, { language: 'zh-CN' }, dom.sidebarRoot.constructor,
+    dom.window.MutationObserver, () => 0, () => {}, async () => ({
+      ok: true, json: async () => ({ ok: true, value: { language: 'en' } }),
+    }))
+  let dispose
+  try {
+    module.exports.apply({ effect: (callback) => { dispose = callback() } })
+    const entry = dom.document.querySelector('[data-dsh-mbridge-entry]')
+    const glyph = entry.querySelector('.mbridge__entryGlyph')
+    assert.ok(glyph, 'the glyph must be a DOM child, not [object HTMLSpanElement] text')
+    assert.match(glyph.innerHTML, /<svg/)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(entry.querySelector('.mbridge__entryGlyph'), glyph)
+    assert.equal(entry.querySelector('.mbridge__entryLabel').textContent, 'Mobile Remote')
+    assert.doesNotMatch(entry.textContent, /\[object /)
+  } finally {
+    dispose?.()
+  }
 })
 
 test('the manifest declares the client half dsh has to serve', () => {

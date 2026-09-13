@@ -18,12 +18,12 @@
  * @module dsh-plugin-canvas
  */
 import { registerCanvasRoutes } from './host/routes.js'
-import { dshHomePath } from './host/sdk.js'
+import { adoptLegacyData, pluginDataPath } from './host/sdk.js'
 import { createSessionsView } from './host/sessions.js'
 import { CanvasStore } from './host/store.js'
 
 /** Ledger file name under the DSH home. */
-export const LEDGER_FILE = 'dsh-plugin-canvas.json'
+export const LEDGER_FILE = 'ledger.json'
 
 /** Cordis plugin name. */
 export const name = 'dsh-plugin-canvas'
@@ -45,7 +45,9 @@ export const inject = []
  * @param ctx - the plugin context.
  */
 export function apply(ctx) {
-  const store = new CanvasStore({ file: dshHomePath(LEDGER_FILE) })
+  // 早期版本把账本散在 DSH home 根部，先收编再开库。
+  adoptLegacyData('dsh-plugin-canvas.json', LEDGER_FILE)
+  const store = new CanvasStore({ file: pluginDataPath(LEDGER_FILE) })
   // Eager first load: GET /state reads a snapshot without triggering the lazy
   // load, so a fresh boot would otherwise serve an EMPTY board until the first
   // mutation. load() never throws — a corrupt ledger is quarantined instead.

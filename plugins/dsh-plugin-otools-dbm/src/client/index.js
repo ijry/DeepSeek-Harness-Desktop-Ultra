@@ -56,7 +56,8 @@
   background: var(--dsw-alias-bg-layer-2, var(--dsw-active, rgba(128, 128, 128, .18)));
   color: var(--dsw-alias-label-primary, var(--dsw-text-primary, inherit)); font-weight: 500;
 }
-.dsh-dbm-entry-icon { display: inline-flex; flex: none; color: #2370c6; }
+.dsh-dbm-entry-icon { display: inline-flex; flex: none; color: inherit; filter: grayscale(1); opacity: .85; }
+.dsh-dbm-entry:hover .dsh-dbm-entry-icon, .dsh-dbm-entry:focus-visible .dsh-dbm-entry-icon { color: #2370c6; filter: none; opacity: 1; }
 .dsh-dbm-entry-label { flex: none; }
 [data-sidebar-collapsed] [data-dsh-otools-dbm-entry],
 [class*="_collapsed"] [data-dsh-otools-dbm-entry] {

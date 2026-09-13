@@ -64,7 +64,7 @@ import {
   tableStruct,
   updateTableComment,
 } from './schema.js'
-import { hostLocale } from './sdk.js'
+import { hostLocale, pluginHomePath } from './sdk.js'
 import {
   BackupPlanStore,
   ConnectionStore,
@@ -691,6 +691,11 @@ export function buildCommands(context) {
     // ---------------------------------------------------------------- host FS
     async dbm_fs_home_dir() {
       return homeDir()
+    },
+    // 本插件的数据目录（<DSH home>/plugins/dsh-plugin-otools-dbm/）。webview
+    // 拿它拼备份/导出的默认路径——不再用 otools 时代的 ~/.otools 旧位置。
+    async dbm_fs_plugin_data_dir() {
+      return pluginHomePath()
     },
     async dbm_fs_join_path(args) {
       return joinPath(args?.paths)

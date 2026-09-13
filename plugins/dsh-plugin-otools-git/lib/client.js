@@ -112,6 +112,7 @@ const SIBLING_ENTRIES =
 const STORAGE_PREFIX = PLUGIN_ID + ':'
 const STORE_KEYS = {
   workspaceId: STORAGE_PREFIX + 'workspaceId',
+  worktreePath: STORAGE_PREFIX + 'worktreePath',
 }
 
 /** The main tabs, in toolbar order. */
@@ -581,7 +582,8 @@ const STYLES = `
   background: var(--dsw-active, rgba(128, 128, 128, .18));
   color: var(--dsw-text-primary, inherit); font-weight: 500;
 }
-.dsh-og-entry-icon { display: inline-flex; flex: none; color: #f05033; }
+.dsh-og-entry-icon { display: inline-flex; flex: none; color: inherit; filter: grayscale(1); opacity: .85; }
+.dsh-og-entry:hover .dsh-og-entry-icon, .dsh-og-entry:focus-visible .dsh-og-entry-icon { color: #f05033; filter: none; opacity: 1; }
 .dsh-og-entry-label { flex: none; }
 .dsh-og-entry-stats {
   margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
@@ -651,6 +653,12 @@ html[data-dsh-og-open] .dsh-og-view {
   font-size: 12px; color: var(--og-text-2); cursor: pointer; min-width: 0;
 }
 .dsh-og-repo-child:hover { background: var(--og-fill-hover); }
+button.dsh-og-repo-child { border: 0; width: 100%; background: transparent; font: inherit; text-align: left; }
+button.dsh-og-repo-child:disabled { opacity: .5; cursor: default; }
+.dsh-og-repo-context { display: flex; align-items: center; gap: 8px; padding: 10px 12px; min-height: 48px; flex-shrink: 0; border-bottom: 1px solid var(--og-border); }
+.dsh-og-repo-context:empty { display: none; }
+.dsh-og-worktree-select { min-width: 120px; max-width: 50%; border: 1px solid var(--og-border); border-radius: 6px; padding: 4px 8px; font: inherit; color: var(--og-text); background: var(--og-sidebar); }
+.dsh-og-worktree-path { min-width: 0; color: var(--og-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dsh-og-repo-child[data-active="true"] { background: var(--og-primary-soft); color: var(--og-text); }
 .dsh-og-repo-child-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -866,7 +874,7 @@ html[data-dsh-og-open] .dsh-og-view {
 .dsh-og-table-scroll { flex: 1; min-height: 0; overflow: auto; }
 .dsh-og-cell-mono { font-family: var(--og-mono); font-size: 11px; color: var(--og-text-2); }
 .dsh-og-cell-ellipsis { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dsh-og-num { font-variant-numeric: tabular-nums; }
+.dsh-og-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dsh-og-adds { color: var(--og-success); }
 .dsh-og-dels { color: var(--og-danger); }
 
@@ -1023,6 +1031,11 @@ html[data-dsh-og-open] .dsh-og-view {
 .dsh-og-history-more:hover { background: var(--og-fill-hover); }
 .dsh-og-history-more[data-done="true"] { cursor: default; }
 .dsh-og-history-more[data-done="true"]:hover { background: transparent; }
+/* 图形列按固定 22px 行高绘制、靠 height:100% 铺满单元格；任何一格换行
+   （最典型的是窄窗口把日期压成两行）都会把行撑高，而 td 高度变成 auto 后
+   百分比高度失效，SVG 保持固有尺寸居中——相邻行的连线就断开了。所以整表
+   禁止换行：挤压交给消息列的省略号，再不够就横向滚动。 */
+.dsh-og-history .dsh-og-table td { white-space: nowrap; }
 .dsh-og-graph-cell { padding: 0 !important; width: 1px; }
 .dsh-og-graph-svg { display: block; height: 100%; }
 .dsh-og-msg-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -1151,6 +1164,7 @@ const model = {
   repos: [],
   reposLoaded: false,
   workspaceId: '',
+  worktreePath: '',
   install: null,
   aiAvailability: null,
   prefs: null,
@@ -1217,7 +1231,15 @@ function onModel(fn) {
 
 /** The repository row the panel is pointed at. */
 function currentRepo() {
-  return model.repos.find((row) => row.workspaceId === model.workspaceId)
+  const parent = model.repos.find((row) => row.workspaceId === model.workspaceId)
+  if (parent === undefined || !model.worktreePath) return parent
+  const worktree = model.children.worktrees.find((row) => row.path === model.worktreePath)
+  return { ...parent, ...worktree, root: model.worktreePath, path: model.worktreePath,
+    title: baseName(model.worktreePath), branch: model.status?.branch ?? worktree?.branch }
+}
+
+function repoTarget() {
+  return model.worktreePath || model.workspaceId
 }
 
 /** The effective preference value, per-repo override first. */
@@ -1307,9 +1329,8 @@ function actionPaths(section, path) {
  * the change stream that carries preference changes and live operation progress —
  * a WebSocket where the host offers one, the SSE route otherwise.
  *
- * Every request carries `workspaceId`, never a filesystem path the browser made
- * up: the host resolves that id against DSH's workspace registry, which is what
- * keeps the panel from driving `git` in an arbitrary directory.
+ * Requests name a registered workspace or a worktree listed by Git for it. The
+ * host validates both against the workspace registry before running commands.
  */
 
 /** A rejected envelope, carrying the host's stable code. */
@@ -1379,7 +1400,7 @@ async function withBusy(run) {
 /** The current repository's request parameters, or undefined when none is open. */
 function repoParams(extra) {
   if (model.workspaceId.length === 0) return undefined
-  return { workspaceId: model.workspaceId, ...(extra ?? {}) }
+  return { workspaceId: repoTarget(), ...(extra ?? {}) }
 }
 
 // ------------------------------------------------------------------ stream
@@ -1648,6 +1669,8 @@ async function loadRepos() {
     if (!known) {
       const first = model.repos.find((row) => row.isRepo)
       model.workspaceId = first === undefined ? '' : first.workspaceId
+      model.worktreePath = ''
+      storeSet(STORE_KEYS.worktreePath, '')
       resetRepoState()
     }
   } catch (error) {
@@ -1661,9 +1684,12 @@ async function loadStatus() {
   const params = repoParams({ untracked: pref('untrackedMode') ?? 'all' })
   if (params === undefined) return
   try {
-    model.status = await apiGet('/status', params)
+    const status = await apiGet('/status', params)
+    if (params.workspaceId !== repoTarget()) return
+    model.status = status
     model.statusError = null
   } catch (error) {
+    if (params.workspaceId !== repoTarget()) return
     model.status = null
     model.statusError = friendlyError(error)
   }
@@ -1671,11 +1697,18 @@ async function loadStatus() {
 }
 
 async function loadChildren() {
-  const params = repoParams()
-  if (params === undefined) return
+  const workspaceId = model.workspaceId
+  if (!workspaceId) return
   try {
-    model.children = await apiGet('/children', params)
+    const children = await apiGet('/children', { workspaceId })
+    if (workspaceId !== model.workspaceId) return
+    model.children = children
+    if (model.worktreePath && !children.worktrees.some((row) => row.path === model.worktreePath && !row.prunable)) {
+      selectRepo(workspaceId)
+      return
+    }
   } catch {
+    if (workspaceId !== model.workspaceId) return
     model.children = { submodules: [], worktrees: [] }
   }
   emit()
@@ -2581,7 +2614,7 @@ function repoGlyph(row) {
 /** The submodule and worktree rows under the active repository. */
 function repoChildren(row) {
   const submodules = model.children.submodules ?? []
-  const worktrees = (model.children.worktrees ?? []).filter((entry) => entry.isMain !== true)
+  const worktrees = model.children.worktrees ?? []
   if (submodules.length === 0 && worktrees.length === 0) return undefined
   const wrap = el('div', { class: 'dsh-og-repo-children' })
   for (const entry of submodules.slice(0, 8)) {
@@ -2600,14 +2633,16 @@ function repoChildren(row) {
     entry.initialized === true ? undefined : tag('未初始化', 'warning')))
   }
   for (const entry of worktrees.slice(0, 8)) {
-    wrap.append(el('div', {
+    wrap.append(el('button', {
+      type: 'button',
       class: 'dsh-og-repo-child',
       title: entry.path,
+      'data-worktree-path': entry.path,
+      'data-active': entry.path === model.worktreePath ? 'true' : undefined,
+      disabled: entry.prunable === true,
       onClick: (event) => {
         event.stopPropagation()
-        model.tab = 'worktrees'
-        emit()
-        void loadChildren()
+        selectWorktree(entry.path)
       },
     },
     el('span', { class: 'dsh-og-file-icon' }, icon('worktree')),
@@ -2651,13 +2686,34 @@ function repoMenu(row) {
 
 /** Point the panel at one repository and load what the active tab needs. */
 function selectRepo(workspaceId) {
-  if (model.workspaceId === workspaceId) return
+  if (model.workspaceId === workspaceId && !model.worktreePath) return
   model.workspaceId = workspaceId
+  model.worktreePath = ''
+  storeSet(STORE_KEYS.worktreePath, '')
   storeSet(STORE_KEYS.workspaceId, workspaceId)
   resetRepoState()
   emit()
-  void refreshTab()
+  void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
   void loadChildren()
+}
+
+function selectWorktree(path) {
+  const parent = model.repos.find((row) => row.workspaceId === model.workspaceId)
+  if (path === parent?.root) {
+    selectRepo(model.workspaceId)
+    return
+  }
+  const worktree = model.children.worktrees.find((row) => row.path === path && !row.prunable)
+  if (worktree === undefined || model.worktreePath === path) return
+  const children = model.children
+  resetRepoState()
+  model.children = children
+  model.worktreePath = path
+  model.tab = 'status'
+  storeSet(STORE_KEYS.workspaceId, model.workspaceId)
+  storeSet(STORE_KEYS.worktreePath, path)
+  emit()
+  void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
 }
 
 /** Copy to the clipboard, reporting either way. */
@@ -3007,7 +3063,7 @@ const collapsedDirs = new Set()
 
 /** The collapse key for one directory. */
 function dirKey(section, path) {
-  return model.workspaceId + ':' + section.id + ':' + path
+  return repoTarget() + ':' + section.id + ':' + path
 }
 
 /** One level of the file tree. */
@@ -3090,7 +3146,7 @@ async function discard(rows) {
  */
 async function act(route, body, successMessage) {
   try {
-    const value = await withBusy(() => apiPost(route, { workspaceId: model.workspaceId, ...body }))
+    const value = await withBusy(() => apiPost(route, { workspaceId: repoTarget(), ...body }))
     if (value !== null && value !== undefined && value.conflict === true) {
       toast('操作完成，但存在冲突，请在工作区里解决', 'warning', 5000)
     } else if (successMessage !== undefined) {
@@ -3232,7 +3288,7 @@ function aiTitle() {
 /** Pre-fill the box with HEAD's message, for an amend. */
 async function fillHeadMessage() {
   try {
-    const value = await apiGet('/head-message', { workspaceId: model.workspaceId })
+    const value = await apiGet('/head-message', { workspaceId: repoTarget() })
     if (typeof value.message === 'string' && value.message.length > 0) {
       model.commitMessage = value.message
       emit()
@@ -3250,7 +3306,7 @@ async function doCommit() {
   const amend = pref('amend') === true
   try {
     const result = await withBusy(() => apiPost('/commit', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       message,
       amend,
       signoff: pref('signoff') === true,
@@ -3297,7 +3353,7 @@ async function generateCommitMessage() {
   let record
   try {
     record = await apiPost('/ai/commit-message', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       style: pref('aiStyle') ?? 'conventional',
       language: pref('aiLanguage') ?? 'zh',
       source: (model.status?.counts.staged ?? 0) > 0 ? 'staged' : 'worktree',
@@ -3929,7 +3985,7 @@ function openFileHistory(path) {
             void (async () => {
               try {
                 state.diff = await apiGet('/diff/file', {
-                  workspaceId: model.workspaceId,
+                  workspaceId: repoTarget(),
                   kind: 'commit',
                   rev: row.hash,
                   path,
@@ -3961,7 +4017,7 @@ function openFileHistory(path) {
   })
   void (async () => {
     try {
-      state.rows = await apiGet('/file/history', { workspaceId: model.workspaceId, path, limit: 200 })
+      state.rows = await apiGet('/file/history', { workspaceId: repoTarget(), path, limit: 200 })
     } catch (error) {
       toastError(error)
     }
@@ -4358,7 +4414,7 @@ async function checkoutBranch(row) {
     : { name: localName }
   try {
     const validation = await withBusy(() => apiPost('/branch/validate-checkout', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       name: row.name,
     }))
     if (validation.canCheckout !== true) {
@@ -4410,7 +4466,7 @@ async function deleteBranchRow(row) {
   if (!confirmed) return
   try {
     await withBusy(() => apiPost('/branch/delete', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       names: [row.name],
       force: false,
     }))
@@ -5047,7 +5103,7 @@ async function loadStashFileDiff(file) {
   emit()
   try {
     model.diff = await apiGet('/stash/diff', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       ref: model.activeStash,
       path: file.path,
     })
@@ -5496,15 +5552,13 @@ function openSubmoduleDialog() {
 /**
  * The 工作树 pane: the worktree list with add / lock / remove / prune.
  *
- * The DSH shell already switches workspaces, so a worktree row does not try to
- * become the active repository — it points at the path and says whether DSH has
- * that folder open, which is the honest thing a panel can do here.
+ * Viewing a sibling changes only this panel's target, never its checked-out branch.
  */
 
 /** Render the worktree pane. */
 function renderWorktreePane(host) {
   const rows = model.children.worktrees ?? []
-  const main = currentRepo()
+  const main = model.repos.find((row) => row.workspaceId === model.workspaceId)
   const bar = el('div', { class: 'dsh-og-filters' },
     button('新增工作树...', { kind: 'primary', icon: 'plus', onClick: () => openWorktreeDialog() }),
     button('清理失效记录', { onClick: () => void act('/worktree/prune', {}, '已清理失效工作树记录') }),
@@ -5550,8 +5604,12 @@ function renderWorktreePane(host) {
     {
       key: 'actions',
       label: '操作',
-      width: 100,
+      width: 160,
       render: (row) => el('div', { style: { display: 'flex', gap: '4px' } },
+        button('查看工作区', { disabled: row.prunable === true, onClick: () => {
+          selectWorktree(row.path)
+          switchTab('status')
+        } }),
         iconButton('more', {
           title: '更多',
           onClick: (event) => menuUnder(event.currentTarget, worktreeMenu(row)),
@@ -5568,6 +5626,10 @@ function renderWorktreePane(host) {
 function worktreeMenu(row) {
   return [
     { head: row.path },
+    { label: '查看工作区', icon: 'worktree', disabled: row.prunable === true, onClick: () => {
+      selectWorktree(row.path)
+      switchTab('status')
+    } },
     { label: '复制目录路径', icon: 'copy', onClick: () => copyText(row.path, '已复制目录路径') },
     row.isMain === true ? undefined : 'sep',
     row.isMain === true ? undefined : (row.locked === true
@@ -5607,7 +5669,7 @@ async function removeWorktreeRow(row) {
   if (!confirmed) return
   try {
     await withBusy(() => apiPost('/worktree/remove', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       path: row.path,
       force: false,
     }))
@@ -5730,7 +5792,7 @@ async function startOperation(route, body) {
   if (model.workspaceId.length === 0) return undefined
   let record
   try {
-    record = await apiPost(route, { workspaceId: model.workspaceId, ...body })
+    record = await apiPost(route, { workspaceId: repoTarget(), ...body })
   } catch (error) {
     toastError(error)
     return undefined
@@ -5884,7 +5946,7 @@ function dubiousHint(error) {
         onClick: async () => {
           try {
             const result = await apiPost('/safe-directory', {
-              workspaceId: model.workspaceId,
+              workspaceId: repoTarget(),
               paths: dubious.paths,
             })
             toast(result.message ?? '已更新 safe.directory', 'success', 4200)
@@ -6131,7 +6193,7 @@ function openPushDialog(options) {
   })
   void (async () => {
     try {
-      state.defaults = await apiGet('/push/defaults', { workspaceId: model.workspaceId })
+      state.defaults = await apiGet('/push/defaults', { workspaceId: repoTarget() })
       state.remote = state.defaults.remote ?? ''
       state.localBranch = state.defaults.localBranch ?? ''
       state.remoteBranch = state.defaults.targetBranch ?? ''
@@ -6228,7 +6290,7 @@ function openPullDialog() {
   const reloadRemoteBranches = async () => {
     if (state.remote.length === 0) return
     try {
-      state.branches = await apiGet('/remote/branches', { workspaceId: model.workspaceId, remote: state.remote })
+      state.branches = await apiGet('/remote/branches', { workspaceId: repoTarget(), remote: state.remote })
     } catch {
       state.branches = []
     }
@@ -6236,7 +6298,7 @@ function openPullDialog() {
   }
   void (async () => {
     try {
-      state.defaults = await apiGet('/pull/defaults', { workspaceId: model.workspaceId })
+      state.defaults = await apiGet('/pull/defaults', { workspaceId: repoTarget() })
       state.remote = state.defaults.remote ?? ''
       state.branch = ''
     } catch (error) {
@@ -6350,7 +6412,7 @@ function openSettingsDialog() {
   void (async () => {
     await Promise.all([loadIdentity(), loadCredentials(), loadAiAvailability()])
     try {
-      state.config = await apiGet('/config', { workspaceId: model.workspaceId })
+      state.config = await apiGet('/config', { workspaceId: repoTarget() })
     } catch { /* the tab reports it */ }
     state.loading = false
     handle.render()
@@ -6420,7 +6482,7 @@ function settingsGeneral(handle, state) {
 async function saveConfig(key, value, scope) {
   try {
     await apiPost('/config/set', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       key,
       value: value === undefined || value === null || String(value).length === 0 ? null : String(value),
       scope,
@@ -6460,7 +6522,7 @@ function settingsConfig(handle, state) {
       placeholder: row.effective === undefined ? '未设置' : row.effective,
       onChange: async (event) => {
         await saveConfig(key, event.target.value, scopeState.scope)
-        state.config = await apiGet('/config', { workspaceId: model.workspaceId }).catch(() => state.config)
+        state.config = await apiGet('/config', { workspaceId: repoTarget() }).catch(() => state.config)
         handle.render()
       },
     })
@@ -6616,6 +6678,7 @@ function settingsAbout() {
 let panelEl = null
 let sideEl = null
 let toolbarEl = null
+let repoContextEl = null
 let bodyEl = null
 let statusbarEl = null
 let entryEl = null
@@ -6625,6 +6688,7 @@ let viewEl = null
 function buildPanel(view) {
   sideEl = el('div', { class: 'dsh-og-side' })
   toolbarEl = el('div', { class: 'dsh-og-toolbar' })
+  repoContextEl = el('div', { class: 'dsh-og-repo-context' })
   bodyEl = el('div', { class: 'dsh-og-body' })
   statusbarEl = el('div', { class: 'dsh-og-statusbar' })
 
@@ -6645,7 +6709,7 @@ function buildPanel(view) {
     },
   })
 
-  const main = el('div', { class: 'dsh-og-main' }, toolbarEl, bodyEl, statusbarEl)
+  const main = el('div', { class: 'dsh-og-main' }, repoContextEl, toolbarEl, bodyEl, statusbarEl)
   panelEl = el('div', { class: 'dsh-og-panel', 'data-dsh-og-panel': '' }, sideEl, handle, main)
   view.append(panelEl)
 }
@@ -6654,6 +6718,7 @@ function buildPanel(view) {
 function renderPanel() {
   if (panelEl === null || !panelEl.isConnected) return
   renderSideColumn()
+  renderRepoContext()
   renderToolbar()
   renderBody()
   renderStatusBar()
@@ -6710,8 +6775,7 @@ function renderToolbar() {
     }),
     el('div', { class: 'dsh-og-toolbar-sep' }),
     toolbarButton({ icon: 'branch', label: '分支', disabled: !hasRepo, onClick: () => openBranchDialog() }),
-    toolbarButton({ icon: 'merge', label: '合并', disabled: !hasRepo, onClick: () => openMergeDialog() }),
-    toolbarButton({ icon: 'stash', label: '贮藏', disabled: !hasRepo, onClick: () => openStashDialog() }))
+    toolbarButton({ icon: 'merge', label: '合并', disabled: !hasRepo, onClick: () => openMergeDialog() }))
 
   const right = el('div', { class: 'dsh-og-toolbar-group dsh-og-right' },
     model.busy > 0 ? el('span', { style: { 'font-size': '11px', color: 'var(--og-text-3)', 'align-self': 'center' } }, '处理中...') : undefined,
@@ -6719,6 +6783,25 @@ function renderToolbar() {
     toolbarButton({ icon: 'settings', label: '设置', disabled: !hasRepo, onClick: () => openSettingsDialog() }))
 
   fill(toolbarEl, left, mid, right)
+}
+
+function renderRepoContext() {
+  const parent = model.repos.find((row) => row.workspaceId === model.workspaceId)
+  if (parent === undefined || !parent.isRepo) {
+    fill(repoContextEl)
+    return
+  }
+  const rows = [{ path: parent.root, branch: parent.branch }, ...model.children.worktrees]
+  const picker = el('select', {
+    class: 'dsh-og-worktree-select',
+    'aria-label': '当前工作树',
+    onChange: (event) => selectWorktree(event.target.value),
+  }, rows.map((row) => el('option', { value: row.path, disabled: row.prunable === true },
+    (row.branch ?? '游离 HEAD') + ' · ' + baseName(row.path))))
+  picker.value = model.worktreePath || parent.root
+  const path = currentRepo()?.root ?? ''
+  fill(repoContextEl, el('span', {}, '工作树'), picker,
+    el('span', { class: 'dsh-og-worktree-path', title: path }, path))
 }
 
 /** One toolbar button: 22px icon over an 11px label, with an optional badge. */
@@ -6969,13 +7052,12 @@ async function bootData() {
   }
   dataBooted = true
   await loadPrefs()
-  const remembered = storeGet(STORE_KEYS.workspaceId, '')
-  if (typeof remembered === 'string' && remembered.length > 0) model.workspaceId = remembered
   const savedTab = pref('activeTab')
   if (typeof savedTab === 'string' && TABS.some((row) => row.id === savedTab)) model.tab = savedTab
   await Promise.all([loadInstall(), loadAiAvailability()])
   await loadRepos()
-  await Promise.all([refreshTab(), loadChildren(), loadRemotes(), loadBranches(), loadCredentials()])
+  await loadChildren()
+  await Promise.all([refreshTab(), loadRemotes(), loadBranches(), loadCredentials()])
 }
 
 // ===== src/client/boot.js =====
@@ -6994,6 +7076,8 @@ function apply(ctx) {
   if (typeof window === 'undefined' || typeof document === 'undefined') return
   if (bootState.running) return
   bootState.running = true
+  model.workspaceId = storeGet(STORE_KEYS.workspaceId, '')
+  model.worktreePath = storeGet(STORE_KEYS.worktreePath, '')
   const state = { disposed: false }
   let observer = null
   let timer = null
@@ -7049,6 +7133,7 @@ function apply(ctx) {
     panelEl = null
     sideEl = null
     toolbarEl = null
+    repoContextEl = null
     bodyEl = null
     statusbarEl = null
     const style = document.getElementById(STYLE_ID)

@@ -66,7 +66,7 @@ test('导出的是命名空间插件的形状：name / inject / apply，没有 d
   assert.equal(name, 'dsh-plugin-automation')
   assert.deepEqual(inject, [], '顶层不该要求任何服务 —— 调度器等 workspaceRegistry，路由再等 webServer')
   assert.equal(typeof apply, 'function')
-  assert.equal(LEDGER_FILE, 'dsh-plugin-automation.json')
+  assert.equal(LEDGER_FILE, 'ledger.json')
   const module = await import('../src/index.js')
   assert.equal(module.default, undefined, '不要 default 导出：dsh 的加载器按命名空间插件读取')
 })

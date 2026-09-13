@@ -30,7 +30,7 @@
 import { TermEngine } from './host/engine.js'
 import { registerTermRoutes } from './host/routes.js'
 import { KNOWN_HOSTS_FILE, SECRETS_FILE } from './host/secrets.js'
-import { dshHomePath } from './host/sdk.js'
+import { adoptLegacyData, pluginDataPath } from './host/sdk.js'
 import { STORE_FILE, TermStore } from './host/store.js'
 import { emptyWorkspaces, workspaceFace } from './host/workspaces.js'
 
@@ -51,7 +51,11 @@ export const inject = []
  * @param ctx - the plugin context.
  */
 export function apply(ctx) {
-  const store = new TermStore({ file: dshHomePath(STORE_FILE) })
+  // 早期版本把终端配置与密钥散在 DSH home 根部，先收编再开库。
+  adoptLegacyData('dsh-plugin-otools-term.json', STORE_FILE)
+  adoptLegacyData('dsh-plugin-otools-term-secrets.json', SECRETS_FILE)
+  adoptLegacyData('dsh-plugin-otools-term-known-hosts.json', KNOWN_HOSTS_FILE)
+  const store = new TermStore({ file: pluginDataPath(STORE_FILE) })
   // Eager first load: `/state` serves a snapshot without triggering the lazy load,
   // so a fresh boot would otherwise hand the panel defaults until the first write.
   // load() never throws — a corrupt ledger is quarantined instead.
@@ -85,8 +89,8 @@ export function apply(ctx) {
   const engine = new TermEngine({
     store,
     ai,
-    secretsFile: dshHomePath(SECRETS_FILE),
-    knownHostsFile: dshHomePath(KNOWN_HOSTS_FILE),
+  secretsFile: pluginDataPath(SECRETS_FILE),
+  knownHostsFile: pluginDataPath(KNOWN_HOSTS_FILE),
     // A face that forwards, so a registry arriving later is picked up without
     // rebuilding the engine.
     workspaces: {

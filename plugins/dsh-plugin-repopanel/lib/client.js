@@ -1080,7 +1080,8 @@ function openPanelChannel(ctx, options) {
 }
 .dsh-rp-entry:hover { background: var(--dsw-hover, var(--rp-hover, rgba(128,128,128,.12))); color: var(--dsw-text-primary, var(--rp-text, inherit)); }
 .dsh-rp-entry[data-active="true"] { background: var(--dsw-active, var(--rp-active, rgba(128,128,128,.18))); color: var(--dsw-text-primary, var(--rp-text, inherit)); font-weight: 500; }
-.dsh-rp-entry-icon { display: inline-flex; flex: none; color: var(--rp-accent, #5b8cff); }
+.dsh-rp-entry-icon { display: inline-flex; flex: none; color: inherit; filter: grayscale(1); opacity: .85; }
+.dsh-rp-entry:hover .dsh-rp-entry-icon, .dsh-rp-entry:focus-visible .dsh-rp-entry-icon { color: var(--rp-accent, #5b8cff); filter: none; opacity: 1; }
 .dsh-rp-entry-label { flex: none; }
 .dsh-rp-entry-stats {
   margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px;

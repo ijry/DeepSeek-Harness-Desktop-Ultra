@@ -15,7 +15,7 @@
 export const DEFAULT_PORT = 8790
 
 /** Ledger file name under the dsh home. */
-export const LEDGER_FILE = 'dsh-plugin-mobile-bridge.json'
+export const LEDGER_FILE = 'ledger.json'
 
 function boolean(value, fallback) {
   if (value === true || value === false) return value

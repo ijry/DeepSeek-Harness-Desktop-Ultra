@@ -88,7 +88,7 @@ function repoGlyph(row) {
 /** The submodule and worktree rows under the active repository. */
 function repoChildren(row) {
   const submodules = model.children.submodules ?? []
-  const worktrees = (model.children.worktrees ?? []).filter((entry) => entry.isMain !== true)
+  const worktrees = model.children.worktrees ?? []
   if (submodules.length === 0 && worktrees.length === 0) return undefined
   const wrap = el('div', { class: 'dsh-og-repo-children' })
   for (const entry of submodules.slice(0, 8)) {
@@ -107,14 +107,16 @@ function repoChildren(row) {
     entry.initialized === true ? undefined : tag('未初始化', 'warning')))
   }
   for (const entry of worktrees.slice(0, 8)) {
-    wrap.append(el('div', {
+    wrap.append(el('button', {
+      type: 'button',
       class: 'dsh-og-repo-child',
       title: entry.path,
+      'data-worktree-path': entry.path,
+      'data-active': entry.path === model.worktreePath ? 'true' : undefined,
+      disabled: entry.prunable === true,
       onClick: (event) => {
         event.stopPropagation()
-        model.tab = 'worktrees'
-        emit()
-        void loadChildren()
+        selectWorktree(entry.path)
       },
     },
     el('span', { class: 'dsh-og-file-icon' }, icon('worktree')),
@@ -158,13 +160,34 @@ function repoMenu(row) {
 
 /** Point the panel at one repository and load what the active tab needs. */
 function selectRepo(workspaceId) {
-  if (model.workspaceId === workspaceId) return
+  if (model.workspaceId === workspaceId && !model.worktreePath) return
   model.workspaceId = workspaceId
+  model.worktreePath = ''
+  storeSet(STORE_KEYS.worktreePath, '')
   storeSet(STORE_KEYS.workspaceId, workspaceId)
   resetRepoState()
   emit()
-  void refreshTab()
+  void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
   void loadChildren()
+}
+
+function selectWorktree(path) {
+  const parent = model.repos.find((row) => row.workspaceId === model.workspaceId)
+  if (path === parent?.root) {
+    selectRepo(model.workspaceId)
+    return
+  }
+  const worktree = model.children.worktrees.find((row) => row.path === path && !row.prunable)
+  if (worktree === undefined || model.worktreePath === path) return
+  const children = model.children
+  resetRepoState()
+  model.children = children
+  model.worktreePath = path
+  model.tab = 'status'
+  storeSet(STORE_KEYS.workspaceId, model.workspaceId)
+  storeSet(STORE_KEYS.worktreePath, path)
+  emit()
+  void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
 }
 
 /** Copy to the clipboard, reporting either way. */

@@ -29,10 +29,10 @@ import { ERR, TermError } from '../shared/protocol.js'
 import { writePrivate } from './sdk.js'
 
 /** Secret-store file name; the caller joins it onto the DSH home. */
-export const SECRETS_FILE = 'dsh-plugin-otools-term-secrets.json'
+export const SECRETS_FILE = 'secrets.json'
 
 /** Host-key pin file name. */
-export const KNOWN_HOSTS_FILE = 'dsh-plugin-otools-term-known-hosts.json'
+export const KNOWN_HOSTS_FILE = 'known-hosts.json'
 
 /** The fields a server record can have a secret for. */
 export const SECRET_FIELDS = ['password', 'passphrase', 'privateKeyBody']

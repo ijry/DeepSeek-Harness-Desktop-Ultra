@@ -35,6 +35,7 @@ const NO_ARGUMENT_COMMANDS = new Set([
   'save_otools_plugin_localstate',
   'save_otools_plugin_localstate_with_scheme',
   'dbm_fs_home_dir',
+  'dbm_fs_plugin_data_dir',
   'dbm_fs_join_path',
   'dbm_fs_list_dir',
   'dbm_get_backup_storage_info',

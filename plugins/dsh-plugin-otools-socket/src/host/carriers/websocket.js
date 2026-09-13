@@ -1,6 +1,6 @@
 import { URL } from 'node:url'
 
-import { acceptKey, encodeFrame, readFrame } from '../../../../.shared/host/socket.js'
+import { acceptKey, encodeFrame, readFrame } from '../socket.js'
 
 const OP = { text: 0x1, binary: 0x2, close: 0x8, ping: 0x9, pong: 0xa }
 

@@ -334,7 +334,7 @@ const collapsedDirs = new Set()
 
 /** The collapse key for one directory. */
 function dirKey(section, path) {
-  return model.workspaceId + ':' + section.id + ':' + path
+  return repoTarget() + ':' + section.id + ':' + path
 }
 
 /** One level of the file tree. */
@@ -417,7 +417,7 @@ async function discard(rows) {
  */
 async function act(route, body, successMessage) {
   try {
-    const value = await withBusy(() => apiPost(route, { workspaceId: model.workspaceId, ...body }))
+    const value = await withBusy(() => apiPost(route, { workspaceId: repoTarget(), ...body }))
     if (value !== null && value !== undefined && value.conflict === true) {
       toast('操作完成，但存在冲突，请在工作区里解决', 'warning', 5000)
     } else if (successMessage !== undefined) {

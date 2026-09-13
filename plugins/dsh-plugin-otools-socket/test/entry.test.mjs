@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import { apply } from '../src/index.js'
+
+const root = dirname(dirname(fileURLToPath(import.meta.url)))
+
+test('runtime modules only import files shipped inside the plugin package', async () => {
+  const source = await readFile(join(root, 'src', 'host', 'carriers', 'websocket.js'), 'utf8')
+  assert.ok(source.includes("from '../socket.js'"))
+  assert.ok(!source.includes('.shared/'), 'plugins/.shared is a repository-only source directory')
+})
 
 class FakeContext {
   constructor() {

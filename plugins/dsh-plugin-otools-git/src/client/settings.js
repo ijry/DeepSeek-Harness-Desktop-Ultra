@@ -44,7 +44,7 @@ function openSettingsDialog() {
   void (async () => {
     await Promise.all([loadIdentity(), loadCredentials(), loadAiAvailability()])
     try {
-      state.config = await apiGet('/config', { workspaceId: model.workspaceId })
+      state.config = await apiGet('/config', { workspaceId: repoTarget() })
     } catch { /* the tab reports it */ }
     state.loading = false
     handle.render()
@@ -114,7 +114,7 @@ function settingsGeneral(handle, state) {
 async function saveConfig(key, value, scope) {
   try {
     await apiPost('/config/set', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       key,
       value: value === undefined || value === null || String(value).length === 0 ? null : String(value),
       scope,
@@ -154,7 +154,7 @@ function settingsConfig(handle, state) {
       placeholder: row.effective === undefined ? '未设置' : row.effective,
       onChange: async (event) => {
         await saveConfig(key, event.target.value, scopeState.scope)
-        state.config = await apiGet('/config', { workspaceId: model.workspaceId }).catch(() => state.config)
+        state.config = await apiGet('/config', { workspaceId: repoTarget() }).catch(() => state.config)
         handle.render()
       },
     })

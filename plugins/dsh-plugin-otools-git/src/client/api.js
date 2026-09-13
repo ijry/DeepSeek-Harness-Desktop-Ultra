@@ -3,9 +3,8 @@
  * the change stream that carries preference changes and live operation progress —
  * a WebSocket where the host offers one, the SSE route otherwise.
  *
- * Every request carries `workspaceId`, never a filesystem path the browser made
- * up: the host resolves that id against DSH's workspace registry, which is what
- * keeps the panel from driving `git` in an arbitrary directory.
+ * Requests name a registered workspace or a worktree listed by Git for it. The
+ * host validates both against the workspace registry before running commands.
  */
 
 /** A rejected envelope, carrying the host's stable code. */
@@ -75,7 +74,7 @@ async function withBusy(run) {
 /** The current repository's request parameters, or undefined when none is open. */
 function repoParams(extra) {
   if (model.workspaceId.length === 0) return undefined
-  return { workspaceId: model.workspaceId, ...(extra ?? {}) }
+  return { workspaceId: repoTarget(), ...(extra ?? {}) }
 }
 
 // ------------------------------------------------------------------ stream
@@ -344,6 +343,8 @@ async function loadRepos() {
     if (!known) {
       const first = model.repos.find((row) => row.isRepo)
       model.workspaceId = first === undefined ? '' : first.workspaceId
+      model.worktreePath = ''
+      storeSet(STORE_KEYS.worktreePath, '')
       resetRepoState()
     }
   } catch (error) {
@@ -357,9 +358,12 @@ async function loadStatus() {
   const params = repoParams({ untracked: pref('untrackedMode') ?? 'all' })
   if (params === undefined) return
   try {
-    model.status = await apiGet('/status', params)
+    const status = await apiGet('/status', params)
+    if (params.workspaceId !== repoTarget()) return
+    model.status = status
     model.statusError = null
   } catch (error) {
+    if (params.workspaceId !== repoTarget()) return
     model.status = null
     model.statusError = friendlyError(error)
   }
@@ -367,11 +371,18 @@ async function loadStatus() {
 }
 
 async function loadChildren() {
-  const params = repoParams()
-  if (params === undefined) return
+  const workspaceId = model.workspaceId
+  if (!workspaceId) return
   try {
-    model.children = await apiGet('/children', params)
+    const children = await apiGet('/children', { workspaceId })
+    if (workspaceId !== model.workspaceId) return
+    model.children = children
+    if (model.worktreePath && !children.worktrees.some((row) => row.path === model.worktreePath && !row.prunable)) {
+      selectRepo(workspaceId)
+      return
+    }
   } catch {
+    if (workspaceId !== model.workspaceId) return
     model.children = { submodules: [], worktrees: [] }
   }
   emit()

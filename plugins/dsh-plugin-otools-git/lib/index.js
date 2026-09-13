@@ -23,10 +23,9 @@
  *
  * @module dsh-plugin-otools-git
  */
-import { CREDENTIALS_FILE } from './host/auth.js'
 import { registerGitRoutes } from './host/routes.js'
-import { dshHomePath } from './host/sdk.js'
-import { PREFS_FILE, PrefsStore } from './host/store.js'
+import { adoptLegacyData, pluginDataPath } from './host/sdk.js'
+import { PrefsStore } from './host/store.js'
 import { createRepoIndex, workspaceFace } from './host/workspaces.js'
 
 /** Cordis plugin name. */
@@ -45,12 +44,15 @@ export const inject = []
  * @param ctx - the plugin context.
  */
 export function apply(ctx) {
-  const prefs = new PrefsStore({ file: dshHomePath(PREFS_FILE) })
+  // 早期版本把偏好和凭据散在 DSH home 根部，先收编再开库。
+  adoptLegacyData('dsh-plugin-otools-git.json', 'prefs.json')
+  adoptLegacyData('dsh-plugin-otools-git-credentials.json', 'credentials.json')
+  const prefs = new PrefsStore({ file: pluginDataPath('prefs.json') })
   // Eager first load: the prefs GET serves a snapshot without triggering the
   // lazy load, so a fresh boot would otherwise hand the panel defaults until the
   // first write. load() never throws — a corrupt ledger is quarantined instead.
   void prefs.load()
-  const credentialsFile = dshHomePath(CREDENTIALS_FILE)
+  const credentialsFile = pluginDataPath('credentials.json')
 
   // The model services are optional and may arrive after the routes do, so the
   // panel reads them through a mutable holder rather than capturing a value.

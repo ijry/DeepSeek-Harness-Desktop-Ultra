@@ -21,9 +21,6 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { ERR, GitError } from '../shared/protocol.js'
 
-/** Credential file name; the caller joins it onto the DSH home. */
-export const CREDENTIALS_FILE = 'dsh-plugin-otools-git-credentials.json'
-
 /** Stored-file schema version (bump on breaking record changes). */
 const SCHEMA_VERSION = 1
 

@@ -95,7 +95,7 @@ function aiTitle() {
 /** Pre-fill the box with HEAD's message, for an amend. */
 async function fillHeadMessage() {
   try {
-    const value = await apiGet('/head-message', { workspaceId: model.workspaceId })
+    const value = await apiGet('/head-message', { workspaceId: repoTarget() })
     if (typeof value.message === 'string' && value.message.length > 0) {
       model.commitMessage = value.message
       emit()
@@ -113,7 +113,7 @@ async function doCommit() {
   const amend = pref('amend') === true
   try {
     const result = await withBusy(() => apiPost('/commit', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       message,
       amend,
       signoff: pref('signoff') === true,
@@ -160,7 +160,7 @@ async function generateCommitMessage() {
   let record
   try {
     record = await apiPost('/ai/commit-message', {
-      workspaceId: model.workspaceId,
+      workspaceId: repoTarget(),
       style: pref('aiStyle') ?? 'conventional',
       language: pref('aiLanguage') ?? 'zh',
       source: (model.status?.counts.staged ?? 0) > 0 ? 'staged' : 'worktree',

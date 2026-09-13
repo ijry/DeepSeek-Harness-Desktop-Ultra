@@ -15,7 +15,7 @@ async function startOperation(route, body) {
   if (model.workspaceId.length === 0) return undefined
   let record
   try {
-    record = await apiPost(route, { workspaceId: model.workspaceId, ...body })
+    record = await apiPost(route, { workspaceId: repoTarget(), ...body })
   } catch (error) {
     toastError(error)
     return undefined
@@ -169,7 +169,7 @@ function dubiousHint(error) {
         onClick: async () => {
           try {
             const result = await apiPost('/safe-directory', {
-              workspaceId: model.workspaceId,
+              workspaceId: repoTarget(),
               paths: dubious.paths,
             })
             toast(result.message ?? '已更新 safe.directory', 'success', 4200)
@@ -416,7 +416,7 @@ function openPushDialog(options) {
   })
   void (async () => {
     try {
-      state.defaults = await apiGet('/push/defaults', { workspaceId: model.workspaceId })
+      state.defaults = await apiGet('/push/defaults', { workspaceId: repoTarget() })
       state.remote = state.defaults.remote ?? ''
       state.localBranch = state.defaults.localBranch ?? ''
       state.remoteBranch = state.defaults.targetBranch ?? ''
@@ -513,7 +513,7 @@ function openPullDialog() {
   const reloadRemoteBranches = async () => {
     if (state.remote.length === 0) return
     try {
-      state.branches = await apiGet('/remote/branches', { workspaceId: model.workspaceId, remote: state.remote })
+      state.branches = await apiGet('/remote/branches', { workspaceId: repoTarget(), remote: state.remote })
     } catch {
       state.branches = []
     }
@@ -521,7 +521,7 @@ function openPullDialog() {
   }
   void (async () => {
     try {
-      state.defaults = await apiGet('/pull/defaults', { workspaceId: model.workspaceId })
+      state.defaults = await apiGet('/pull/defaults', { workspaceId: repoTarget() })
       state.remote = state.defaults.remote ?? ''
       state.branch = ''
     } catch (error) {

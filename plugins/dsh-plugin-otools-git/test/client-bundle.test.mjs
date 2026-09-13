@@ -45,10 +45,12 @@ function git(cwd, ...args) {
 describe('client bundle', () => {
   let dir
   let repo
+  let worktree
   let server
   let dispose
   let dom
   let plugin
+  let pluginFactory
   let disposeClient
 
   before(async () => {
@@ -61,6 +63,9 @@ describe('client bundle', () => {
     await writeFile(join(repo, 'a.txt'), 'one\ntwo\n', 'utf8')
     git(repo, 'add', '.')
     git(repo, 'commit', '-m', 'first commit')
+    worktree = join(dir, 'linked-worktree')
+    git(repo, 'worktree', 'add', '-b', 'feature-worktree', worktree)
+    await writeFile(join(worktree, 'only-in-worktree.txt'), 'worktree change\n', 'utf8')
     await writeFile(join(repo, 'a.txt'), 'one\nTWO\nthree\n', 'utf8')
     await writeFile(join(repo, 'new.txt'), 'fresh\n', 'utf8')
     git(repo, 'add', 'a.txt')
@@ -108,6 +113,7 @@ describe('client bundle', () => {
     // The loader the wrapper calls.
     dom.window.__ModuleLoader__ = {
       load(entry) {
+        pluginFactory = entry.factory
         plugin = entry.factory(() => undefined)
       },
     }
@@ -197,6 +203,17 @@ describe('client bundle', () => {
     assert.equal(cards.length, 1)
     assert.ok(cards[0].textContent.includes('repo'))
     assert.ok(cards[0].textContent.includes('main'), 'branch should be shown')
+  })
+
+  it('has one stash navigation entry, with creation inside the stash pane', async () => {
+    const stashButtons = dom.document.querySelectorAll('.dsh-og-tbtn')
+      .filter((button) => button.textContent === '贮藏')
+    assert.equal(stashButtons.length, 1)
+    stashButtons[0].dispatchEvent({ type: 'click' })
+    await waitFor(() => panelText().includes('贮藏当前改动'), 'stash creation inside its pane')
+    dom.document.querySelectorAll('.dsh-og-tbtn')
+      .find((button) => button.textContent.includes('工作区')).dispatchEvent({ type: 'click' })
+    await waitFor(() => panelText().includes('已暂存文件'), 'return to main status')
   })
 
   it('shows the staged and untracked sections with their files', () => {
@@ -326,6 +343,58 @@ describe('client bundle', () => {
     }
     dom.document.dispatchEvent({ type: 'keydown', key: 'Escape' })
     await settle(2)
+  })
+
+  it('switches to an unregistered linked worktree, stages there and returns to main', async () => {
+    const findWorktree = (path) => dom.document.querySelectorAll('[data-worktree-path]')
+      .find((button) => button.getAttribute('data-worktree-path') === path.replace(/\\/g, '/'))
+    await waitFor(() => findWorktree(worktree), 'linked worktree navigation')
+    findWorktree(worktree).dispatchEvent({ type: 'click' })
+    await waitFor(() => panelText().includes('only-in-worktree.txt'), 'linked worktree status')
+    assert.equal(dom.window.localStorage.getItem('dsh-plugin-otools-git:workspaceId'), 'ws1')
+    assert.equal(dom.window.localStorage.getItem('dsh-plugin-otools-git:worktreePath'), worktree.replace(/\\/g, '/'))
+    assert.ok(dom.document.querySelector('.dsh-og-statusbar').textContent.includes('feature-worktree'))
+    assert.ok(!dom.document.querySelector('.dsh-og-body').textContent.includes('new.txt'))
+    const refresh = dom.document.querySelectorAll('button')
+      .find((button) => button.getAttribute('title') === '刷新仓库列表')
+    assert.ok(refresh)
+    refresh.dispatchEvent({ type: 'click' })
+    await settle(5)
+    assert.ok(panelText().includes('only-in-worktree.txt'), 'refresh must preserve the worktree choice')
+    const stage = dom.document.querySelectorAll('button')
+      .find((button) => button.textContent === '全部暂存')
+    assert.ok(stage, 'worktree staging action must be available')
+    stage.dispatchEvent({ type: 'click' })
+    await waitFor(() => git(worktree, 'diff', '--cached', '--name-only').includes('only-in-worktree.txt'), 'stage in linked worktree')
+    assert.equal(git(repo, 'diff', '--cached', '--name-only').trim(), 'a.txt')
+    dom.document.querySelector('.dsh-og-repo').dispatchEvent({ type: 'click' })
+    await waitFor(() => dom.document.querySelector('.dsh-og-body').textContent.includes('new.txt'), 'return to main worktree')
+    assert.ok(!dom.document.querySelector('.dsh-og-body').textContent.includes('only-in-worktree.txt'))
+  })
+
+  it('restores the selected worktree before a shared-bus refresh can overwrite it', async () => {
+    disposeClient()
+    const worktreePath = worktree.replace(/\\/g, '/')
+    dom.window.localStorage.setItem('dsh-plugin-otools-git:workspaceId', 'ws1')
+    dom.window.localStorage.setItem('dsh-plugin-otools-git:worktreePath', worktreePath)
+    plugin = pluginFactory(() => undefined)
+    plugin.apply({
+      effect: (callback) => { disposeClient = callback() },
+      inject: (_names, callback) => callback({
+        otoolsSocket: {
+          subscribe(_source, handlers) {
+            handlers.onReady({ revision: 0 })
+            return () => {}
+          },
+        },
+      }),
+    })
+    await waitFor(() => panelText().includes('已暂存文件'), 'shared-bus refresh before opening the panel')
+    assert.equal(dom.window.localStorage.getItem('dsh-plugin-otools-git:worktreePath'), worktreePath)
+    assert.ok(dom.document.querySelector('.dsh-og-statusbar').textContent.includes('feature-worktree'))
+    dom.document.querySelector('[data-dsh-otools-git-entry]').dispatchEvent({ type: 'click' })
+    await settle(3)
+    assert.ok(panelText().includes('only-in-worktree.txt'))
   })
 
   it('closes the panel when another panel plugin activates', async () => {

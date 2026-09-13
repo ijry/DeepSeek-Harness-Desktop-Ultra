@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { DeviceAuth, PairingOffers } from './host/auth.js'
 import { normalizeConfig, LEDGER_FILE } from './host/config.js'
 import { createExternalRoutes } from './host/routes.js'
-import { dshHomePath } from './host/sdk.js'
+import { adoptLegacyData, pluginDataPath } from './host/sdk.js'
 import { OtoolsSocketService } from './host/service.js'
 import { DeviceStore } from './host/store.js'
 import { TicketStore } from './host/tickets.js'
@@ -61,7 +61,9 @@ function createInternalCarrier(ctx, service) {
 
 export function apply(ctx, rawConfig = {}, dependencies = {}) {
   const config = normalizeConfig(rawConfig)
-  const file = rawConfig.file || dshHomePath(LEDGER_FILE)
+  // 早期版本把账本散在 DSH home 根部，先收编再开库（显式传入的 file 不动）。
+  if (rawConfig.file === undefined) adoptLegacyData(LEDGER_FILE, LEDGER_FILE)
+  const file = rawConfig.file || pluginDataPath(LEDGER_FILE)
   const store = dependencies.createStore?.({ file }) ?? new DeviceStore({ file })
   const offers = new PairingOffers()
   const auth = new DeviceAuth({ store, offers })

@@ -13,6 +13,7 @@
 let panelEl = null
 let sideEl = null
 let toolbarEl = null
+let repoContextEl = null
 let bodyEl = null
 let statusbarEl = null
 let entryEl = null
@@ -22,6 +23,7 @@ let viewEl = null
 function buildPanel(view) {
   sideEl = el('div', { class: 'dsh-og-side' })
   toolbarEl = el('div', { class: 'dsh-og-toolbar' })
+  repoContextEl = el('div', { class: 'dsh-og-repo-context' })
   bodyEl = el('div', { class: 'dsh-og-body' })
   statusbarEl = el('div', { class: 'dsh-og-statusbar' })
 
@@ -42,7 +44,7 @@ function buildPanel(view) {
     },
   })
 
-  const main = el('div', { class: 'dsh-og-main' }, toolbarEl, bodyEl, statusbarEl)
+  const main = el('div', { class: 'dsh-og-main' }, repoContextEl, toolbarEl, bodyEl, statusbarEl)
   panelEl = el('div', { class: 'dsh-og-panel', 'data-dsh-og-panel': '' }, sideEl, handle, main)
   view.append(panelEl)
 }
@@ -51,6 +53,7 @@ function buildPanel(view) {
 function renderPanel() {
   if (panelEl === null || !panelEl.isConnected) return
   renderSideColumn()
+  renderRepoContext()
   renderToolbar()
   renderBody()
   renderStatusBar()
@@ -107,8 +110,7 @@ function renderToolbar() {
     }),
     el('div', { class: 'dsh-og-toolbar-sep' }),
     toolbarButton({ icon: 'branch', label: '分支', disabled: !hasRepo, onClick: () => openBranchDialog() }),
-    toolbarButton({ icon: 'merge', label: '合并', disabled: !hasRepo, onClick: () => openMergeDialog() }),
-    toolbarButton({ icon: 'stash', label: '贮藏', disabled: !hasRepo, onClick: () => openStashDialog() }))
+    toolbarButton({ icon: 'merge', label: '合并', disabled: !hasRepo, onClick: () => openMergeDialog() }))
 
   const right = el('div', { class: 'dsh-og-toolbar-group dsh-og-right' },
     model.busy > 0 ? el('span', { style: { 'font-size': '11px', color: 'var(--og-text-3)', 'align-self': 'center' } }, '处理中...') : undefined,
@@ -116,6 +118,25 @@ function renderToolbar() {
     toolbarButton({ icon: 'settings', label: '设置', disabled: !hasRepo, onClick: () => openSettingsDialog() }))
 
   fill(toolbarEl, left, mid, right)
+}
+
+function renderRepoContext() {
+  const parent = model.repos.find((row) => row.workspaceId === model.workspaceId)
+  if (parent === undefined || !parent.isRepo) {
+    fill(repoContextEl)
+    return
+  }
+  const rows = [{ path: parent.root, branch: parent.branch }, ...model.children.worktrees]
+  const picker = el('select', {
+    class: 'dsh-og-worktree-select',
+    'aria-label': '当前工作树',
+    onChange: (event) => selectWorktree(event.target.value),
+  }, rows.map((row) => el('option', { value: row.path, disabled: row.prunable === true },
+    (row.branch ?? '游离 HEAD') + ' · ' + baseName(row.path))))
+  picker.value = model.worktreePath || parent.root
+  const path = currentRepo()?.root ?? ''
+  fill(repoContextEl, el('span', {}, '工作树'), picker,
+    el('span', { class: 'dsh-og-worktree-path', title: path }, path))
 }
 
 /** One toolbar button: 22px icon over an 11px label, with an optional badge. */
@@ -366,11 +387,10 @@ async function bootData() {
   }
   dataBooted = true
   await loadPrefs()
-  const remembered = storeGet(STORE_KEYS.workspaceId, '')
-  if (typeof remembered === 'string' && remembered.length > 0) model.workspaceId = remembered
   const savedTab = pref('activeTab')
   if (typeof savedTab === 'string' && TABS.some((row) => row.id === savedTab)) model.tab = savedTab
   await Promise.all([loadInstall(), loadAiAvailability()])
   await loadRepos()
-  await Promise.all([refreshTab(), loadChildren(), loadRemotes(), loadBranches(), loadCredentials()])
+  await loadChildren()
+  await Promise.all([refreshTab(), loadRemotes(), loadBranches(), loadCredentials()])
 }

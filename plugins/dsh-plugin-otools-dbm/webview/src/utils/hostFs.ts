@@ -33,6 +33,9 @@ export interface HostWriteFileRequest {
 /** The host user's home directory. */
 export const homeHostDir = async (): Promise<string> => invoke<string>('dbm_fs_home_dir')
 
+/** 本插件的数据目录（<DSH home>/plugins/dsh-plugin-otools-dbm/）。 */
+export const pluginDataHostDir = async (): Promise<string> => invoke<string>('dbm_fs_plugin_data_dir')
+
 /** Join path segments with the host's separator. */
 export const joinHostPath = async (...paths: string[]): Promise<string> =>
   invoke<string>('dbm_fs_join_path', { paths: paths.filter((part) => part !== undefined && part !== null) })

@@ -98,3 +98,13 @@ test("内置插件不重复", () => {
   // id 同时是资源文件名、profile 的 bundles 行名和前端 key，重名会静默串台。
   assert.equal(new Set(PACKED).size, PACKED.length);
 });
+
+test("桌面升级会刷新用户已选择的稳定版本插件包", () => {
+  assert.match(rust, /const BUNDLE_REVISION: u32 = [1-9]\d*;/)
+  assert.match(rust, /pub fn plugins_to_refresh\(choice: &Choice\)/)
+  assert.match(rust, /choice\.bundle_revision >= BUNDLE_REVISION/)
+  const main = readFileSync(join(root, "src-tauri", "src", "main.rs"), "utf8")
+  assert.match(main, /refresh_bundled_plugins[\s\S]*?install_infrastructure[\s\S]*?if asking/)
+  assert.match(main, /plugins::uninstall[\s\S]*?plugins::install/)
+  assert.match(rust, /plugin\.infrastructure \|\| choice\.installed/)
+});

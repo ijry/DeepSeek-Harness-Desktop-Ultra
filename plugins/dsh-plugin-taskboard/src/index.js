@@ -20,7 +20,7 @@ import {
   CODEG_TASKBOARD_SECTION_ORDER,
   protocolText,
 } from './host/protocol-text.js'
-import { dshHomePath } from './host/sdk.js'
+import { adoptLegacyData, pluginDataPath } from './host/sdk.js'
 import { TaskStore } from './host/store.js'
 import { createLauncher } from './host/launcher.js'
 import { registerTaskboardRoutes } from './host/routes.js'
@@ -28,7 +28,7 @@ import { registerTaskboardTools, workspaceFace } from './host/tools.js'
 import { hostLang } from './shared/lang.js'
 
 /** Ledger file name under the DSH home. */
-export const LEDGER_FILE = 'dsh-plugin-taskboard.json'
+export const LEDGER_FILE = 'ledger.json'
 
 /** Cordis plugin name. */
 export const name = 'dsh-plugin-taskboard'
@@ -41,7 +41,9 @@ export const inject = ['tools', 'systemPrompt']
  * @param ctx - the plugin context (tools + systemPrompt injected).
  */
 export function apply(ctx) {
-  const store = new TaskStore({ file: dshHomePath(LEDGER_FILE) })
+  // 早期版本把账本散在 DSH home 根部，先收编再开库。
+  adoptLegacyData('dsh-plugin-taskboard.json', LEDGER_FILE)
+  const store = new TaskStore({ file: pluginDataPath(LEDGER_FILE) })
   // Eager first load: taskboard_list/get and the GET routes read snapshots
   // without triggering the lazy load, so a fresh boot used to serve an EMPTY
   // board until the first mutation or /state call (dsh-taskboard review P0).

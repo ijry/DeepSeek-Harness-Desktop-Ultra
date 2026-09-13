@@ -45,7 +45,8 @@ const STYLES = `
 }
 .dsh-ot-entry:hover { background: var(--dsw-hover, rgba(128, 128, 128, .12)); color: var(--dsw-text-primary, inherit); }
 .dsh-ot-entry[data-active="true"] { background: var(--dsw-active, rgba(128, 128, 128, .18)); color: var(--dsw-text-primary, inherit); font-weight: 500; }
-.dsh-ot-entry-icon { display: inline-flex; flex: none; color: #2f9e7e; }
+.dsh-ot-entry-icon { display: inline-flex; flex: none; color: inherit; filter: grayscale(1); opacity: .85; }
+.dsh-ot-entry:hover .dsh-ot-entry-icon, .dsh-ot-entry:focus-visible .dsh-ot-entry-icon { color: #2f9e7e; filter: none; opacity: 1; }
 .dsh-ot-entry-stats { margin-left: auto; font-size: 11px; line-height: 1; color: rgba(127, 143, 164, .9); font-variant-numeric: tabular-nums; white-space: nowrap; }
 [data-sidebar-collapsed] [data-dsh-ssh-entry], [class*="_collapsed"] [data-dsh-ssh-entry] {
   width: 36px; height: 36px; min-width: 36px; margin: 0 0 12px; padding: 0; justify-content: center; gap: 0;

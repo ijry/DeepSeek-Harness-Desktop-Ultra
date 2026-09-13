@@ -16,7 +16,7 @@
  *
  * @module dsh-plugin-otools-git/host/workspaces
  */
-import { basename } from 'node:path'
+import { basename, relative } from 'node:path'
 import { ERR, GitError } from '../shared/protocol.js'
 import { readBrief, repoRoot } from './status.js'
 import { listSubmodules, listWorktrees } from './nested.js'
@@ -173,7 +173,7 @@ export function createRepoIndex(options) {
       return {
         submodules,
         // The row for the repository itself is not a child of itself.
-        worktrees: worktrees.filter((row) => row.path.replace(/\\/g, '/') !== root.replace(/\\/g, '/')),
+        worktrees: worktrees.filter((row) => relative(root, row.path) !== ''),
       }
     },
 

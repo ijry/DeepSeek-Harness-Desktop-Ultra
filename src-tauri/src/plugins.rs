@@ -46,7 +46,9 @@ const MAX_FAILURES: u32 = 2;
 /// contents change so the desktop refreshes all previously selected plugins once.
 ///
 /// 5：git 历史表修复窄窗口下日期换行撑高行、导致图形连线断裂的问题。
-const BUNDLE_REVISION: u32 = 5;
+/// 6：全部内置插件的数据目录收编到 <DSH home>/plugins/<id>/，dbm 的
+///    备份/导出默认目录不再落在 otools 时代的 ~/.otools 旧位置。
+const BUNDLE_REVISION: u32 = 6;
 
 /// 一个内置插件。
 ///
