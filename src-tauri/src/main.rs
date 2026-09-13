@@ -624,6 +624,8 @@ fn boot(app: tauri::AppHandle) {
         }
     };
 
+    refresh_bundled_plugins(&app, &runtime, &entry);
+
     install_infrastructure(&app, &runtime, &entry);
 
     if asking {
@@ -634,7 +636,9 @@ fn boot(app: tauri::AppHandle) {
 
     match server::start(&runtime.path, &entry, None) {
         Ok(instance) => {
-            let url = instance.url();
+            // 优先用 dsh 打印的带令牌地址（0.1.5 起 web 面板要认证），
+            // 旧版本没有令牌时自然回退到裸地址。
+            let url = instance.preferred_url();
             {
                 let state = app.state::<AppState>();
                 *lock(&state.server) = Some(instance);
@@ -794,6 +798,43 @@ fn settle_prompt(app: &tauri::AppHandle, node: &node::NodeRuntime, entry: &Path)
         }
     }
     plugins::save_choice(&choice);
+}
+
+/// Refresh bundled plugins after a desktop upgrade.
+///
+/// Their package versions and staged `file:` paths are stable, so pnpm otherwise
+/// keeps the old unpacked contents forever even though the installer ships newer
+/// tarballs. Reinstall infrastructure plus the plugins the user previously selected.
+fn refresh_bundled_plugins(app: &tauri::AppHandle, node: &node::NodeRuntime, entry: &Path) {
+    let mut choice = plugins::load_choice();
+    let pending = plugins::plugins_to_refresh(&choice);
+    if pending.is_empty() {
+        return;
+    }
+    let mut complete = true;
+    for plugin in pending {
+        let (removed, remove_log) = plugins::uninstall(node, entry, plugin);
+        if let Err(error) = removed {
+            eprintln!("[plugins] 刷新 {} 前卸载失败：{error}", plugin.id);
+            let state = app.state::<AppState>();
+            *lock(&state.plugin_log) = Some(remove_log);
+            complete = false;
+            continue;
+        }
+        let (installed, install_log) = plugins::install(app, node, entry, plugin);
+        {
+            let state = app.state::<AppState>();
+            *lock(&state.plugin_log) = Some(install_log);
+        }
+        if let Err(error) = installed {
+            eprintln!("[plugins] 刷新 {} 失败：{error}", plugin.id);
+            complete = false;
+        }
+    }
+    if complete {
+        choice.bundle_revision = plugins::current_bundle_revision();
+        plugins::save_choice(&choice);
+    }
 }
 
 /// 隐藏基础设施不需要用户选择，并且必须先于所有可选插件进入 profile。

@@ -186,7 +186,10 @@ cat ~/.dsh/profiles/web/package.json
 
 - `0.1.1-rc.2` ✓
 - `0.1.2-alpha.2` ✓（canvas 待验证）
-- `0.1.5-rc.1` ✓（插件级测试全部通过；桌面外壳锁定此版本后**真机 GUI 冒烟待做**）
+- `0.1.5-rc.1` ✓（插件级测试全部通过；桌面外壳锁定此版本后真机启动验证通过——外壳已在
+  `server.rs` 适配该版本新增的 web 启动令牌认证：解析 dsh stdout 的
+  `dsh web: <url>?token=...` 行，让 webview 用带令牌地址换取会话 cookie，
+  解析不到时回退裸地址以兼容旧版。十个面板的画面级目检仍待用户确认。）
 
 package.json 的 `dsh.compatibility.dshReleases` 字段记录了详细兼容性。
 

@@ -110,12 +110,40 @@ pub struct DshServer {
     child: Child,
     pub port: u16,
     pub logs: LogRing,
+    /// dsh 自己打印的带认证令牌的地址。旧版本没有认证，这里是 None。
+    auth_url: Option<String>,
 }
 
 impl DshServer {
     pub fn url(&self) -> String {
         format!("http://127.0.0.1:{}", self.port)
     }
+
+    /// webview 应该访问的地址：优先用带令牌的认证地址，拿不到再退回裸地址。
+    pub fn preferred_url(&self) -> String {
+        self.auth_url.clone().unwrap_or_else(|| self.url())
+    }
+}
+
+/// 从 dsh 的 stdout 里提取带认证令牌的 web 地址。
+///
+/// dsh 0.1.5 起给 web 面板加了启动令牌认证（BrowserAuth）：裸地址一律 401，
+/// 只有上游自己打印的 `dsh web: <url>?token=...` 这一行能换到会话 cookie。
+/// 这里解析那一行；解析不到（旧版本、未来上游改措辞）就回退裸地址，
+/// 所以对上游文本的依赖是"尽力而为"而不是"必须成功"。
+fn extract_auth_url(snapshot: &str) -> Option<String> {
+    for line in snapshot.lines() {
+        let rest = match line.strip_prefix("[out] dsh web: ") {
+            Some(rest) => rest,
+            None => continue,
+        };
+        if let Some(candidate) = rest.split_whitespace().next() {
+            if candidate.starts_with("http://") || candidate.starts_with("https://") {
+                return Some(candidate.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// 向系统要一个当前空闲的端口。
@@ -245,7 +273,29 @@ pub fn start(
         }
 
         if accepts_connections(port) {
-            return Ok(DshServer { child, port, logs });
+            // 端口就绪后稍等片刻，让 stdout 泵把 `dsh web: <带令牌地址>` 那行
+            // 送到环形缓冲（认证是 0.1.5 引入的；这行打印紧跟在监听之后）。
+            // 等不到也不阻塞启动——旧版本本来就没有这行。
+            let grace = Instant::now() + Duration::from_secs(5);
+            let mut auth_url = None;
+            while Instant::now() < grace {
+                match child.try_wait() {
+                    Ok(Some(_)) => break, // 进程死了，交给外层循环走 ExitedEarly
+                    Ok(None) => {}
+                    Err(_) => break,
+                }
+                if let Some(url) = extract_auth_url(&logs.snapshot()) {
+                    auth_url = Some(url);
+                    break;
+                }
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            return Ok(DshServer {
+                child,
+                port,
+                logs,
+                auth_url,
+            });
         }
 
         if Instant::now() >= deadline {
@@ -372,5 +422,33 @@ mod tests {
         logs.push("first".into());
         logs.push("second".into());
         assert_eq!(logs.snapshot(), "first\nsecond");
+    }
+
+    #[test]
+    fn auth_url_extracted_from_stdout_line() {
+        let snapshot = "[out] some noise\n[out] dsh web: http://127.0.0.1:54647/?token=abc123 (LAN: http://192.168.1.2:54647/?token=abc123)\n[out] more";
+        assert_eq!(
+            extract_auth_url(snapshot).as_deref(),
+            Some("http://127.0.0.1:54647/?token=abc123")
+        );
+    }
+
+    #[test]
+    fn auth_url_without_lan_suffix() {
+        assert_eq!(
+            extract_auth_url("[out] dsh web: http://127.0.0.1:8080/?token=t").as_deref(),
+            Some("http://127.0.0.1:8080/?token=t")
+        );
+    }
+
+    #[test]
+    fn auth_url_absent_for_old_versions() {
+        assert_eq!(extract_auth_url("[out] hello\n[err] boom"), None);
+    }
+
+    #[test]
+    fn auth_url_ignores_malformed_line() {
+        // 前缀对了但后面不是 URL，不能把乱七八糟的东西塞给 webview
+        assert_eq!(extract_auth_url("[out] dsh web: not-a-url"), None);
     }
 }
