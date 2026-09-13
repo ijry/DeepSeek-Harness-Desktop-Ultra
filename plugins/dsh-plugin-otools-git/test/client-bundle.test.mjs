@@ -70,6 +70,17 @@ describe('client bundle', () => {
     await writeFile(join(repo, 'new.txt'), 'fresh\n', 'utf8')
     git(repo, 'add', 'a.txt')
 
+    // A real submodule, so the header dropdown has one to list.
+    const subUpstream = join(dir, 'sub-upstream')
+    git(dir, 'init', '--initial-branch=main', 'sub-upstream')
+    git(subUpstream, 'config', 'user.name', 'Test')
+    git(subUpstream, 'config', 'user.email', 't@example.com')
+    git(subUpstream, 'config', 'commit.gpgsign', 'false')
+    await writeFile(join(subUpstream, 'lib.txt'), 'lib\n', 'utf8')
+    git(subUpstream, 'add', '.')
+    git(subUpstream, 'commit', '-m', 'lib commit')
+    git(repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', subUpstream, 'libs/sub')
+
     // The host, on a real loopback server.
     const workspaces = {
       list: () => [{ id: 'ws1', path: repo, title: 'repo' }],
@@ -198,11 +209,30 @@ describe('client bundle', () => {
     assert.ok(text.includes('当前分支:'), 'status bar missing')
   })
 
-  it('lists the workspace repository in the sidebar', () => {
-    const cards = dom.document.querySelectorAll('.dsh-og-repo')
-    assert.equal(cards.length, 1)
-    assert.ok(cards[0].textContent.includes('repo'))
-    assert.ok(cards[0].textContent.includes('main'), 'branch should be shown')
+  it('lists the workspace repository and its submodule in the header dropdown', async () => {
+    await waitFor(() => dom.document.querySelector('.dsh-og-repo-select') !== null &&
+      dom.document.querySelector('.dsh-og-repo-select').textContent.includes('libs/sub'),
+    'the repo dropdown to list the submodule')
+    const select = dom.document.querySelector('.dsh-og-repo-select')
+    assert.ok(select.textContent.includes('main'), 'branch should be shown')
+    assert.ok(select.textContent.includes('libs/sub'), 'the submodule should be listed under its repo')
+    // Each repository is one optgroup; its label carries the repository name.
+    const group = select.querySelector('optgroup')
+    assert.notEqual(group, null, 'each repository should be one optgroup')
+    assert.ok(group.getAttribute('label').includes('repo'))
+    // No sidebar: the old tree must be gone.
+    assert.equal(dom.document.querySelector('.dsh-og-side'), null)
+  })
+
+  it('jumps to the submodule tab when a submodule option is picked', async () => {
+    const select = dom.document.querySelector('.dsh-og-repo-select')
+    const option = Array.from(select.querySelectorAll('option'))
+      .find((row) => row.getAttribute('value').startsWith('sub:') && row.getAttribute('value').includes('libs/sub'))
+    assert.notEqual(option, undefined, 'submodule option missing')
+    select.value = option.getAttribute('value')
+    select.dispatchEvent({ type: 'change' })
+    await waitFor(() => panelText().includes('添加子模块'), 'the submodule pane')
+    assert.ok(panelText().includes('libs/sub'), 'submodule path should be listed')
   })
 
   it('has one stash navigation entry, with creation inside the stash pane', async () => {
@@ -346,10 +376,15 @@ describe('client bundle', () => {
   })
 
   it('switches to an unregistered linked worktree, stages there and returns to main', async () => {
-    const findWorktree = (path) => dom.document.querySelectorAll('[data-worktree-path]')
-      .find((button) => button.getAttribute('data-worktree-path') === path.replace(/\\/g, '/'))
-    await waitFor(() => findWorktree(worktree), 'linked worktree navigation')
-    findWorktree(worktree).dispatchEvent({ type: 'click' })
+    const worktreeSelect = () => dom.document.querySelector('.dsh-og-worktree-select')
+    await waitFor(() => worktreeSelect() !== null &&
+      worktreeSelect().textContent.includes('feature-worktree'), 'linked worktree navigation')
+    const select = worktreeSelect()
+    const option = Array.from(select.querySelectorAll('option'))
+      .find((row) => row.getAttribute('value') === worktree.replace(/\\/g, '/'))
+    assert.notEqual(option, undefined, 'worktree option missing')
+    select.value = option.getAttribute('value')
+    select.dispatchEvent({ type: 'change' })
     await waitFor(() => panelText().includes('only-in-worktree.txt'), 'linked worktree status')
     assert.equal(dom.window.localStorage.getItem('dsh-plugin-otools-git:workspaceId'), 'ws1')
     assert.equal(dom.window.localStorage.getItem('dsh-plugin-otools-git:worktreePath'), worktree.replace(/\\/g, '/'))
@@ -366,8 +401,15 @@ describe('client bundle', () => {
     assert.ok(stage, 'worktree staging action must be available')
     stage.dispatchEvent({ type: 'click' })
     await waitFor(() => git(worktree, 'diff', '--cached', '--name-only').includes('only-in-worktree.txt'), 'stage in linked worktree')
-    assert.equal(git(repo, 'diff', '--cached', '--name-only').trim(), 'a.txt')
-    dom.document.querySelector('.dsh-og-repo').dispatchEvent({ type: 'click' })
+    // The main worktree keeps its own index: the fixture's staged a.txt and the
+    // submodule entry, but nothing from the linked worktree.
+    const mainStaged = git(repo, 'diff', '--cached', '--name-only')
+    assert.ok(mainStaged.includes('a.txt'))
+    assert.ok(!mainStaged.includes('only-in-worktree.txt'))
+    // Back to the main worktree: re-pick the repository itself in the dropdown.
+    const repoSelect = dom.document.querySelector('.dsh-og-repo-select')
+    repoSelect.value = 'repo:ws1'
+    repoSelect.dispatchEvent({ type: 'change' })
     await waitFor(() => dom.document.querySelector('.dsh-og-body').textContent.includes('new.txt'), 'return to main worktree')
     assert.ok(!dom.document.querySelector('.dsh-og-body').textContent.includes('only-in-worktree.txt'))
   })

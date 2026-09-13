@@ -48,7 +48,9 @@ const MAX_FAILURES: u32 = 2;
 /// 5：git 历史表修复窄窗口下日期换行撑高行、导致图形连线断裂的问题。
 /// 6：全部内置插件的数据目录收编到 <DSH home>/plugins/<id>/，dbm 的
 ///    备份/导出默认目录不再落在 otools 时代的 ~/.otools 旧位置。
-const BUNDLE_REVISION: u32 = 6;
+/// 7：git 面板去掉左侧仓库列表，改为顶部下拉选择仓库，并按仓库分组展示
+///    子模块。
+const BUNDLE_REVISION: u32 = 7;
 
 /// 一个内置插件。
 ///

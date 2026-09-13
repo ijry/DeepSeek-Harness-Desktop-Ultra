@@ -616,51 +616,23 @@ html[data-dsh-og-open] .dsh-og-view {
 }
 .dsh-og-panel *, .dsh-og-overlay * { box-sizing: border-box; }
 
-/* --------------------------------------------------------------- sidebar */
-.dsh-og-side {
-  position: relative; flex-shrink: 0; height: 100%; display: flex; flex-direction: column;
-  padding: 10px 0 0; border-right: 1px solid var(--og-border); background: var(--og-sidebar);
+/* -------------------------------------------------- header repo picker */
+.dsh-og-repo-context { display: flex; align-items: center; gap: 8px; padding: 10px 12px; min-height: 48px; flex-shrink: 0; border-bottom: 1px solid var(--og-border); }
+.dsh-og-repo-context:empty { display: none; }
+.dsh-og-repo-select {
+  min-width: 200px; max-width: 46%; border: 1px solid var(--og-border); border-radius: 6px;
+  padding: 4px 8px; font: inherit; font-weight: 600; color: var(--og-text); background: var(--og-sidebar);
 }
-.dsh-og-side-head {
-  display: flex; align-items: center; gap: 6px; padding: 0 10px 8px;
-  border-bottom: 1px solid var(--og-border);
-}
-.dsh-og-side-title { font-size: 12px; font-weight: 600; color: var(--og-text-3); flex: 1; }
-.dsh-og-tree { flex: 1; overflow: auto; padding: 6px 6px 12px; }
-.dsh-og-repo {
-  display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; margin-bottom: 2px;
-  border: 1px solid transparent; border-radius: 8px; cursor: pointer;
-  transition: background-color .18s ease, border-color .18s ease;
-}
-.dsh-og-repo:hover { background: var(--og-fill-hover); }
-.dsh-og-repo[data-active="true"] {
-  background: var(--og-primary-soft); border-color: var(--og-primary-line);
-}
-.dsh-og-repo[data-repo="false"] { opacity: .55; cursor: default; }
-.dsh-og-repo-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.dsh-og-repo-name {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 13px; font-weight: 500;
-}
+.dsh-og-repo-select:focus { outline: none; border-color: var(--og-primary); }
+.dsh-og-worktree-select { min-width: 120px; max-width: 40%; border: 1px solid var(--og-border); border-radius: 6px; padding: 4px 8px; font: inherit; color: var(--og-text); background: var(--og-sidebar); }
+.dsh-og-worktree-path { min-width: 0; flex: 1; color: var(--og-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Kept from the sidebar days: the dirty dot also marks the entry, and the
+   status bar reuses the classes below. */
+.dsh-og-repo-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--og-warning); flex: none; }
 .dsh-og-repo-meta {
   display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--og-text-3);
   font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden;
 }
-.dsh-og-repo-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--og-warning); flex: none; }
-.dsh-og-repo-children { padding: 2px 0 4px 18px; display: flex; flex-direction: column; gap: 2px; }
-.dsh-og-repo-child {
-  display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px;
-  font-size: 12px; color: var(--og-text-2); cursor: pointer; min-width: 0;
-}
-.dsh-og-repo-child:hover { background: var(--og-fill-hover); }
-button.dsh-og-repo-child { border: 0; width: 100%; background: transparent; font: inherit; text-align: left; }
-button.dsh-og-repo-child:disabled { opacity: .5; cursor: default; }
-.dsh-og-repo-context { display: flex; align-items: center; gap: 8px; padding: 10px 12px; min-height: 48px; flex-shrink: 0; border-bottom: 1px solid var(--og-border); }
-.dsh-og-repo-context:empty { display: none; }
-.dsh-og-worktree-select { min-width: 120px; max-width: 50%; border: 1px solid var(--og-border); border-radius: 6px; padding: 4px 8px; font: inherit; color: var(--og-text); background: var(--og-sidebar); }
-.dsh-og-worktree-path { min-width: 0; color: var(--og-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dsh-og-repo-child[data-active="true"] { background: var(--og-primary-soft); color: var(--og-text); }
-.dsh-og-repo-child-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ------------------------------------------------------------- resizers */
 .dsh-og-resizer { position: relative; flex: none; touch-action: none; z-index: 5; }
@@ -1928,6 +1900,8 @@ async function refreshTab() {
 
 /** A full refresh: the repository list, the tab's data, and the toolbar counts. */
 async function refreshAll() {
+  // The dropdown's cached submodule rows for inactive repositories are stale now.
+  invalidateSubmoduleCache()
   await loadRepos()
   await Promise.all([refreshTab(), loadChildren()])
 }
@@ -2525,163 +2499,175 @@ function fileIcon(path, options) {
 
 // ===== src/client/repo-tree.js =====
 /**
- * The sidebar repository tree.
+ * The header repository picker.
  *
- * This is where the port diverges most from the reference: there is no "add
- * repository" button, no clone/init entry, no drag-to-reorder and no rename,
- * because the rows ARE the DSH workspaces. What is kept is the shape — a card per
- * repository showing its branch and dirty state, with its submodules and sibling
- * worktrees as children.
+ * The old sidebar tree is gone: the repository is picked from one select at the
+ * top-left of the panel, in the spirit of the sibling 仓库面板. What git has
+ * that the issue panel does not is sub-repositories, so every repository renders
+ * as an `<optgroup>` and its submodules render as indented options under it —
+ * picking one jumps to the 子模块 tab of that repository.
+ *
+ * Submodule rows come from `/children` per workspace. The active repository's
+ * rows are always the live `model.children`; every other repository's rows are
+ * fetched once, cached, and dropped on a full refresh.
  */
 
-/** Render the sidebar into `host`. */
-function renderRepoTree(host) {
-  const tree = el('div', { class: 'dsh-og-tree' })
+/** Per-repository submodule cache for INACTIVE repositories: workspaceId → rows. */
+const submoduleCache = new Map()
+
+/** Render the header row: repo picker, worktree picker, path, refresh. */
+function renderRepoPicker(host) {
+  queueSubmoduleLoads()
+  const parent = model.repos.find((row) => row.workspaceId === model.workspaceId)
+  const parts = [repoSelect()]
+  if (parent !== undefined && parent.isRepo) {
+    const rows = [{ path: parent.root, branch: parent.branch }, ...model.children.worktrees]
+    parts.push(el('select', {
+      class: 'dsh-og-worktree-select',
+      'aria-label': '当前工作树',
+      onChange: (event) => selectWorktree(event.target.value),
+    }, rows.map((row) => el('option', { value: row.path, disabled: row.prunable === true },
+      (row.branch ?? '游离 HEAD') + ' · ' + baseName(row.path)))))
+    const picked = parts[parts.length - 1]
+    picked.value = model.worktreePath || parent.root
+  }
+  if (parent !== undefined && parent.isRepo) {
+    const path = currentRepo()?.root ?? ''
+    parts.push(el('span', { class: 'dsh-og-worktree-path', title: path }, path))
+  }
+  parts.push(iconButton('refresh', {
+    title: '刷新仓库列表',
+    onClick: () => {
+      invalidateSubmoduleCache()
+      void refreshAll()
+    },
+  }))
+  fill(host, ...parts)
+}
+
+/**
+ * The repo select: one optgroup per git repository with the repo itself plus
+ * its submodules as options; non-repo workspaces are disabled plain options.
+ */
+function repoSelect() {
+  const select = el('select', {
+    class: 'dsh-og-repo-select',
+    'aria-label': '选择仓库',
+    onChange: (event) => pickRepoValue(event.target.value),
+  })
   if (!model.reposLoaded) {
-    fill(host, el('div', { class: 'dsh-og-loading' }, '正在读取工作区...'))
-    return
+    select.disabled = true
+    select.append(el('option', { value: '' }, '正在读取工作区...'))
+    return select
   }
   if (model.repos.length === 0) {
-    fill(host, emptyState('还没有打开任何工作区', '在 DSH 里打开一个文件夹，它会出现在这里'))
+    select.disabled = true
+    select.append(el('option', { value: '' }, '还没有打开任何工作区'))
+    return select
+  }
+  for (const row of model.repos) {
+    if (row.isRepo !== true) {
+      select.append(el('option', { value: '', disabled: true },
+        (row.title ?? row.name ?? baseName(row.path)) + '（不是 git 仓库）'))
+      continue
+    }
+    const group = el('optgroup', { label: repoGroupLabel(row) })
+    group.append(el('option', { value: 'repo:' + row.workspaceId }, repoOptionLabel(row)))
+    const submodules = row.workspaceId === model.workspaceId
+      ? (model.children.submodules ?? [])
+      : (submoduleCache.get(row.workspaceId) ?? [])
+    for (const entry of submodules.slice(0, 24)) {
+      group.append(el('option', { value: 'sub:' + row.workspaceId + '|' + entry.path },
+        '└ ' + (entry.name ?? entry.path) + (entry.initialized === true ? '' : '（未初始化）')))
+    }
+    if (submodules.length > 24) {
+      group.append(el('option', { value: '', disabled: true }, '└ …'))
+    }
+    select.append(group)
+  }
+  select.value = model.workspaceId.length > 0 ? 'repo:' + model.workspaceId : ''
+  if (select.value !== '' && select.selectedIndex === -1) select.selectedIndex = 0
+  return select
+}
+
+/** The optgroup label: repository name plus its dirty dot. */
+function repoGroupLabel(row) {
+  const name = row.title ?? row.name ?? baseName(row.path)
+  return row.dirty === true ? name + ' ●' : name
+}
+
+/** The repository's own option: branch and change count, as the sidebar showed. */
+function repoOptionLabel(row) {
+  const bits = []
+  if (row.detached === true) {
+    bits.push(row.shortOid === undefined ? '游离 HEAD' : '游离 ' + row.shortOid)
+  } else {
+    bits.push(row.branch ?? '未创建分支')
+  }
+  const track = trackText(row.ahead ?? 0, row.behind ?? 0)
+  if (track.length > 0) bits.push(track)
+  if (row.counts !== undefined && row.counts.total > 0) bits.push('±' + row.counts.total)
+  const state = REPO_STATE_TEXT[row.repoState] ?? ''
+  if (state.length > 0) bits.push(state)
+  return bits.join(' · ')
+}
+
+/**
+ * Fire the one-time `/children` fetch for every inactive repository, so the
+ * dropdown can list submodules the user has not opened yet.
+ */
+function queueSubmoduleLoads() {
+  for (const row of model.repos) {
+    if (row.isRepo !== true || row.workspaceId === model.workspaceId) continue
+    if (submoduleCache.has(row.workspaceId)) continue
+    submoduleCache.set(row.workspaceId, [])
+    const workspaceId = row.workspaceId
+    apiGet('/children', { workspaceId })
+      .then((children) => {
+        submoduleCache.set(workspaceId, children.submodules ?? [])
+        emit()
+      })
+      .catch(() => {
+        submoduleCache.set(workspaceId, [])
+      })
+  }
+}
+
+/** Drop the cached submodule rows (a full refresh or an explicit reload). */
+function invalidateSubmoduleCache() {
+  submoduleCache.clear()
+}
+
+/** Decode a picked option: a repository, or one of its submodules. */
+function pickRepoValue(value) {
+  if (typeof value !== 'string' || value.length === 0) return
+  if (value.startsWith('sub:')) {
+    const rest = value.slice(4)
+    const at = rest.indexOf('|')
+    if (at > 0) selectSubmodule(rest.slice(0, at), rest.slice(at + 1))
     return
   }
-  for (const row of model.repos) tree.append(repoCard(row))
-  fill(host, tree)
+  if (value.startsWith('repo:')) selectRepo(value.slice(5))
 }
 
-/** One repository card. */
-function repoCard(row) {
-  const active = row.workspaceId === model.workspaceId
-  const card = el('div', {
-    class: 'dsh-og-repo',
-    'data-active': active ? 'true' : undefined,
-    'data-repo': row.isRepo === true ? undefined : 'false',
-    title: row.path,
-    onClick: () => {
-      if (row.isRepo !== true) {
-        toast(row.path + ' 不是一个 git 仓库', 'warning')
-        return
-      }
-      selectRepo(row.workspaceId)
-    },
-    onContextmenu: (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      if (row.isRepo !== true) return
-      showMenu(event.clientX, event.clientY, repoMenu(row))
-    },
-  })
-
-  const nameRow = el('div', { class: 'dsh-og-repo-title' },
-    el('span', { class: 'dsh-og-file-icon' }, repoGlyph(row)),
-    el('span', { class: 'dsh-og-repo-name' }, row.title ?? row.name ?? baseName(row.path)))
-  if (row.isRepo === true && row.dirty === true) {
-    nameRow.append(el('span', { class: 'dsh-og-repo-dot', title: '有未提交的改动' }))
+/**
+ * Picking a submodule points the panel at its parent repository and opens the
+ * 子模块 tab — the sidebar's submodule row behaviour, moved into the picker.
+ */
+function selectSubmodule(workspaceId, path) {
+  const alreadyActive = model.workspaceId === workspaceId && !model.worktreePath
+  if (model.tab !== 'submodules') {
+    model.tab = 'submodules'
+    void savePrefs({ activeTab: 'submodules' })
   }
-  card.append(nameRow)
-
-  const meta = el('div', { class: 'dsh-og-repo-meta' })
-  if (row.isRepo !== true) {
-    meta.append(el('span', {}, '不是 git 仓库'))
-  } else {
-    meta.append(el('span', {}, row.detached === true
-      ? (row.shortOid === undefined ? '游离 HEAD' : '游离 ' + row.shortOid)
-      : (row.branch ?? '未创建分支')))
-    const track = trackText(row.ahead ?? 0, row.behind ?? 0)
-    if (track.length > 0) meta.append(el('span', { title: '领先 / 落后于上游' }, track))
-    if (row.counts !== undefined && row.counts.total > 0) {
-      meta.append(el('span', { title: '改动文件数' }, '±' + row.counts.total))
-    }
-    const state = REPO_STATE_TEXT[row.repoState] ?? ''
-    if (state.length > 0) meta.append(el('span', { style: { color: 'var(--og-warning)' } }, state))
+  if (!alreadyActive) {
+    selectRepo(workspaceId)
+    return
   }
-  card.append(meta)
-
-  if (active) {
-    const children = repoChildren(row)
-    if (children !== undefined) card.append(children)
-  }
-  return card
-}
-
-/** A repository's own glyph: git for a plain one, worktree for a linked one. */
-function repoGlyph(row) {
-  const node = icon(row.isRepo === true ? 'git' : 'folder')
-  node.style.color = row.isRepo === true ? '#f05033' : 'var(--og-text-3)'
-  return node
-}
-
-/** The submodule and worktree rows under the active repository. */
-function repoChildren(row) {
-  const submodules = model.children.submodules ?? []
-  const worktrees = model.children.worktrees ?? []
-  if (submodules.length === 0 && worktrees.length === 0) return undefined
-  const wrap = el('div', { class: 'dsh-og-repo-children' })
-  for (const entry of submodules.slice(0, 8)) {
-    wrap.append(el('div', {
-      class: 'dsh-og-repo-child',
-      title: entry.path + (entry.url === undefined ? '' : ' → ' + entry.url),
-      onClick: (event) => {
-        event.stopPropagation()
-        model.tab = 'submodules'
-        emit()
-        void loadChildren()
-      },
-    },
-    el('span', { class: 'dsh-og-file-icon' }, icon('submodule')),
-    el('span', { class: 'dsh-og-repo-child-name' }, entry.name ?? entry.path),
-    entry.initialized === true ? undefined : tag('未初始化', 'warning')))
-  }
-  for (const entry of worktrees.slice(0, 8)) {
-    wrap.append(el('button', {
-      type: 'button',
-      class: 'dsh-og-repo-child',
-      title: entry.path,
-      'data-worktree-path': entry.path,
-      'data-active': entry.path === model.worktreePath ? 'true' : undefined,
-      disabled: entry.prunable === true,
-      onClick: (event) => {
-        event.stopPropagation()
-        selectWorktree(entry.path)
-      },
-    },
-    el('span', { class: 'dsh-og-file-icon' }, icon('worktree')),
-    el('span', { class: 'dsh-og-repo-child-name' }, entry.branch ?? entry.name),
-    entry.prunable === true ? tag('失效', 'danger') : undefined))
-  }
-  if (submodules.length > 8 || worktrees.length > 8) {
-    wrap.append(el('div', { class: 'dsh-og-repo-child', style: { color: 'var(--og-text-3)' } }, '…'))
-  }
-  return wrap
-}
-
-/** The repository row's context menu. */
-function repoMenu(row) {
-  return [
-    { head: row.path },
-    {
-      label: '刷新',
-      icon: 'refresh',
-      onClick: () => {
-        selectRepo(row.workspaceId)
-        void refreshAll()
-      },
-    },
-    {
-      label: '复制仓库路径',
-      icon: 'copy',
-      onClick: () => copyText(row.root ?? row.path, '已复制仓库路径'),
-    },
-    'sep',
-    {
-      label: '仓库设置...',
-      icon: 'settings',
-      onClick: () => {
-        selectRepo(row.workspaceId)
-        openSettingsDialog()
-      },
-    },
-  ]
+  emit()
+  void refreshTab()
+  void loadChildren()
+  void path
 }
 
 /** Point the panel at one repository and load what the active tab needs. */
@@ -6664,9 +6650,10 @@ function settingsAbout() {
 
 // ===== src/client/shell.js =====
 /**
- * The shell: the sidebar, the toolbar, the tab panes and the status bar — the
- * layout of the reference's Git.vue, with its 55px toolbar, 45px icon-over-label
- * buttons, resizable 230px sidebar and three-item bottom bar.
+ * The shell: the header repo picker, the toolbar, the tab panes and the status
+ * bar — the layout of the reference's Git.vue with its 55px toolbar and
+ * three-item bottom bar, minus the sidebar: repositories are picked from the
+ * dropdown at the top-left, like the sibling 仓库面板.
  *
  * One render function rebuilds the whole panel from the model. A git panel's
  * state changes in coarse steps (a status read, a page of history, a checkout),
@@ -6676,7 +6663,6 @@ function settingsAbout() {
  */
 
 let panelEl = null
-let sideEl = null
 let toolbarEl = null
 let repoContextEl = null
 let bodyEl = null
@@ -6686,53 +6672,24 @@ let viewEl = null
 
 /** Build the panel shell once. */
 function buildPanel(view) {
-  sideEl = el('div', { class: 'dsh-og-side' })
   toolbarEl = el('div', { class: 'dsh-og-toolbar' })
   repoContextEl = el('div', { class: 'dsh-og-repo-context' })
   bodyEl = el('div', { class: 'dsh-og-body' })
   statusbarEl = el('div', { class: 'dsh-og-statusbar' })
 
-  const sidebarWidth = pref('sidebarWidth') ?? 230
-  sideEl.style.width = sidebarWidth + 'px'
-  const handle = resizeHandle({
-    axis: 'x',
-    min: 180,
-    max: () => 520,
-    value: () => sideEl.getBoundingClientRect().width,
-    onMove: (value) => {
-      sideEl.style.width = value + 'px'
-    },
-    onCommit: (value) => void savePrefs({ sidebarWidth: Math.round(value) }),
-    onReset: () => {
-      sideEl.style.width = '230px'
-      void savePrefs({ sidebarWidth: 230 })
-    },
-  })
-
   const main = el('div', { class: 'dsh-og-main' }, repoContextEl, toolbarEl, bodyEl, statusbarEl)
-  panelEl = el('div', { class: 'dsh-og-panel', 'data-dsh-og-panel': '' }, sideEl, handle, main)
+  panelEl = el('div', { class: 'dsh-og-panel', 'data-dsh-og-panel': '' }, main)
   view.append(panelEl)
 }
 
 /** Repaint everything. */
 function renderPanel() {
   if (panelEl === null || !panelEl.isConnected) return
-  renderSideColumn()
-  renderRepoContext()
+  renderRepoPicker(repoContextEl)
   renderToolbar()
   renderBody()
   renderStatusBar()
   renderEntry()
-}
-
-/** The sidebar: a heading plus the repository tree. */
-function renderSideColumn() {
-  const head = el('div', { class: 'dsh-og-side-head' },
-    el('span', { class: 'dsh-og-side-title' }, '仓库'),
-    iconButton('refresh', { title: '刷新仓库列表', onClick: () => void refreshAll() }))
-  const treeHost = el('div', { style: { flex: '1', 'min-height': '0', display: 'flex', 'flex-direction': 'column' } })
-  renderRepoTree(treeHost)
-  fill(sideEl, head, treeHost)
 }
 
 /** The toolbar: tabs on the left, git actions in the middle, settings on the right. */
@@ -6783,25 +6740,6 @@ function renderToolbar() {
     toolbarButton({ icon: 'settings', label: '设置', disabled: !hasRepo, onClick: () => openSettingsDialog() }))
 
   fill(toolbarEl, left, mid, right)
-}
-
-function renderRepoContext() {
-  const parent = model.repos.find((row) => row.workspaceId === model.workspaceId)
-  if (parent === undefined || !parent.isRepo) {
-    fill(repoContextEl)
-    return
-  }
-  const rows = [{ path: parent.root, branch: parent.branch }, ...model.children.worktrees]
-  const picker = el('select', {
-    class: 'dsh-og-worktree-select',
-    'aria-label': '当前工作树',
-    onChange: (event) => selectWorktree(event.target.value),
-  }, rows.map((row) => el('option', { value: row.path, disabled: row.prunable === true },
-    (row.branch ?? '游离 HEAD') + ' · ' + baseName(row.path))))
-  picker.value = model.worktreePath || parent.root
-  const path = currentRepo()?.root ?? ''
-  fill(repoContextEl, el('span', {}, '工作树'), picker,
-    el('span', { class: 'dsh-og-worktree-path', title: path }, path))
 }
 
 /** One toolbar button: 22px icon over an 11px label, with an optional badge. */
@@ -6874,10 +6812,10 @@ function noRepoPlaceholder() {
   }
   if (model.repos.length === 0) {
     wrap.append(el('div', {}, '还没有打开任何工作区'))
-    wrap.append(el('div', { style: { 'font-size': '12px' } }, '在 DSH 里打开一个文件夹，如果它是 git 仓库就会出现在左边。'))
+    wrap.append(el('div', { style: { 'font-size': '12px' } }, '在 DSH 里打开一个文件夹，如果它是 git 仓库就会出现在上方下拉里。'))
     return wrap
   }
-  wrap.append(el('div', {}, '在左边选一个仓库'))
+  wrap.append(el('div', {}, '在上方下拉里选一个仓库'))
   wrap.append(el('div', { style: { 'font-size': '12px' } },
     '这里的仓库列表就是 DSH 的工作区，不需要手动添加。'))
   return wrap
@@ -7131,7 +7069,6 @@ function apply(ctx) {
       viewEl = null
     }
     panelEl = null
-    sideEl = null
     toolbarEl = null
     repoContextEl = null
     bodyEl = null

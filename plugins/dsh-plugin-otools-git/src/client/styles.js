@@ -137,51 +137,23 @@ html[data-dsh-og-open] .dsh-og-view {
 }
 .dsh-og-panel *, .dsh-og-overlay * { box-sizing: border-box; }
 
-/* --------------------------------------------------------------- sidebar */
-.dsh-og-side {
-  position: relative; flex-shrink: 0; height: 100%; display: flex; flex-direction: column;
-  padding: 10px 0 0; border-right: 1px solid var(--og-border); background: var(--og-sidebar);
+/* -------------------------------------------------- header repo picker */
+.dsh-og-repo-context { display: flex; align-items: center; gap: 8px; padding: 10px 12px; min-height: 48px; flex-shrink: 0; border-bottom: 1px solid var(--og-border); }
+.dsh-og-repo-context:empty { display: none; }
+.dsh-og-repo-select {
+  min-width: 200px; max-width: 46%; border: 1px solid var(--og-border); border-radius: 6px;
+  padding: 4px 8px; font: inherit; font-weight: 600; color: var(--og-text); background: var(--og-sidebar);
 }
-.dsh-og-side-head {
-  display: flex; align-items: center; gap: 6px; padding: 0 10px 8px;
-  border-bottom: 1px solid var(--og-border);
-}
-.dsh-og-side-title { font-size: 12px; font-weight: 600; color: var(--og-text-3); flex: 1; }
-.dsh-og-tree { flex: 1; overflow: auto; padding: 6px 6px 12px; }
-.dsh-og-repo {
-  display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; margin-bottom: 2px;
-  border: 1px solid transparent; border-radius: 8px; cursor: pointer;
-  transition: background-color .18s ease, border-color .18s ease;
-}
-.dsh-og-repo:hover { background: var(--og-fill-hover); }
-.dsh-og-repo[data-active="true"] {
-  background: var(--og-primary-soft); border-color: var(--og-primary-line);
-}
-.dsh-og-repo[data-repo="false"] { opacity: .55; cursor: default; }
-.dsh-og-repo-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.dsh-og-repo-name {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 13px; font-weight: 500;
-}
+.dsh-og-repo-select:focus { outline: none; border-color: var(--og-primary); }
+.dsh-og-worktree-select { min-width: 120px; max-width: 40%; border: 1px solid var(--og-border); border-radius: 6px; padding: 4px 8px; font: inherit; color: var(--og-text); background: var(--og-sidebar); }
+.dsh-og-worktree-path { min-width: 0; flex: 1; color: var(--og-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Kept from the sidebar days: the dirty dot also marks the entry, and the
+   status bar reuses the classes below. */
+.dsh-og-repo-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--og-warning); flex: none; }
 .dsh-og-repo-meta {
   display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--og-text-3);
   font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden;
 }
-.dsh-og-repo-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--og-warning); flex: none; }
-.dsh-og-repo-children { padding: 2px 0 4px 18px; display: flex; flex-direction: column; gap: 2px; }
-.dsh-og-repo-child {
-  display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px;
-  font-size: 12px; color: var(--og-text-2); cursor: pointer; min-width: 0;
-}
-.dsh-og-repo-child:hover { background: var(--og-fill-hover); }
-button.dsh-og-repo-child { border: 0; width: 100%; background: transparent; font: inherit; text-align: left; }
-button.dsh-og-repo-child:disabled { opacity: .5; cursor: default; }
-.dsh-og-repo-context { display: flex; align-items: center; gap: 8px; padding: 10px 12px; min-height: 48px; flex-shrink: 0; border-bottom: 1px solid var(--og-border); }
-.dsh-og-repo-context:empty { display: none; }
-.dsh-og-worktree-select { min-width: 120px; max-width: 50%; border: 1px solid var(--og-border); border-radius: 6px; padding: 4px 8px; font: inherit; color: var(--og-text); background: var(--og-sidebar); }
-.dsh-og-worktree-path { min-width: 0; color: var(--og-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dsh-og-repo-child[data-active="true"] { background: var(--og-primary-soft); color: var(--og-text); }
-.dsh-og-repo-child-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ------------------------------------------------------------- resizers */
 .dsh-og-resizer { position: relative; flex: none; touch-action: none; z-index: 5; }

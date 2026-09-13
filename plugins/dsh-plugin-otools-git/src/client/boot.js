@@ -68,7 +68,6 @@ function apply(ctx) {
       viewEl = null
     }
     panelEl = null
-    sideEl = null
     toolbarEl = null
     repoContextEl = null
     bodyEl = null

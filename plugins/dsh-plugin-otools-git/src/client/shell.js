@@ -1,7 +1,8 @@
 /**
- * The shell: the sidebar, the toolbar, the tab panes and the status bar — the
- * layout of the reference's Git.vue, with its 55px toolbar, 45px icon-over-label
- * buttons, resizable 230px sidebar and three-item bottom bar.
+ * The shell: the header repo picker, the toolbar, the tab panes and the status
+ * bar — the layout of the reference's Git.vue with its 55px toolbar and
+ * three-item bottom bar, minus the sidebar: repositories are picked from the
+ * dropdown at the top-left, like the sibling 仓库面板.
  *
  * One render function rebuilds the whole panel from the model. A git panel's
  * state changes in coarse steps (a status read, a page of history, a checkout),
@@ -11,7 +12,6 @@
  */
 
 let panelEl = null
-let sideEl = null
 let toolbarEl = null
 let repoContextEl = null
 let bodyEl = null
@@ -21,53 +21,24 @@ let viewEl = null
 
 /** Build the panel shell once. */
 function buildPanel(view) {
-  sideEl = el('div', { class: 'dsh-og-side' })
   toolbarEl = el('div', { class: 'dsh-og-toolbar' })
   repoContextEl = el('div', { class: 'dsh-og-repo-context' })
   bodyEl = el('div', { class: 'dsh-og-body' })
   statusbarEl = el('div', { class: 'dsh-og-statusbar' })
 
-  const sidebarWidth = pref('sidebarWidth') ?? 230
-  sideEl.style.width = sidebarWidth + 'px'
-  const handle = resizeHandle({
-    axis: 'x',
-    min: 180,
-    max: () => 520,
-    value: () => sideEl.getBoundingClientRect().width,
-    onMove: (value) => {
-      sideEl.style.width = value + 'px'
-    },
-    onCommit: (value) => void savePrefs({ sidebarWidth: Math.round(value) }),
-    onReset: () => {
-      sideEl.style.width = '230px'
-      void savePrefs({ sidebarWidth: 230 })
-    },
-  })
-
   const main = el('div', { class: 'dsh-og-main' }, repoContextEl, toolbarEl, bodyEl, statusbarEl)
-  panelEl = el('div', { class: 'dsh-og-panel', 'data-dsh-og-panel': '' }, sideEl, handle, main)
+  panelEl = el('div', { class: 'dsh-og-panel', 'data-dsh-og-panel': '' }, main)
   view.append(panelEl)
 }
 
 /** Repaint everything. */
 function renderPanel() {
   if (panelEl === null || !panelEl.isConnected) return
-  renderSideColumn()
-  renderRepoContext()
+  renderRepoPicker(repoContextEl)
   renderToolbar()
   renderBody()
   renderStatusBar()
   renderEntry()
-}
-
-/** The sidebar: a heading plus the repository tree. */
-function renderSideColumn() {
-  const head = el('div', { class: 'dsh-og-side-head' },
-    el('span', { class: 'dsh-og-side-title' }, '仓库'),
-    iconButton('refresh', { title: '刷新仓库列表', onClick: () => void refreshAll() }))
-  const treeHost = el('div', { style: { flex: '1', 'min-height': '0', display: 'flex', 'flex-direction': 'column' } })
-  renderRepoTree(treeHost)
-  fill(sideEl, head, treeHost)
 }
 
 /** The toolbar: tabs on the left, git actions in the middle, settings on the right. */
@@ -118,25 +89,6 @@ function renderToolbar() {
     toolbarButton({ icon: 'settings', label: '设置', disabled: !hasRepo, onClick: () => openSettingsDialog() }))
 
   fill(toolbarEl, left, mid, right)
-}
-
-function renderRepoContext() {
-  const parent = model.repos.find((row) => row.workspaceId === model.workspaceId)
-  if (parent === undefined || !parent.isRepo) {
-    fill(repoContextEl)
-    return
-  }
-  const rows = [{ path: parent.root, branch: parent.branch }, ...model.children.worktrees]
-  const picker = el('select', {
-    class: 'dsh-og-worktree-select',
-    'aria-label': '当前工作树',
-    onChange: (event) => selectWorktree(event.target.value),
-  }, rows.map((row) => el('option', { value: row.path, disabled: row.prunable === true },
-    (row.branch ?? '游离 HEAD') + ' · ' + baseName(row.path))))
-  picker.value = model.worktreePath || parent.root
-  const path = currentRepo()?.root ?? ''
-  fill(repoContextEl, el('span', {}, '工作树'), picker,
-    el('span', { class: 'dsh-og-worktree-path', title: path }, path))
 }
 
 /** One toolbar button: 22px icon over an 11px label, with an optional badge. */
@@ -209,10 +161,10 @@ function noRepoPlaceholder() {
   }
   if (model.repos.length === 0) {
     wrap.append(el('div', {}, '还没有打开任何工作区'))
-    wrap.append(el('div', { style: { 'font-size': '12px' } }, '在 DSH 里打开一个文件夹，如果它是 git 仓库就会出现在左边。'))
+    wrap.append(el('div', { style: { 'font-size': '12px' } }, '在 DSH 里打开一个文件夹，如果它是 git 仓库就会出现在上方下拉里。'))
     return wrap
   }
-  wrap.append(el('div', {}, '在左边选一个仓库'))
+  wrap.append(el('div', {}, '在上方下拉里选一个仓库'))
   wrap.append(el('div', { style: { 'font-size': '12px' } },
     '这里的仓库列表就是 DSH 的工作区，不需要手动添加。'))
   return wrap

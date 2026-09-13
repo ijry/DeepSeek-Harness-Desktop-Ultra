@@ -602,6 +602,8 @@ async function refreshTab() {
 
 /** A full refresh: the repository list, the tab's data, and the toolbar counts. */
 async function refreshAll() {
+  // The dropdown's cached submodule rows for inactive repositories are stale now.
+  invalidateSubmoduleCache()
   await loadRepos()
   await Promise.all([refreshTab(), loadChildren()])
 }
