@@ -854,7 +854,10 @@ html[data-dsh-og-open] .dsh-og-view {
 .dsh-og-status { flex: 1; min-height: 0; display: flex; flex-direction: row; }
 .dsh-og-status-files { flex: none; min-width: 0; display: flex; flex-direction: column; }
 .dsh-og-status-sections { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
-.dsh-og-section { display: flex; flex-direction: column; min-height: 0; }
+.dsh-og-section { flex: none; display: flex; flex-direction: column; }
+/* flex:none 是刻意的：sections 容器是固定高的滚动区，section 若可收缩
+   （默认 shrink:1 + min-height:0），大仓库里未暂存区会被压扁、行溢出到
+   未跟踪区里交错绘制，就是「工作区两行一对」的样式异常。 */
 .dsh-og-section-head {
   display: flex; align-items: center; gap: 6px; flex: none; padding: 4px 2px 6px;
   position: sticky; top: 0; z-index: 3; background: var(--og-sidebar);

@@ -50,7 +50,9 @@ const MAX_FAILURES: u32 = 2;
 ///    备份/导出默认目录不再落在 otools 时代的 ~/.otools 旧位置。
 /// 7：git 面板去掉左侧仓库列表，改为顶部下拉选择仓库，并按仓库分组展示
 ///    子模块。
-const BUNDLE_REVISION: u32 = 7;
+/// 8：git 工作区页签修复 sections 被压缩导致未暂存行溢出、与未跟踪行交错
+///    绘制的样式异常（.dsh-og-section 改为 flex:none）。
+const BUNDLE_REVISION: u32 = 8;
 
 /// 一个内置插件。
 ///
