@@ -103,7 +103,8 @@ const STYLES = `
   background: var(--dsw-active, rgba(128, 128, 128, .18));
   color: var(--dsw-text-primary, inherit); font-weight: 500;
 }
-.dsh-og-entry-icon { display: inline-flex; flex: none; color: #f05033; }
+.dsh-og-entry-icon { display: inline-flex; flex: none; color: inherit; filter: grayscale(1); opacity: .85; }
+.dsh-og-entry:hover .dsh-og-entry-icon, .dsh-og-entry:focus-visible .dsh-og-entry-icon { color: #f05033; filter: none; opacity: 1; }
 .dsh-og-entry-label { flex: none; }
 .dsh-og-entry-stats {
   margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
@@ -173,6 +174,12 @@ html[data-dsh-og-open] .dsh-og-view {
   font-size: 12px; color: var(--og-text-2); cursor: pointer; min-width: 0;
 }
 .dsh-og-repo-child:hover { background: var(--og-fill-hover); }
+button.dsh-og-repo-child { border: 0; width: 100%; background: transparent; font: inherit; text-align: left; }
+button.dsh-og-repo-child:disabled { opacity: .5; cursor: default; }
+.dsh-og-repo-context { display: flex; align-items: center; gap: 8px; padding: 10px 12px; min-height: 48px; flex-shrink: 0; border-bottom: 1px solid var(--og-border); }
+.dsh-og-repo-context:empty { display: none; }
+.dsh-og-worktree-select { min-width: 120px; max-width: 50%; border: 1px solid var(--og-border); border-radius: 6px; padding: 4px 8px; font: inherit; color: var(--og-text); background: var(--og-sidebar); }
+.dsh-og-worktree-path { min-width: 0; color: var(--og-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dsh-og-repo-child[data-active="true"] { background: var(--og-primary-soft); color: var(--og-text); }
 .dsh-og-repo-child-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -388,7 +395,7 @@ html[data-dsh-og-open] .dsh-og-view {
 .dsh-og-table-scroll { flex: 1; min-height: 0; overflow: auto; }
 .dsh-og-cell-mono { font-family: var(--og-mono); font-size: 11px; color: var(--og-text-2); }
 .dsh-og-cell-ellipsis { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dsh-og-num { font-variant-numeric: tabular-nums; }
+.dsh-og-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dsh-og-adds { color: var(--og-success); }
 .dsh-og-dels { color: var(--og-danger); }
 
@@ -545,6 +552,11 @@ html[data-dsh-og-open] .dsh-og-view {
 .dsh-og-history-more:hover { background: var(--og-fill-hover); }
 .dsh-og-history-more[data-done="true"] { cursor: default; }
 .dsh-og-history-more[data-done="true"]:hover { background: transparent; }
+/* 图形列按固定 22px 行高绘制、靠 height:100% 铺满单元格；任何一格换行
+   （最典型的是窄窗口把日期压成两行）都会把行撑高，而 td 高度变成 auto 后
+   百分比高度失效，SVG 保持固有尺寸居中——相邻行的连线就断开了。所以整表
+   禁止换行：挤压交给消息列的省略号，再不够就横向滚动。 */
+.dsh-og-history .dsh-og-table td { white-space: nowrap; }
 .dsh-og-graph-cell { padding: 0 !important; width: 1px; }
 .dsh-og-graph-svg { display: block; height: 100%; }
 .dsh-og-msg-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }

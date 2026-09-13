@@ -38,6 +38,16 @@ const HEAVY_ADD_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// 连续失败几次之后就不再打扰用户。
 const MAX_FAILURES: u32 = 2;
 
+/// Installed bundled-plugin revision.
+///
+/// Every bundled package intentionally keeps its marketplace version at 0.1.0 and
+/// is installed from the same stable file path. pnpm therefore cannot infer that a
+/// desktop upgrade replaced the tarball. Bump this value whenever shipped plugin
+/// contents change so the desktop refreshes all previously selected plugins once.
+///
+/// 5：git 历史表修复窄窗口下日期换行撑高行、导致图形连线断裂的问题。
+const BUNDLE_REVISION: u32 = 5;
+
 /// 一个内置插件。
 ///
 /// 标题和说明各存两种语言：它们要发到启动页和设置页上给人看，取哪一种由
@@ -162,13 +172,13 @@ pub const AUTOMATION: Bundled = Bundled {
     heavy: false,
 };
 
-/// 摸鱼大咖：把一本书渲染成一场会话。
+/// 摸鱼会话：把一本书渲染成一场会话。
 pub const LONGREAD: Bundled = Bundled {
     id: "dsh-plugin-longread",
-    title_zh: "摸鱼大咖",
-    title_en: "Slacker pro",
-    summary_zh: "在 dsh 侧栏加一个长文阅读器：把一本书渲染成一场假的 agent 会话——一句提问、几次工具调用、一段流式回复。可导入 .txt 与 .epub（单本上限 128 MB），自带一篇原创武侠样章，按书记住阅读位置。侧栏上那个入口故意只写「长文」——伪装是它的全部意义。纯 GUI 插件，不注册工具、不改系统提示。",
-    summary_en: "Adds a long-form reader to the dsh sidebar: it renders a book as a fake agent session — a prompt, a few tool calls, a streamed reply. It imports .txt and .epub (128 MB per book), ships with an original wuxia sample chapter, and remembers the reading position per book. The sidebar entry is deliberately labelled just \"长文\" — the disguise is the whole point. A GUI-only plugin: it registers no tools and touches no system prompt.",
+    title_zh: "摸鱼会话",
+    title_en: "Slacker session",
+    summary_zh: "在 dsh 侧栏加一个「摸鱼会话」阅读器：把一本书渲染成一场假的 agent 会话——一句提问、几次工具调用、一段流式回复。可导入 .txt 与 .epub（单本上限 128 MB），自带一篇原创武侠样章，按书记住阅读位置。纯 GUI 插件，不注册工具、不改系统提示。",
+    summary_en: "Adds Slacker session to the dsh sidebar: it renders a book as a fake agent session — a prompt, a few tool calls, a streamed reply. It imports .txt and .epub (128 MB per book), ships with an original wuxia sample chapter, and remembers the reading position per book. A GUI-only plugin: it registers no tools and touches no system prompt.",
     hidden: false,
     infrastructure: false,
     heavy: false,
@@ -389,6 +399,9 @@ pub struct Choice {
     /// 累计失败次数。
     #[serde(default)]
     pub failures: u32,
+    /// Revision of the bundled tarballs last installed into the web profile.
+    #[serde(default)]
+    pub bundle_revision: u32,
 }
 
 impl Choice {
@@ -727,6 +740,11 @@ pub fn uninstall(
     plugin: &'static Bundled,
 ) -> (Result<(), PluginError>, String) {
     let logs = LogRing::default();
+    // A previous refresh may have removed the package and then failed to install it.
+    // Treat that state as a successful removal so the next launch can resume.
+    if confirm_removed(plugin).is_ok() {
+        return (Ok(()), logs.snapshot());
+    }
     // 卸载只动 profile 清单再让 pnpm 剪掉本地依赖，不联网，所以一律用短耐心。
     let result = run(node, remove_args(entry, plugin.id), &logs, ADD_TIMEOUT)
         .and_then(|()| confirm_removed(plugin));
@@ -948,12 +966,34 @@ mod tests {
             installed: vec![TASKBOARD.id.into()],
             declined: false,
             failures: 1,
+            bundle_revision: BUNDLE_REVISION,
         };
         let raw = serde_json::to_string(&choice).unwrap();
         assert!(raw.contains("installed"), "字段名应稳定: {raw}");
         let back: Choice = serde_json::from_str(&raw).unwrap();
         assert_eq!(back.installed, choice.installed);
         assert_eq!(back.failures, choice.failures);
+        assert_eq!(back.bundle_revision, choice.bundle_revision);
+    }
+
+    #[test]
+    fn old_choice_refreshes_selected_plugins_once() {
+        let old = Choice {
+            installed: vec![TASKBOARD.id.into(), LONGREAD.id.into()],
+            ..Default::default()
+        };
+        assert_eq!(
+            plugins_to_refresh(&old)
+                .iter()
+                .map(|plugin| plugin.id)
+                .collect::<Vec<_>>(),
+            vec![OTOOLS_SOCKET.id, TASKBOARD.id, LONGREAD.id]
+        );
+        let current = Choice {
+            bundle_revision: BUNDLE_REVISION,
+            ..old
+        };
+        assert!(plugins_to_refresh(&current).is_empty());
     }
 
     /// 缺字段的旧文件不能让读取失败——否则一个格式变更就会让所有人被重新问一遍。
@@ -1067,4 +1107,22 @@ mod tests {
         assert!(find_selectable(OTOOLS_SOCKET.id).is_none());
         assert!(selectable().all(|plugin| !plugin.hidden && !plugin.infrastructure));
     }
+}
+
+/// Bundled packages whose stable tarballs must be reinstalled after an upgrade.
+///
+/// Infrastructure is always included because selected plugins import it at boot.
+/// Optional plugins are limited to the user's previous selection.
+pub fn plugins_to_refresh(choice: &Choice) -> Vec<&'static Bundled> {
+    if choice.bundle_revision >= BUNDLE_REVISION {
+        return Vec::new();
+    }
+    BUNDLED
+        .iter()
+        .filter(|plugin| plugin.infrastructure || choice.installed.iter().any(|id| id == plugin.id))
+        .collect()
+}
+
+pub fn current_bundle_revision() -> u32 {
+    BUNDLE_REVISION
 }
