@@ -19,6 +19,15 @@ const POLL_INTERVAL: Duration = Duration::from_millis(150);
 /// 保留的日志行数——够定位启动失败，又不会无界增长。
 const LOG_RING_CAPACITY: usize = 400;
 
+/// 服务日志的文件名（放在 `<应用数据目录>/logs/` 下）。
+pub const LOG_FILE_NAME: &str = "dsh.log";
+
+/// 日志文件超过这个大小就在下次启动时清空。
+///
+/// 只管住「量级」而不是精确切割：这个文件是给排障用的，留最近几轮启动的输出就够，
+/// 真正的价值在于最后一次崩溃的现场不会因为磁盘写满而丢失。
+pub const LOG_FILE_MAX_BYTES: u64 = 4 * 1024 * 1024;
+
 /// 启动 dsh 服务时的失败原因。
 ///
 /// `Display` 手写而不是用 `#[error(...)]`：这些话会出现在启动页上，要跟着
@@ -77,14 +86,54 @@ impl std::fmt::Display for ServerError {
     }
 }
 
+/// 落盘前的脱敏。
+///
+/// `dsh web:` 那一行带着本机 web 面板的入场券（凭它就能换到会话 cookie），而日志
+/// 文件活得很久、也很容易被随手贴到 issue 里。内存里的环形缓冲保留原值——外壳
+/// 要解析它才拿得到地址——只有写进文件的那一份把令牌抹掉。
+fn redact(line: &str) -> String {
+    const MARKER: &str = "token=";
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(at) = rest.find(MARKER) {
+        let (head, tail) = rest.split_at(at + MARKER.len());
+        out.push_str(head);
+        out.push_str("***");
+        // 令牌到下一个分隔符为止（URL 后面可能跟着空格或 LAN 地址的括号）
+        let end = tail
+            .find(|c: char| c.is_whitespace() || c == ')' || c == '"' || c == '&')
+            .unwrap_or(tail.len());
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// 子进程输出的环形缓冲，失败时用来展示原因。
+///
+/// 除了留在内存里，每一行还可以同时落到磁盘（`mirror_to`）。dsh 是被外壳拉起来的
+/// 长期进程，它退出时打的那几行是唯一能说明原因的现场；而内存里的环形缓冲只有在
+/// 用户点开诊断信息时才读得到——服务已经没了、界面卡在「连不上后端」的时候，
+/// 那条路已经走不通了。所以长期服务一律落盘。
 #[derive(Debug, Clone, Default)]
 pub struct LogRing {
     lines: Arc<Mutex<Vec<String>>>,
+    /// 落盘目标。`None` 表示只留在内存里（插件安装那类短命子进程就够用）。
+    mirror: Arc<Mutex<Option<std::fs::File>>>,
 }
 
 impl LogRing {
     pub fn push(&self, line: String) {
+        // 先落盘：进程死掉时内存里的东西还在，但拿到它的机会未必还在
+        if let Ok(mut guard) = self.mirror.lock() {
+            if let Some(file) = guard.as_mut() {
+                use std::io::Write;
+                let _ = writeln!(file, "{}", redact(&line));
+                // 崩溃现场最怕的就是留在缓冲区里，逐行 flush 换确定性
+                let _ = file.flush();
+            }
+        }
+
         let mut lines = match self.lines.lock() {
             Ok(guard) => guard,
             // 某个写日志的线程 panic 了不该连带搞挂应用
@@ -94,6 +143,23 @@ impl LogRing {
             lines.remove(0);
         }
         lines.push(line);
+    }
+
+    /// 让之后写入的每一行同时追加到 `path`（父目录会建好）。
+    pub fn mirror_to(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        let mut guard = match self.mirror.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *guard = Some(file);
+        Ok(())
     }
 
     pub fn snapshot(&self) -> String {
@@ -122,6 +188,22 @@ impl DshServer {
     /// webview 应该访问的地址：优先用带令牌的认证地址，拿不到再退回裸地址。
     pub fn preferred_url(&self) -> String {
         self.auth_url.clone().unwrap_or_else(|| self.url())
+    }
+
+    /// 子进程是否已经退出；退出时给出退出码文案（取不到码就是被信号结束）。
+    ///
+    /// 守护线程用它把「端口不通」和「进程真的没了」区分开：前者可能只是一次抖动，
+    /// 后者才是要重启的那种死。
+    pub fn exited(&mut self) -> Option<String> {
+        match self.child.try_wait() {
+            Ok(Some(status)) => Some(
+                status
+                    .code()
+                    .map(|code| code.to_string())
+                    .unwrap_or_else(|| "signal".into()),
+            ),
+            _ => None,
+        }
     }
 }
 
@@ -164,7 +246,7 @@ fn free_port() -> Result<u16, ServerError> {
 }
 
 /// 端口是否已经接受连接。
-fn accepts_connections(port: u16) -> bool {
+pub(crate) fn accepts_connections(port: u16) -> bool {
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok()
 }
@@ -213,6 +295,20 @@ pub fn start(
 ) -> Result<DshServer, ServerError> {
     let port = free_port()?;
     let logs = LogRing::default();
+
+    // 长命服务一律落盘：服务死掉时的那几行是唯一的现场，而那时界面已经连不上后端了。
+    // 拿不到数据目录不算致命错误——那只是没有落盘，服务该起还是要起。
+    if let Ok(dir) = crate::dsh::app_dir() {
+        let path = dir.join("logs").join(LOG_FILE_NAME);
+        let oversized = std::fs::metadata(&path)
+            .map(|meta| meta.len() > LOG_FILE_MAX_BYTES)
+            .unwrap_or(false);
+        if oversized {
+            let _ = std::fs::remove_file(&path);
+        }
+        let _ = logs.mirror_to(&path);
+    }
+    logs.push(format!("--- dsh web 启动（端口 {port}）---"));
 
     let mut command = Command::new(node);
     command
@@ -422,6 +518,39 @@ mod tests {
         logs.push("first".into());
         logs.push("second".into());
         assert_eq!(logs.snapshot(), "first\nsecond");
+    }
+
+    #[test]
+    fn redact_masks_the_token_only() {
+        let line = "[out] dsh web: http://127.0.0.1:54647/?token=abc123 (LAN: http://192.168.1.2:54647/?token=def456)";
+        let masked = redact(line);
+        assert!(!masked.contains("abc123"), "局域网地址里的令牌也要抹掉");
+        assert!(!masked.contains("def456"));
+        assert!(masked.contains("http://127.0.0.1:54647/?token=***"));
+        assert!(masked.contains("http://192.168.1.2:54647/?token=***"), "括号要留在原处");
+        // 没令牌的行原样通过：日志的价值就在这些行上
+        assert_eq!(redact("[err] boom"), "[err] boom");
+    }
+
+    #[test]
+    fn log_ring_mirrors_every_line_to_disk() {
+        let dir = std::env::temp_dir().join(format!("dsh-logring-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("nested").join(LOG_FILE_NAME);
+
+        let logs = LogRing::default();
+        logs.push("before mirroring".into());
+        logs.mirror_to(&path).expect("应该能建好父目录并打开日志");
+        logs.push("after one".into());
+        logs.push("after two".into());
+
+        // 只落盘镜像之后的行：镜像之前的那行没有文件可写，丢掉是对的
+        let text = std::fs::read_to_string(&path).expect("日志应已写盘");
+        assert_eq!(text, "after one\nafter two\n");
+        // 内存里仍然保留全部，两边的用途不同
+        assert_eq!(logs.snapshot(), "before mirroring\nafter one\nafter two");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

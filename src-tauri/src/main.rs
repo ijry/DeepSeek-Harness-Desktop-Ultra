@@ -11,6 +11,7 @@ mod update;
 mod upstream;
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -90,6 +91,15 @@ pub struct AppState {
     /// 界面语言。真正的读取方是 `i18n::current()`（错误在拿不到 State 的地方构造），
     /// 这里存一份是为了 `get_language` 和落盘。
     language: Arc<Mutex<i18n::Language>>,
+    /// 是否已经有一次启动序列在跑。
+    ///
+    /// 三个地方会拉启动序列：`setup`、错误页的「重试」、以及守护线程发现服务死了。
+    /// 没有这道闸门，守护线程的重启会和用户手里的「重试」同时拉起两个 dsh，
+    /// 两个进程抢同一个 profile 目录。
+    booting: Arc<AtomicBool>,
+    /// 自动重启的时间戳，用来限流。服务反复崩时重启解决不了问题，
+    /// 一直空转只会把日志刷满、把现场冲掉。
+    restarts: Arc<Mutex<Vec<Instant>>>,
 }
 
 /// 托盘菜单里那三项。切语言要把文字重贴一遍，发现新版本要单独改「设置」。
@@ -162,6 +172,8 @@ impl AppState {
             tray: Arc::new(Mutex::new(None)),
             popped_version: Arc::new(Mutex::new(None)),
             language: Arc::new(Mutex::new(language)),
+            booting: Arc::new(AtomicBool::new(false)),
+            restarts: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -525,6 +537,134 @@ fn transition(app: &tauri::AppHandle, next: BootState) {
     let _ = app.emit("boot-state", next);
 }
 
+/// 在后台起一次启动序列；已经有一次在跑时直接返回 false。
+///
+/// 想拉起启动序列的地方都走这里，而不是自己 `thread::spawn(boot)`——见
+/// `AppState::booting` 里说的那种撞车。
+fn start_boot(app: tauri::AppHandle) -> bool {
+    {
+        let state = app.state::<AppState>();
+        if state.booting.swap(true, Ordering::SeqCst) {
+            eprintln!("[boot] 已有一次启动在跑，忽略这次请求");
+            return false;
+        }
+    }
+
+    std::thread::spawn(move || {
+        boot(app.clone());
+        let state = app.state::<AppState>();
+        state.booting.store(false, Ordering::SeqCst);
+    });
+    true
+}
+
+/// 快照的最后几行。失败现场的关键信息几乎总在末尾——前面是正常的启动噪音。
+fn tail_of(snapshot: &str) -> String {
+    const TAIL_LINES: usize = 20;
+    let all: Vec<&str> = snapshot.lines().collect();
+    all[all.len().saturating_sub(TAIL_LINES)..].join("\n")
+}
+
+/// 盯住服务端口，dsh 死掉时把它拉回来。
+///
+/// 为什么需要它：外壳把整个窗口交给 dsh 自己的页面之后，就再也看不见那个子进程了。
+/// 服务一旦死掉——被安全软件杀掉、被挤爆内存、上游自己崩——页面只会停在
+/// "Failed to fetch" 上无限重试，因为它连不到的那个后端已经不存在了；而外壳既不知道
+/// 发生了什么，也没有任何日志。用户看到的是一块永远不会好的「连不上后端」。
+///
+/// 这里只按端口判断存活：连续两次探不到监听才算死（一次 TCP 抖动不该触发重启），
+/// 确认死掉后记下现场——退出码和它最后打出来的那几行——再重启一次。重启会走完整的
+/// 启动序列，所以窗口会跟着重新导航到新端口。
+fn spawn_server_watchdog(app: tauri::AppHandle, port: u16) {
+    /// 探测间隔。
+    const POLL: Duration = Duration::from_secs(2);
+    /// 连续多少次探不到才算死。
+    const MISSES: u32 = 2;
+    /// 限流窗口内允许的自动重启次数。
+    const MAX_RESTARTS: usize = 3;
+    /// 限流窗口。
+    const WINDOW: Duration = Duration::from_secs(10 * 60);
+
+    std::thread::spawn(move || {
+        let mut misses = 0u32;
+        loop {
+            std::thread::sleep(POLL);
+
+            // 端口已经不是这个实例的了：要么已经被重启（新的守护会接手），
+            // 要么应用正在退出。两种情况都该收工。
+            let current = {
+                let state = app.state::<AppState>();
+                let server = lock(&state.server);
+                server.as_ref().map(|instance| instance.port)
+            };
+            if current != Some(port) {
+                return;
+            }
+
+            if server::accepts_connections(port) {
+                misses = 0;
+                continue;
+            }
+            misses += 1;
+            if misses < MISSES {
+                continue;
+            }
+
+            // 现场：进程还在不在、退出码是多少、最后说了什么
+            let (exit, tail) = {
+                let state = app.state::<AppState>();
+                let mut server = lock(&state.server);
+                match server.as_mut() {
+                    Some(instance) => (instance.exited(), tail_of(&instance.logs.snapshot())),
+                    None => (None, String::new()),
+                }
+            };
+            eprintln!(
+                "[boot] dsh 服务已停止（端口 {port}{}），日志尾部：\n{tail}",
+                exit.map(|code| format!("，退出码 {code}"))
+                    .unwrap_or_default()
+            );
+
+            let allowed = {
+                let state = app.state::<AppState>();
+                let mut restarts = lock(&state.restarts);
+                let now = Instant::now();
+                restarts.retain(|at| now.duration_since(*at) < WINDOW);
+                if restarts.len() >= MAX_RESTARTS {
+                    false
+                } else {
+                    restarts.push(now);
+                    true
+                }
+            };
+            if !allowed {
+                transition(
+                    &app,
+                    BootState::Failed {
+                        kind: FailureKind::ServerFailed,
+                        message: i18n::pick(
+                            "dsh 服务反复退出，自动重启已停止。请稍后重试，或查看日志排障。",
+                            "The dsh service keeps exiting, so automatic restarts have stopped. \
+                             Try again later, or check the log.",
+                        )
+                        .to_string(),
+                        log: tail,
+                    },
+                );
+                return;
+            }
+
+            stop_server(&app);
+            if !start_boot(app.clone()) {
+                // 另一次启动还在跑：它会拉起自己的守护，这个守护到此为止
+                return;
+            }
+            // 新的启动序列会带起新的守护线程来盯新的端口
+            return;
+        }
+    });
+}
+
 /// 完整的启动序列，在后台线程里跑。
 ///
 /// 每一步失败都映射成带指引的 `FailureKind`，而不是往上抛一个裸错误——
@@ -639,11 +779,16 @@ fn boot(app: tauri::AppHandle) {
             // 优先用 dsh 打印的带令牌地址（0.1.5 起 web 面板要认证），
             // 旧版本没有令牌时自然回退到裸地址。
             let url = instance.preferred_url();
+            let port = instance.port;
             {
                 let state = app.state::<AppState>();
                 *lock(&state.server) = Some(instance);
             }
             transition(&app, BootState::Ready { url: url.clone() });
+
+            // 从这一刻起外壳就看不见 dsh 了（窗口归它的页面所有），所以派一个守护
+            // 盯着端口：它死掉时不至于只剩一块永远在重试的「连不上后端」的界面。
+            spawn_server_watchdog(app.clone(), port);
 
             // 瘦壳的核心动作：把窗口整体交给 dsh 自己的 UI
             if let Some(window) = app.get_webview_window("main") {
@@ -870,7 +1015,7 @@ fn stop_server(app: &tauri::AppHandle) {
 fn retry_boot(app: tauri::AppHandle) {
     // 重试前先清掉可能残留的半死进程
     stop_server(&app);
-    std::thread::spawn(move || boot(app));
+    start_boot(app);
 }
 
 /// 把窗口显示出来并聚焦。托盘的「显示窗口」和单击托盘图标都走这里。
@@ -1036,7 +1181,7 @@ fn main() {
             }
 
             let boot_handle = handle.clone();
-            std::thread::spawn(move || boot(boot_handle));
+            start_boot(boot_handle);
 
             // 后台每 30 分钟查一次外壳自己的更新
             update::spawn_watcher(handle.clone());
