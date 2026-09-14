@@ -356,16 +356,29 @@ async function loadRepos() {
   emit()
 }
 
+/**
+ * Switch generation. Every repository switch bumps this; loaders capture it at
+ * start and discard their result if it changed by the time they resolve. This
+ * keeps rapid repo/submodule switching smooth: an in-flight load from a click
+ * the user has already moved past never overwrites the view with stale data,
+ * and the latest selection always wins.
+ */
+let loadGen = 0
+function bumpLoadGen() {
+  loadGen += 1
+}
+
 async function loadStatus() {
   const params = repoParams({ untracked: pref('untrackedMode') ?? 'all' })
   if (params === undefined) return
+  const gen = loadGen
   try {
     const status = await apiGet('/status', params)
-    if (params.workspaceId !== repoTarget()) return
+    if (gen !== loadGen || params.workspaceId !== repoTarget()) return
     model.status = status
     model.statusError = null
   } catch (error) {
-    if (params.workspaceId !== repoTarget()) return
+    if (gen !== loadGen || params.workspaceId !== repoTarget()) return
     model.status = null
     model.statusError = friendlyError(error)
   }
@@ -375,9 +388,10 @@ async function loadStatus() {
 async function loadChildren() {
   const workspaceId = model.workspaceId
   if (!workspaceId) return
+  const gen = loadGen
   try {
     const children = await apiGet('/children', { workspaceId })
-    if (workspaceId !== model.workspaceId) return
+    if (gen !== loadGen || workspaceId !== model.workspaceId) return
     model.children = children
     if (model.worktreePath && !children.worktrees.some((row) => row.path === model.worktreePath && !row.prunable)) {
       selectRepo(workspaceId)
@@ -391,7 +405,7 @@ async function loadChildren() {
       return
     }
   } catch {
-    if (workspaceId !== model.workspaceId) return
+    if (gen !== loadGen || workspaceId !== model.workspaceId) return
     model.children = { submodules: [], worktrees: [] }
   }
   emit()
@@ -400,9 +414,13 @@ async function loadChildren() {
 async function loadBranches() {
   const params = repoParams()
   if (params === undefined) return
+  const gen = loadGen
   try {
-    model.branches = await apiGet('/branches', params)
+    const branches = await apiGet('/branches', params)
+    if (gen !== loadGen || params.workspaceId !== repoTarget()) return
+    model.branches = branches
   } catch (error) {
+    if (gen !== loadGen || params.workspaceId !== repoTarget()) return
     toastError(error)
   }
   emit()
@@ -433,9 +451,13 @@ async function loadStashes() {
 async function loadRemotes() {
   const params = repoParams()
   if (params === undefined) return
+  const gen = loadGen
   try {
-    model.remotes = await apiGet('/remotes', params)
+    const remotes = await apiGet('/remotes', params)
+    if (gen !== loadGen || params.workspaceId !== repoTarget()) return
+    model.remotes = remotes
   } catch (error) {
+    if (gen !== loadGen || params.workspaceId !== repoTarget()) return
     toastError(error)
   }
   emit()

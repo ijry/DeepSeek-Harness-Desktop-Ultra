@@ -147,6 +147,25 @@ function invalidateSubmoduleCache() {
   submoduleCache.clear()
 }
 
+/**
+ * Coalesce the heavy loads a repo switch triggers. A click on the picker fires
+ * `refreshTab` + `loadBranches` + `loadRemotes` (+ `loadChildren`), each a round
+ * of git spawns. Rapid clicks used to let every one of those sets pile up and
+ * choke the machine, so switching felt laggy. Debouncing to one set per idle
+ * window keeps git work bounded, and `bumpLoadGen` (in api.js) makes sure any
+ * in-flight load from a click the user has already moved past is discarded.
+ */
+let switchTimer = undefined
+function scheduleSwitchLoads() {
+  bumpLoadGen()
+  if (switchTimer !== undefined) clearTimeout(switchTimer)
+  switchTimer = setTimeout(() => {
+    switchTimer = undefined
+    void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
+    void loadChildren()
+  }, 150)
+}
+
 /** Decode a picked option: a repository, or one of its submodules. */
 function pickRepoValue(value) {
   if (typeof value !== 'string' || value.length === 0) return
@@ -173,8 +192,7 @@ function selectSubmodule(workspaceId, path) {
   }
   if (model.workspaceId === workspaceId && model.submodulePath === target) {
     emit()
-    void refreshTab()
-    void loadChildren()
+    scheduleSwitchLoads()
     return
   }
   const children = model.children
@@ -187,8 +205,7 @@ function selectSubmodule(workspaceId, path) {
   resetRepoState()
   model.children = children
   emit()
-  void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
-  void loadChildren()
+  scheduleSwitchLoads()
 }
 
 /** Point the panel at one repository and load what the active tab needs. */
@@ -202,8 +219,7 @@ function selectRepo(workspaceId) {
   storeSet(STORE_KEYS.workspaceId, workspaceId)
   resetRepoState()
   emit()
-  void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
-  void loadChildren()
+  scheduleSwitchLoads()
 }
 
 /**
@@ -228,7 +244,7 @@ function selectWorktree(path) {
   storeSet(STORE_KEYS.worktreePath, path)
   storeSet(STORE_KEYS.submodulePath, '')
   emit()
-  void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
+  scheduleSwitchLoads()
 }
 
 /** Copy to the clipboard, reporting either way. */

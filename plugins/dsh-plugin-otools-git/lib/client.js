@@ -1693,16 +1693,29 @@ async function loadRepos() {
   emit()
 }
 
+/**
+ * Switch generation. Every repository switch bumps this; loaders capture it at
+ * start and discard their result if it changed by the time they resolve. This
+ * keeps rapid repo/submodule switching smooth: an in-flight load from a click
+ * the user has already moved past never overwrites the view with stale data,
+ * and the latest selection always wins.
+ */
+let loadGen = 0
+function bumpLoadGen() {
+  loadGen += 1
+}
+
 async function loadStatus() {
   const params = repoParams({ untracked: pref('untrackedMode') ?? 'all' })
   if (params === undefined) return
+  const gen = loadGen
   try {
     const status = await apiGet('/status', params)
-    if (params.workspaceId !== repoTarget()) return
+    if (gen !== loadGen || params.workspaceId !== repoTarget()) return
     model.status = status
     model.statusError = null
   } catch (error) {
-    if (params.workspaceId !== repoTarget()) return
+    if (gen !== loadGen || params.workspaceId !== repoTarget()) return
     model.status = null
     model.statusError = friendlyError(error)
   }
@@ -1712,9 +1725,10 @@ async function loadStatus() {
 async function loadChildren() {
   const workspaceId = model.workspaceId
   if (!workspaceId) return
+  const gen = loadGen
   try {
     const children = await apiGet('/children', { workspaceId })
-    if (workspaceId !== model.workspaceId) return
+    if (gen !== loadGen || workspaceId !== model.workspaceId) return
     model.children = children
     if (model.worktreePath && !children.worktrees.some((row) => row.path === model.worktreePath && !row.prunable)) {
       selectRepo(workspaceId)
@@ -1728,7 +1742,7 @@ async function loadChildren() {
       return
     }
   } catch {
-    if (workspaceId !== model.workspaceId) return
+    if (gen !== loadGen || workspaceId !== model.workspaceId) return
     model.children = { submodules: [], worktrees: [] }
   }
   emit()
@@ -1737,9 +1751,13 @@ async function loadChildren() {
 async function loadBranches() {
   const params = repoParams()
   if (params === undefined) return
+  const gen = loadGen
   try {
-    model.branches = await apiGet('/branches', params)
+    const branches = await apiGet('/branches', params)
+    if (gen !== loadGen || params.workspaceId !== repoTarget()) return
+    model.branches = branches
   } catch (error) {
+    if (gen !== loadGen || params.workspaceId !== repoTarget()) return
     toastError(error)
   }
   emit()
@@ -1770,9 +1788,13 @@ async function loadStashes() {
 async function loadRemotes() {
   const params = repoParams()
   if (params === undefined) return
+  const gen = loadGen
   try {
-    model.remotes = await apiGet('/remotes', params)
+    const remotes = await apiGet('/remotes', params)
+    if (gen !== loadGen || params.workspaceId !== repoTarget()) return
+    model.remotes = remotes
   } catch (error) {
+    if (gen !== loadGen || params.workspaceId !== repoTarget()) return
     toastError(error)
   }
   emit()
@@ -2695,6 +2717,25 @@ function invalidateSubmoduleCache() {
   submoduleCache.clear()
 }
 
+/**
+ * Coalesce the heavy loads a repo switch triggers. A click on the picker fires
+ * `refreshTab` + `loadBranches` + `loadRemotes` (+ `loadChildren`), each a round
+ * of git spawns. Rapid clicks used to let every one of those sets pile up and
+ * choke the machine, so switching felt laggy. Debouncing to one set per idle
+ * window keeps git work bounded, and `bumpLoadGen` (in api.js) makes sure any
+ * in-flight load from a click the user has already moved past is discarded.
+ */
+let switchTimer = undefined
+function scheduleSwitchLoads() {
+  bumpLoadGen()
+  if (switchTimer !== undefined) clearTimeout(switchTimer)
+  switchTimer = setTimeout(() => {
+    switchTimer = undefined
+    void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
+    void loadChildren()
+  }, 150)
+}
+
 /** Decode a picked option: a repository, or one of its submodules. */
 function pickRepoValue(value) {
   if (typeof value !== 'string' || value.length === 0) return
@@ -2721,8 +2762,7 @@ function selectSubmodule(workspaceId, path) {
   }
   if (model.workspaceId === workspaceId && model.submodulePath === target) {
     emit()
-    void refreshTab()
-    void loadChildren()
+    scheduleSwitchLoads()
     return
   }
   const children = model.children
@@ -2735,8 +2775,7 @@ function selectSubmodule(workspaceId, path) {
   resetRepoState()
   model.children = children
   emit()
-  void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
-  void loadChildren()
+  scheduleSwitchLoads()
 }
 
 /** Point the panel at one repository and load what the active tab needs. */
@@ -2750,8 +2789,7 @@ function selectRepo(workspaceId) {
   storeSet(STORE_KEYS.workspaceId, workspaceId)
   resetRepoState()
   emit()
-  void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
-  void loadChildren()
+  scheduleSwitchLoads()
 }
 
 /**
@@ -2776,7 +2814,7 @@ function selectWorktree(path) {
   storeSet(STORE_KEYS.worktreePath, path)
   storeSet(STORE_KEYS.submodulePath, '')
   emit()
-  void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
+  scheduleSwitchLoads()
 }
 
 /** Copy to the clipboard, reporting either way. */
