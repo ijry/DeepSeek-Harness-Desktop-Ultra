@@ -344,7 +344,9 @@ async function loadRepos() {
       const first = model.repos.find((row) => row.isRepo)
       model.workspaceId = first === undefined ? '' : first.workspaceId
       model.worktreePath = ''
+      model.submodulePath = ''
       storeSet(STORE_KEYS.worktreePath, '')
+      storeSet(STORE_KEYS.submodulePath, '')
       resetRepoState()
     }
   } catch (error) {
@@ -378,6 +380,13 @@ async function loadChildren() {
     if (workspaceId !== model.workspaceId) return
     model.children = children
     if (model.worktreePath && !children.worktrees.some((row) => row.path === model.worktreePath && !row.prunable)) {
+      selectRepo(workspaceId)
+      return
+    }
+    // A submodule that has been removed or deinitialized can no longer be opened
+    // as a repository; fall back to the parent rather than keep failing reads.
+    if (model.submodulePath && !children.submodules.some(
+      (row) => submodulePathOf(workspaceId, row.path) === model.submodulePath)) {
       selectRepo(workspaceId)
       return
     }

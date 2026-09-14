@@ -35,6 +35,7 @@ const STORAGE_PREFIX = PLUGIN_ID + ':'
 const STORE_KEYS = {
   workspaceId: STORAGE_PREFIX + 'workspaceId',
   worktreePath: STORAGE_PREFIX + 'worktreePath',
+  submodulePath: STORAGE_PREFIX + 'submodulePath',
 }
 
 /** The main tabs, in toolbar order. */
@@ -212,6 +213,21 @@ function dirName(path) {
   const text = String(path ?? '').replace(/\\/g, '/')
   const cut = text.lastIndexOf('/')
   return cut === -1 ? '' : text.slice(0, cut)
+}
+
+/**
+ * Join a repository root with a relative path, always with forward slashes.
+ *
+ * The host resolves a repository by matching a path against its workspace
+ * roots, and it normalizes both sides to forward slashes first — so the paths
+ * this side builds (a submodule's checkout) must use them too.
+ */
+function joinPath(base, rel) {
+  const head = String(base ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
+  const tail = String(rel ?? '').replace(/\\/g, '/').replace(/^\/+/, '')
+  if (head.length === 0) return tail
+  if (tail.length === 0) return head
+  return head + '/' + tail
 }
 
 /** A byte count as the panel shows it. */

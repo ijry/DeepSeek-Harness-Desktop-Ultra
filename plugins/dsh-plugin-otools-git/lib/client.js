@@ -113,6 +113,7 @@ const STORAGE_PREFIX = PLUGIN_ID + ':'
 const STORE_KEYS = {
   workspaceId: STORAGE_PREFIX + 'workspaceId',
   worktreePath: STORAGE_PREFIX + 'worktreePath',
+  submodulePath: STORAGE_PREFIX + 'submodulePath',
 }
 
 /** The main tabs, in toolbar order. */
@@ -290,6 +291,21 @@ function dirName(path) {
   const text = String(path ?? '').replace(/\\/g, '/')
   const cut = text.lastIndexOf('/')
   return cut === -1 ? '' : text.slice(0, cut)
+}
+
+/**
+ * Join a repository root with a relative path, always with forward slashes.
+ *
+ * The host resolves a repository by matching a path against its workspace
+ * roots, and it normalizes both sides to forward slashes first — so the paths
+ * this side builds (a submodule's checkout) must use them too.
+ */
+function joinPath(base, rel) {
+  const head = String(base ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
+  const tail = String(rel ?? '').replace(/\\/g, '/').replace(/^\/+/, '')
+  if (head.length === 0) return tail
+  if (tail.length === 0) return head
+  return head + '/' + tail
 }
 
 /** A byte count as the panel shows it. */
@@ -1140,6 +1156,10 @@ const model = {
   reposLoaded: false,
   workspaceId: '',
   worktreePath: '',
+  // The checkout path of a submodule opened as its own repository. Like
+  // `worktreePath`, it overrides `workspaceId` as the request target; unlike it,
+  // a submodule is not a linked worktree, so it is kept separate.
+  submodulePath: '',
   install: null,
   aiAvailability: null,
   prefs: null,
@@ -1207,14 +1227,30 @@ function onModel(fn) {
 /** The repository row the panel is pointed at. */
 function currentRepo() {
   const parent = model.repos.find((row) => row.workspaceId === model.workspaceId)
-  if (parent === undefined || !model.worktreePath) return parent
-  const worktree = model.children.worktrees.find((row) => row.path === model.worktreePath)
-  return { ...parent, ...worktree, root: model.worktreePath, path: model.worktreePath,
-    title: baseName(model.worktreePath), branch: model.status?.branch ?? worktree?.branch }
+  if (parent === undefined) return parent
+  if (model.worktreePath) {
+    const worktree = model.children.worktrees.find((row) => row.path === model.worktreePath)
+    return { ...parent, ...worktree, root: model.worktreePath, path: model.worktreePath,
+      title: baseName(model.worktreePath), branch: model.status?.branch ?? worktree?.branch }
+  }
+  if (model.submodulePath) {
+    const submodule = model.children.submodules.find(
+      (row) => joinPath(parent.root, row.path) === model.submodulePath)
+    return { ...parent, ...submodule, root: model.submodulePath, path: model.submodulePath,
+      title: baseName(model.submodulePath), branch: model.status?.branch ?? submodule?.branch }
+  }
+  return parent
+}
+
+/** The absolute checkout path of a repository's submodule, from its `.gitmodules` path. */
+function submodulePathOf(workspaceId, relPath) {
+  const parent = model.repos.find((row) => row.workspaceId === workspaceId)
+  if (parent === undefined || parent.isRepo !== true) return ''
+  return joinPath(parent.root, relPath)
 }
 
 function repoTarget() {
-  return model.worktreePath || model.workspaceId
+  return model.worktreePath || model.submodulePath || model.workspaceId
 }
 
 /** The effective preference value, per-repo override first. */
@@ -1645,7 +1681,9 @@ async function loadRepos() {
       const first = model.repos.find((row) => row.isRepo)
       model.workspaceId = first === undefined ? '' : first.workspaceId
       model.worktreePath = ''
+      model.submodulePath = ''
       storeSet(STORE_KEYS.worktreePath, '')
+      storeSet(STORE_KEYS.submodulePath, '')
       resetRepoState()
     }
   } catch (error) {
@@ -1679,6 +1717,13 @@ async function loadChildren() {
     if (workspaceId !== model.workspaceId) return
     model.children = children
     if (model.worktreePath && !children.worktrees.some((row) => row.path === model.worktreePath && !row.prunable)) {
+      selectRepo(workspaceId)
+      return
+    }
+    // A submodule that has been removed or deinitialized can no longer be opened
+    // as a repository; fall back to the parent rather than keep failing reads.
+    if (model.submodulePath && !children.submodules.some(
+      (row) => submodulePathOf(workspaceId, row.path) === model.submodulePath)) {
       selectRepo(workspaceId)
       return
     }
@@ -2508,7 +2553,8 @@ function fileIcon(path, options) {
  * top-left of the panel, in the spirit of the sibling 仓库面板. What git has
  * that the issue panel does not is sub-repositories, so every repository renders
  * as an `<optgroup>` and its submodules render as indented options under it —
- * picking one jumps to the 子模块 tab of that repository.
+ * picking one opens that submodule as its own repository, keeping the tab the
+ * user was already on.
  *
  * Submodule rows come from `/children` per workspace. The active repository's
  * rows are always the live `model.children`; every other repository's rows are
@@ -2589,6 +2635,14 @@ function repoSelect() {
     select.append(group)
   }
   select.value = model.workspaceId.length > 0 ? 'repo:' + model.workspaceId : ''
+  // A submodule opened as its own repository is shown as the picked option, so
+  // the dropdown names what the panel is actually pointed at.
+  const active = model.repos.find((row) => row.workspaceId === model.workspaceId)
+  if (model.submodulePath.length > 0 && active !== undefined && active.isRepo === true) {
+    const hit = (model.children.submodules ?? [])
+      .find((entry) => joinPath(active.root, entry.path) === model.submodulePath)
+    if (hit !== undefined) select.value = 'sub:' + model.workspaceId + '|' + hit.path
+  }
   if (select.value !== '' && select.selectedIndex === -1) select.selectedIndex = 0
   return select
 }
@@ -2654,31 +2708,45 @@ function pickRepoValue(value) {
 }
 
 /**
- * Picking a submodule points the panel at its parent repository and opens the
- * 子模块 tab — the sidebar's submodule row behaviour, moved into the picker.
+ * Picking a submodule opens it as its own repository: the panel points at the
+ * submodule's checkout, and whatever tab the user was on stays put. It used to
+ * force the parent's 子模块 tab, which threw away the view the user was in.
  */
 function selectSubmodule(workspaceId, path) {
-  const alreadyActive = model.workspaceId === workspaceId && !model.worktreePath
-  if (model.tab !== 'submodules') {
-    model.tab = 'submodules'
-    void savePrefs({ activeTab: 'submodules' })
-  }
-  if (!alreadyActive) {
+  const target = submodulePathOf(workspaceId, path)
+  if (target.length === 0) {
+    // A stale option whose repository is gone: degrade to the parent.
     selectRepo(workspaceId)
     return
   }
+  if (model.workspaceId === workspaceId && model.submodulePath === target) {
+    emit()
+    void refreshTab()
+    void loadChildren()
+    return
+  }
+  const children = model.children
+  model.workspaceId = workspaceId
+  model.worktreePath = ''
+  model.submodulePath = target
+  storeSet(STORE_KEYS.workspaceId, workspaceId)
+  storeSet(STORE_KEYS.worktreePath, '')
+  storeSet(STORE_KEYS.submodulePath, target)
+  resetRepoState()
+  model.children = children
   emit()
-  void refreshTab()
+  void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
   void loadChildren()
-  void path
 }
 
 /** Point the panel at one repository and load what the active tab needs. */
 function selectRepo(workspaceId) {
-  if (model.workspaceId === workspaceId && !model.worktreePath) return
+  if (model.workspaceId === workspaceId && !model.worktreePath && !model.submodulePath) return
   model.workspaceId = workspaceId
   model.worktreePath = ''
+  model.submodulePath = ''
   storeSet(STORE_KEYS.worktreePath, '')
+  storeSet(STORE_KEYS.submodulePath, '')
   storeSet(STORE_KEYS.workspaceId, workspaceId)
   resetRepoState()
   emit()
@@ -2698,9 +2766,11 @@ function selectWorktree(path) {
   resetRepoState()
   model.children = children
   model.worktreePath = path
+  model.submodulePath = ''
   model.tab = 'status'
   storeSet(STORE_KEYS.workspaceId, model.workspaceId)
   storeSet(STORE_KEYS.worktreePath, path)
+  storeSet(STORE_KEYS.submodulePath, '')
   emit()
   void Promise.all([refreshTab(), loadBranches(), loadRemotes()])
 }
@@ -7019,6 +7089,7 @@ function apply(ctx) {
   bootState.running = true
   model.workspaceId = storeGet(STORE_KEYS.workspaceId, '')
   model.worktreePath = storeGet(STORE_KEYS.worktreePath, '')
+  model.submodulePath = storeGet(STORE_KEYS.submodulePath, '')
   const state = { disposed: false }
   let observer = null
   let timer = null

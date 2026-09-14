@@ -18,6 +18,10 @@ const model = {
   reposLoaded: false,
   workspaceId: '',
   worktreePath: '',
+  // The checkout path of a submodule opened as its own repository. Like
+  // `worktreePath`, it overrides `workspaceId` as the request target; unlike it,
+  // a submodule is not a linked worktree, so it is kept separate.
+  submodulePath: '',
   install: null,
   aiAvailability: null,
   prefs: null,
@@ -85,14 +89,30 @@ function onModel(fn) {
 /** The repository row the panel is pointed at. */
 function currentRepo() {
   const parent = model.repos.find((row) => row.workspaceId === model.workspaceId)
-  if (parent === undefined || !model.worktreePath) return parent
-  const worktree = model.children.worktrees.find((row) => row.path === model.worktreePath)
-  return { ...parent, ...worktree, root: model.worktreePath, path: model.worktreePath,
-    title: baseName(model.worktreePath), branch: model.status?.branch ?? worktree?.branch }
+  if (parent === undefined) return parent
+  if (model.worktreePath) {
+    const worktree = model.children.worktrees.find((row) => row.path === model.worktreePath)
+    return { ...parent, ...worktree, root: model.worktreePath, path: model.worktreePath,
+      title: baseName(model.worktreePath), branch: model.status?.branch ?? worktree?.branch }
+  }
+  if (model.submodulePath) {
+    const submodule = model.children.submodules.find(
+      (row) => joinPath(parent.root, row.path) === model.submodulePath)
+    return { ...parent, ...submodule, root: model.submodulePath, path: model.submodulePath,
+      title: baseName(model.submodulePath), branch: model.status?.branch ?? submodule?.branch }
+  }
+  return parent
+}
+
+/** The absolute checkout path of a repository's submodule, from its `.gitmodules` path. */
+function submodulePathOf(workspaceId, relPath) {
+  const parent = model.repos.find((row) => row.workspaceId === workspaceId)
+  if (parent === undefined || parent.isRepo !== true) return ''
+  return joinPath(parent.root, relPath)
 }
 
 function repoTarget() {
-  return model.worktreePath || model.workspaceId
+  return model.worktreePath || model.submodulePath || model.workspaceId
 }
 
 /** The effective preference value, per-repo override first. */

@@ -15,6 +15,7 @@ function apply(ctx) {
   bootState.running = true
   model.workspaceId = storeGet(STORE_KEYS.workspaceId, '')
   model.worktreePath = storeGet(STORE_KEYS.worktreePath, '')
+  model.submodulePath = storeGet(STORE_KEYS.submodulePath, '')
   const state = { disposed: false }
   let observer = null
   let timer = null

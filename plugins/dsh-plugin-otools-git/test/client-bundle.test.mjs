@@ -224,15 +224,36 @@ describe('client bundle', () => {
     assert.equal(dom.document.querySelector('.dsh-og-side'), null)
   })
 
-  it('jumps to the submodule tab when a submodule option is picked', async () => {
+  it('opens a submodule as its own repository without leaving the tab', async () => {
     const select = dom.document.querySelector('.dsh-og-repo-select')
     const option = Array.from(select.querySelectorAll('option'))
       .find((row) => row.getAttribute('value').startsWith('sub:') && row.getAttribute('value').includes('libs/sub'))
     assert.notEqual(option, undefined, 'submodule option missing')
     select.value = option.getAttribute('value')
     select.dispatchEvent({ type: 'change' })
-    await waitFor(() => panelText().includes('添加子模块'), 'the submodule pane')
-    assert.ok(panelText().includes('libs/sub'), 'submodule path should be listed')
+    // The submodule's own working tree is clean, so seeing that — and no longer
+    // the parent's staged list — is what proves the panel switched repositories.
+    await waitFor(() => panelText().includes('工作区是干净的'), 'the submodule status pane')
+    assert.ok(!panelText().includes('添加子模块'), 'picking a submodule must not open the submodule pane')
+    assert.ok(!panelText().includes('已暂存文件'), 'the parent staged list must be gone')
+    // The tab the user was on (工作区) is kept.
+    const activeTab = Array.from(dom.document.querySelectorAll('.dsh-og-tbtn'))
+      .find((button) => button.getAttribute('data-active') === 'true')
+    assert.notEqual(activeTab, undefined, 'a tab must stay active')
+    assert.ok(activeTab.textContent.includes('工作区'), 'the active tab must not change')
+    // The header and dropdown name the submodule checkout.
+    assert.ok(dom.document.querySelector('.dsh-og-worktree-path').textContent.includes('libs/sub'),
+      'the header must name the submodule checkout')
+    assert.equal(dom.document.querySelector('.dsh-og-repo-select').value, option.getAttribute('value'),
+      'the dropdown must show the submodule as picked')
+    assert.ok(dom.window.localStorage.getItem('dsh-plugin-otools-git:submodulePath').replace(/\\/g, '/').endsWith('libs/sub'),
+      'the submodule choice must be remembered')
+    // Back to the parent repository for the tests that follow.
+    const back = dom.document.querySelector('.dsh-og-repo-select')
+    back.value = 'repo:ws1'
+    back.dispatchEvent({ type: 'change' })
+    await waitFor(() => panelText().includes('已暂存文件'), 'the parent repository again')
+    assert.equal(dom.window.localStorage.getItem('dsh-plugin-otools-git:submodulePath'), '')
   })
 
   it('has one stash navigation entry, with creation inside the stash pane', async () => {
