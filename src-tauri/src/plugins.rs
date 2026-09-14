@@ -25,8 +25,13 @@ use crate::server::{pump, LogRing};
 const PROFILE: &str = "web";
 
 /// `dsh plugin add` 的耐心。它内部就是 pnpm 解一个本地 tarball，正常是秒级；
-/// 给到分钟级已经很宽松，真卡住了也不该把启动一起拖死。
-const ADD_TIMEOUT: Duration = Duration::from_secs(3 * 60);
+/// 但本机 dev 里 `pack:plugins` 每次启动都重新打包内置插件的 tgz（hash 随之变化），
+/// 于是 `dsh plugin add` 会触发整份 web profile 的 pnpm 全量重解析（约 430 个包、
+/// 纯本地缓存安装约 106s，启动争用下偶尔更慢）。180s 守卫会卡在这个重解析上，
+/// 而 `terminate` 又没能真正杀掉 pnpm 的工作进程，孤儿 pnpm 在 `healProfilesModuleFallback`
+/// 之后把 `web/node_modules/@deepseek-ai` 的链接修剪掉，导致服务器 bundles 清单解析失败、
+/// 所有 client.js 路由 404（黑屏）。本地安装不上网，给到 8 分钟留足余量且仍能兜底卡死。
+const ADD_TIMEOUT: Duration = Duration::from_secs(8 * 60);
 
 /// 带运行时依赖的插件的耐心。
 ///
