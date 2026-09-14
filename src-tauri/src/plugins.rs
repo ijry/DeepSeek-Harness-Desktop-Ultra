@@ -59,7 +59,8 @@ const MAX_FAILURES: u32 = 2;
 ///    绘制的样式异常（.dsh-og-section 改为 flex:none）。
 /// 9：git 面板点击下拉里的子模块改为把该子模块当作独立仓库打开，并保持当前
 ///    页签（此前会跳到父仓库的子模块页签）。
-const BUNDLE_REVISION: u32 = 9;
+/// 10：git 面板切换工作树同样保持当前页签（此前会被弹回工作区页签）。
+const BUNDLE_REVISION: u32 = 10;
 
 /// 一个内置插件。
 ///

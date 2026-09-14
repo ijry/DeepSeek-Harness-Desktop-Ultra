@@ -198,7 +198,10 @@ describe('client bundle', () => {
   it('opens the panel and paints the toolbar, tabs and status bar', async () => {
     const entry = dom.document.querySelector('[data-dsh-otools-git-entry]')
     entry.dispatchEvent({ type: 'click' })
-    await waitFor(() => panelText().includes('已暂存文件'), 'the status pane to load')
+    // The boot is four sequential rounds of `git` spawns and the status pane only
+    // arrives in the last one; on a loaded Windows box that brushes the default
+    // 20s, so this first wait gets real headroom.
+    await waitFor(() => panelText().includes('已暂存文件'), 'the status pane to load', 60_000)
 
     assert.equal(dom.document.documentElement.hasAttribute('data-dsh-og-open'), true)
     const text = panelText()
@@ -400,12 +403,28 @@ describe('client bundle', () => {
     const worktreeSelect = () => dom.document.querySelector('.dsh-og-worktree-select')
     await waitFor(() => worktreeSelect() !== null &&
       worktreeSelect().textContent.includes('feature-worktree'), 'linked worktree navigation')
+    // Park on a non-status tab first: changing the worktree must keep it, exactly
+    // as picking a submodule does, instead of bouncing the user to 工作区.
+    const tabButton = (label) => Array.from(dom.document.querySelectorAll('.dsh-og-tbtn'))
+      .find((button) => button.textContent.includes(label))
+    const activeTabLabel = () => {
+      const active = Array.from(dom.document.querySelectorAll('.dsh-og-tbtn'))
+        .find((button) => button.getAttribute('data-active') === 'true')
+      return active === undefined ? '' : active.textContent
+    }
+    tabButton('分支').dispatchEvent({ type: 'click' })
+    await waitFor(() => activeTabLabel().includes('分支'), 'the branch tab')
     const select = worktreeSelect()
     const option = Array.from(select.querySelectorAll('option'))
       .find((row) => row.getAttribute('value') === worktree.replace(/\\/g, '/'))
     assert.notEqual(option, undefined, 'worktree option missing')
     select.value = option.getAttribute('value')
     select.dispatchEvent({ type: 'change' })
+    await waitFor(() => dom.document.querySelector('.dsh-og-statusbar').textContent.includes('feature-worktree'),
+      'the linked worktree status bar')
+    assert.ok(activeTabLabel().includes('分支'), 'switching worktree must keep the active tab')
+    // Back to the status tab to exercise staging inside the worktree.
+    tabButton('工作区').dispatchEvent({ type: 'click' })
     await waitFor(() => panelText().includes('only-in-worktree.txt'), 'linked worktree status')
     assert.equal(dom.window.localStorage.getItem('dsh-plugin-otools-git:workspaceId'), 'ws1')
     assert.equal(dom.window.localStorage.getItem('dsh-plugin-otools-git:worktreePath'), worktree.replace(/\\/g, '/'))

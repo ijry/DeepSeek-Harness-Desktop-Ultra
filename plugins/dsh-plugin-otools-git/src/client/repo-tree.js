@@ -206,6 +206,11 @@ function selectRepo(workspaceId) {
   void loadChildren()
 }
 
+/**
+ * Point the panel at one of the repository's linked worktrees. As with picking a
+ * submodule, the tab the user was on is kept — the worktree reads back for
+ * whichever view they are in, instead of being bounced to 工作区.
+ */
 function selectWorktree(path) {
   const parent = model.repos.find((row) => row.workspaceId === model.workspaceId)
   if (path === parent?.root) {
@@ -219,7 +224,6 @@ function selectWorktree(path) {
   model.children = children
   model.worktreePath = path
   model.submodulePath = ''
-  model.tab = 'status'
   storeSet(STORE_KEYS.workspaceId, model.workspaceId)
   storeSet(STORE_KEYS.worktreePath, path)
   storeSet(STORE_KEYS.submodulePath, '')
