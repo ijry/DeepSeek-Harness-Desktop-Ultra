@@ -60,7 +60,9 @@ const MAX_FAILURES: u32 = 2;
 /// 9：git 面板点击下拉里的子模块改为把该子模块当作独立仓库打开，并保持当前
 ///    页签（此前会跳到父仓库的子模块页签）。
 /// 10：git 面板切换工作树同样保持当前页签（此前会被弹回工作区页签）。
-const BUNDLE_REVISION: u32 = 10;
+/// 11：git 面板切换仓库/子模块时防抖并丢弃过期加载，根治卡顿（客户端
+///     scheduleSwitchLoads + loadGen 代际守卫，纯客户端逻辑、无需刷新依赖）。
+const BUNDLE_REVISION: u32 = 11;
 
 /// 一个内置插件。
 ///
