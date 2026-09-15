@@ -1073,6 +1073,9 @@ defineExpose({ handleOpenTable, handleOpenView, handleOpenProcedure, handleCreat
 
 .dbm-toolbar {
   overflow-x: auto;
+  /* 纵向必须锁死：overflow-x:auto 会把 overflow-y 的 visible 计算成 auto，
+     一旦内容略高于可视区就会多出一条纵向滚动条再吃一层高度。 */
+  overflow-y: hidden;
   min-width: 0;
   height: 55px;
   display: flex;
@@ -1083,6 +1086,28 @@ defineExpose({ handleOpenTable, handleOpenView, handleOpenProcedure, handleCreat
   border-bottom: 1px solid var(--layout-border-color);
   background: var(--toolbar-bg-color);
   flex-shrink: 0;
+  /* 行高 55px 减去 45px 按钮 + 5px 上边距，只余 5px。而 Chromium 默认横向
+     滚动条约 15px，会把这 5px 连同按钮底部的文字标签一起压掉（标签被裁）。
+     把滚动条压到 6px（标签底缘在行内约 44px 处，仍有安全余量），标签即完整。 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--layout-border-color) transparent;
+}
+
+.dbm-toolbar::-webkit-scrollbar {
+  height: 6px;
+}
+
+.dbm-toolbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dbm-toolbar::-webkit-scrollbar-thumb {
+  background: var(--layout-border-color);
+  border-radius: 3px;
+}
+
+.dbm-toolbar::-webkit-scrollbar-thumb:hover {
+  background: var(--el-text-color-disabled);
 }
 
 .toolbar-group {
