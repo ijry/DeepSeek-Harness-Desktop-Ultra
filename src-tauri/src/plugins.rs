@@ -64,7 +64,14 @@ const MAX_FAILURES: u32 = 2;
 ///     scheduleSwitchLoads + loadGen 代际守卫，纯客户端逻辑、无需刷新依赖）。
 /// 12：数据库面板顶部工具栏把横向滚动条压到 6px 并锁死纵向滚动条，修掉窄窗口
 ///     下滚动条吃掉行高、把按钮文字标签裁掉的问题。
-const BUNDLE_REVISION: u32 = 12;
+/// 13：任务看板（1）详情页「发起会话」按钮调用 api.launch，但客户端 api 对象此前
+///     没有 launch 方法 → action.launchTask 失败；补齐该 REST 方法（POST
+///     /tasks/:id/launch）。（2）宿主 launcher 从未绑定 apiProxy（launcherBox 只声明
+///     未赋值），发起会话会报 unavailable；改为嵌套注入 apiProxy 并赋值
+///     launcherBox.current = createLauncher(apiProxy)。（3）summarizeTask 对未认领任务
+///     返回 claimedBy: undefined，导致 taskboard_list 工具输出非 lossless JSON 而校验失败；
+///     改为空串。
+const BUNDLE_REVISION: u32 = 13;
 
 /// 一个内置插件。
 ///

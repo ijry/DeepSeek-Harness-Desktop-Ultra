@@ -404,6 +404,7 @@
     reject(id, payload) { return api.post(ROUTE_PREFIX + '/tasks/' + encodeURIComponent(id) + '/reject', payload) },
     comment(id, body) { return api.post(ROUTE_PREFIX + '/tasks/' + encodeURIComponent(id) + '/comment', { body }) },
     remove(id, payload) { return api.post(ROUTE_PREFIX + '/tasks/' + encodeURIComponent(id) + '/delete', payload) },
+    launch(id, payload) { return api.post(ROUTE_PREFIX + '/tasks/' + encodeURIComponent(id) + '/launch', payload) },
   }
 
   // ---------------------------------------------------------------- styles
@@ -674,7 +675,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       status: task.status,
       version: task.version,
       workspaceId: task.workspaceId ?? '',
-      claimedBy: typeof task.claimedBy === 'string' ? task.claimedBy : undefined,
+      claimedBy: typeof task.claimedBy === 'string' ? task.claimedBy : '',
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
       commentCount: Array.isArray(task.comments) ? task.comments.length : 0,

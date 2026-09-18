@@ -272,7 +272,7 @@ export function summarizeTask(task) {
     status: task.status,
     version: task.version,
     workspaceId: task.workspaceId ?? '',
-    claimedBy: typeof task.claimedBy === 'string' ? task.claimedBy : undefined,
+    claimedBy: typeof task.claimedBy === 'string' ? task.claimedBy : '',
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     commentCount: Array.isArray(task.comments) ? task.comments.length : 0,

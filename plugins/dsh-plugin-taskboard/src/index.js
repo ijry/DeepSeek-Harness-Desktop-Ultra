@@ -51,6 +51,14 @@ export function apply(ctx) {
   void store.load()
   const now = () => Date.now()
 
+  // 发起会话依赖 dsh apiProxy（sessions.create / sessions.prompt）。嵌套注入：
+  // 没有 apiProxy 的组合里 launcherBox.current 保持 undefined，launch 路由会
+  // 明确报 unavailable，而不是让插件整体起不来（与 mobile-bridge 一致）。
+  const launcherBox = { current: undefined }
+  ctx.inject(['apiProxy'], (apiCtx) => {
+    launcherBox.current = createLauncher(apiCtx.apiProxy)
+  })
+
   // Agent workflow protocol (columns, claim/version discipline, done-gate),
   // in the language the desktop shell runs in (DSH_DESKTOP_LANG).
   ctx.effect?.(
