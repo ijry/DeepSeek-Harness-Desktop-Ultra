@@ -47,8 +47,14 @@ export function createLauncher(sessionController) {
   }
 }
 
-/** Only untouched work is worth a fresh session. */
-export const LAUNCHABLE_STATUSES = ['todo', 'queued']
+/**
+ * Only a task with no session behind it may launch one. Launching moves the card
+ * `todo -> queued` (see the launch route), so `queued` MUST stay out of this list:
+ * otherwise a second click would queue a second session onto the same card and two
+ * sessions would race to claim it. Recovery stays explicit — move the card back to
+ * `todo` (queued -> todo is allowed) and launch again.
+ */
+export const LAUNCHABLE_STATUSES = ['todo']
 
 /**
  * The first message the new session receives: point the agent at the board

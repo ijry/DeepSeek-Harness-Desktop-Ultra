@@ -202,6 +202,7 @@ function openPanelChannel(ctx, options) {
       'toast.taskDeleted': '任务已删除',
       'toast.noteEmpty': '先写点备注内容',
       'toast.noteSent': '备注已发送',
+      'toast.launched': (sid) => '已发起 DSH 会话，任务转为「排队」等认领' + (sid === '' ? '' : '（' + sid + '）'),
       'confirm.sendBack': '退回待办？确认后任务回到“待办”列并解除认领。',
       'confirm.delete': '确定删除该任务吗？删除后不可恢复。',
       'action.accept': '验收',
@@ -283,6 +284,7 @@ function openPanelChannel(ctx, options) {
       'detail.kvCreated': 'Created',
       'detail.noNotes': 'No notes yet',
       'detail.edit': 'Edit',
+      'detail.launch': 'Launch session',
       'detail.accept': '✓ Accept',
       'detail.sendBack': 'Send back to todo',
       'detail.reopen': 'Reopen',
@@ -294,8 +296,7 @@ function openPanelChannel(ctx, options) {
       'toast.taskDeleted': 'Task deleted',
       'toast.noteEmpty': 'Write a note first',
       'toast.noteSent': 'Note sent',
-      'toast.launched': (sid) => 'DSH session started' + (sid === '' ? '' : ' ' + sid),
-      'toast.launched': (sid) => 'DSH session started' + (sid === '' ? '' : ' ' + sid),
+      'toast.launched': (sid) => 'DSH session started; the task is now Queued' + (sid === '' ? '' : ' (' + sid + ')'),
       'confirm.sendBack': 'Send back to todo? The task returns to the To do column and the claim is released.',
       'confirm.delete': 'Delete this task? This cannot be undone.',
       'action.accept': 'Accept',
@@ -1496,7 +1497,10 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       const editBtn = el('button', { class: 'dsh-cgtb-btn', type: 'button' }, t('detail.edit'))
       editBtn.addEventListener('click', () => { void editTask() })
       frame.foot.append(editBtn)
-      if (current === 'todo' || current === 'queued') {
+      // 发起会话只对「还没排过会话」的待办卡开放：发起后卡片会变成 queued
+      // （LAUNCHABLE_STATUSES 与之一致），再点一次就会给同一张卡排队第二个
+      // 会话、两个会话抢认领。要重新发起先把卡片移回「待办」。
+      if (current === 'todo') {
         const launchBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'primary', type: 'button' }, t('detail.launch'))
         launchBtn.addEventListener('click', () => { void launchTask() })
         frame.foot.append(launchBtn)

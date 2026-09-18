@@ -354,21 +354,30 @@ export function registerTaskboardRoutes(ctx, options) {
             return
           }
 
-          // launch: turn a todo/queued task into a real DSH session — the
-          // dsh sessionController creates the session and queues the task's
-          // prompt as the first message; a comment on the task records the
-          // session id. Without the sessionController service this fails
-          // loudly with `unavailable` instead of pretending to work.
+          // launch: turn a todo task into a real DSH session AND move it on the
+          // board. The dsh sessionController creates the session and queues the
+          // task's prompt as the first message; the card then goes todo -> queued
+          // (the lifecycle step immediately before the agent claims
+          // queued -> preparing — see AGENT_TRANSITIONS) and gains a comment
+          // recording the session id. Without the sessionController service this
+          // fails loudly with `unavailable` instead of pretending to work.
+          //
+          // The route must NOT claim the task itself: claiming binds the card to
+          // the calling session and is workspace-gated (protocol rule 3/7), which
+          // only the launched session can satisfy.
           if (action === 'launch') {
             const launcher = typeof options.launcher === 'function' ? options.launcher() : options.launcher
             if (launcher === undefined || launcher === null) {
               throw new ToolError(ERR.unavailable,
                 'launch needs the dsh sessionController service, which this composition does not provide')
             }
+            const ifVersion = numberField(body, 'ifVersion')
             const preflight = store.get(id)
+            // Guard BEFORE creating the session: a stale board must not spawn one.
+            versionGuard(preflight, ifVersion)
             if (!LAUNCHABLE_STATUSES.includes(preflight.status)) {
               throw new ToolError(ERR.invalidTransition,
-                `only a todo/queued task can launch a session; task ${id} is ${preflight.status}`)
+                `only a todo task can launch a session; task ${id} is ${preflight.status}`)
             }
             const sessionPayload = {}
             if (typeof preflight.workspaceId === 'string' && preflight.workspaceId !== '') {
@@ -386,6 +395,15 @@ export function registerTaskboardRoutes(ctx, options) {
             })
             await store.mutate('task-launched', (ledger) => {
               const task = liveTaskAt(ledger, id)
+              // todo -> queued: the card now shows a session is queued for it.
+              // (`queued` sits in the 待办 column; the agent's claim is what moves
+              // it to 进行中.) Tolerate a board change in the tiny window between
+              // preflight and here: only an untouched task gets the move.
+              if (task.status === 'todo') {
+                task.status = 'queued'
+                delete task.claimedBy
+                delete task.claimedAt
+              }
               task.comments = task.comments ?? []
               task.comments.push({
                 id: newCommentId(),

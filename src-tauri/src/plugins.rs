@@ -84,7 +84,16 @@ const MAX_FAILURES: u32 = 2;
 ///     500 internal；现由 launcher 用 randomUUID() 补上（调用方自带则不覆盖）。
 ///     同时路由错误信封补上 RemoteError 的 details.reason，避免这类故障只剩
 ///     一句套话无法追查。
-const BUNDLE_REVISION: u32 = 15;
+/// 16：任务看板发起会话补齐卡片状态推进。此前 launch 只建会话 + 留备注，不改
+///     状态，用户看着「会话起了但卡片没动」。现按既有生命周期
+///     （todo → queued → preparing）把卡片推到 queued（排队，仍在「待办」列，
+///     agent 认领后转「进行中」）。同时：
+///     - 该写入纳入 ifVersion 版本守卫，且守卫放在**建会话之前**（过期请求
+///       不该再起一个会话）；客户端本来就带 ifVersion。
+///     - `LAUNCHABLE_STATUSES` 由 ['todo','queued'] 收紧为 ['todo']，客户端
+///       按钮同步只在 todo 显示 —— 否则同一张卡会被排上两个会话抢认领；
+///       重新发起需先把卡移回 todo。
+const BUNDLE_REVISION: u32 = 16;
 
 /// 一个内置插件。
 ///

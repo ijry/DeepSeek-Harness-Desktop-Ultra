@@ -159,7 +159,7 @@ function recordingLauncher(sessionId) {
   }
 }
 
-test('launch 路由：创建会话、排队首条消息、任务留备注', async () => {
+test('launch 路由：创建会话、排队首条消息、任务转 queued 并留备注', async () => {
   const { dir, store } = await freshStore()
   try {
     const task = createTaskRecord({
@@ -176,7 +176,7 @@ test('launch 路由：创建会话、排队首条消息、任务留备注', asyn
     const launcher = recordingLauncher('sess-123')
     const { handler, dispose } = fakeRouteEnv({ store, workspaces: { list: () => [] }, now: () => 200, launcher: () => launcher })
     const res = fakeResponse()
-    await handler(jsonRequest('POST', `${ROUTE_PREFIX}/tasks/${task.id}/launch`, {}), res)
+    await handler(jsonRequest('POST', `${ROUTE_PREFIX}/tasks/${task.id}/launch`, { ifVersion: task.version }), res)
 
     assert.equal(res.statusCode, 201)
     assert.deepEqual(JSON.parse(res.body), { ok: true, value: { sessionId: 'sess-123', taskId: task.id } })
@@ -187,11 +187,36 @@ test('launch 路由：创建会话、排队首条消息、任务留备注', asyn
     assert.equal(launcher.calls.prompt[0].sessionId, 'sess-123')
     assert.equal(launcher.calls.prompt[0].mode, 'queue')
     assert.match(launcher.calls.prompt[0].content[0].text, /「修登录超时」/)
-    // 任务上留下可追溯的备注，版本推进
+    // 卡片推进到 queued（认领前的排队态），版本推进、留可追溯备注
     const after = store.get(task.id)
+    assert.equal(after.status, 'queued')
     assert.equal(after.version, task.version + 1)
     assert.equal(after.comments.length, 1)
     assert.match(after.comments[0].body, /sess-123/)
+    dispose()
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('launch 路由：ifVersion 过期时不建会话，报 version_conflict', async () => {
+  const { dir, store } = await freshStore()
+  try {
+    const task = createTaskRecord({ title: '待办', actor: { kind: 'user' }, now: 1 })
+    await store.mutate('task-created', (ledger) => {
+      ledger.tasks.push(task)
+      return [task]
+    })
+    const launcher = recordingLauncher('sess-stale')
+    const { handler, dispose } = fakeRouteEnv({ store, workspaces: { list: () => [] }, now: () => 2, launcher: () => launcher })
+    const res = fakeResponse()
+    await handler(jsonRequest('POST', `${ROUTE_PREFIX}/tasks/${task.id}/launch`, { ifVersion: 999 }), res)
+    assert.notEqual(res.statusCode, 201)
+    assert.equal(JSON.parse(res.body).error.code, 'version_conflict')
+    // 关键：守护发生在开会话之前，过期请求不该留下任何会话
+    assert.equal(launcher.calls.create.length, 0)
+    assert.equal(launcher.calls.prompt.length, 0)
+    assert.equal(store.get(task.id).status, 'todo')
     dispose()
   } finally {
     await rm(dir, { recursive: true, force: true })
@@ -219,26 +244,33 @@ test('launch 路由：没有 launcher（sessionController 缺失）报 unavailab
   }
 })
 
-test('launch 路由：只有 todo/queued 能发起，running 报 invalid_transition', async () => {
-  const { dir, store } = await freshStore()
-  try {
-    const task = createTaskRecord({ title: '进行中', actor: { kind: 'user' }, now: 1 })
-    await store.mutate('task-created', (ledger) => {
-      ledger.tasks.push(task)
-      return [task]
-    })
-    await store.mutate('task-moved', (ledger) => {
-      const live = ledger.tasks.find((t) => t.id === task.id)
-      live.status = 'running'
-      return [live]
-    })
-    const { handler, dispose } = fakeRouteEnv({ store, workspaces: { list: () => [] }, now: () => 2, launcher: () => recordingLauncher('sess-x') })
-    const res = fakeResponse()
-    await handler(jsonRequest('POST', `${ROUTE_PREFIX}/tasks/${task.id}/launch`, {}), res)
-    assert.equal(res.statusCode, 400)
-    assert.equal(JSON.parse(res.body).error.code, 'invalid_transition')
-    dispose()
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
+// 发起会话会把卡片推到 queued，所以 queued 本身必须**不可再发起** ——
+// 否则同一张卡会排上两个会话，两者抢认领。running/review 同理不可发起。
+for (const blocked of ['queued', 'running', 'review']) {
+  test(`launch 路由：${blocked} 不可发起，报 invalid_transition 且不建会话`, async () => {
+    const { dir, store } = await freshStore()
+    try {
+      const task = createTaskRecord({ title: '非待办卡', actor: { kind: 'user' }, now: 1 })
+      await store.mutate('task-created', (ledger) => {
+        ledger.tasks.push(task)
+        return [task]
+      })
+      await store.mutate('task-moved', (ledger) => {
+        const live = ledger.tasks.find((t) => t.id === task.id)
+        live.status = blocked
+        return [live]
+      })
+      const launcher = recordingLauncher('sess-x')
+      const { handler, dispose } = fakeRouteEnv({ store, workspaces: { list: () => [] }, now: () => 2, launcher: () => launcher })
+      const res = fakeResponse()
+      await handler(jsonRequest('POST', `${ROUTE_PREFIX}/tasks/${task.id}/launch`, { ifVersion: 1 }), res)
+      assert.equal(res.statusCode, 400)
+      assert.equal(JSON.parse(res.body).error.code, 'invalid_transition')
+      assert.equal(launcher.calls.create.length, 0)
+      assert.equal(launcher.calls.prompt.length, 0)
+      dispose()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+}
