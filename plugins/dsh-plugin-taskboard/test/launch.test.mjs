@@ -388,6 +388,39 @@ test('settings 路由：并行上限落账并可持久化；越界报 invalid_in
   }
 })
 
+test('GET /state 会驱动队列：冷启动后打开面板就能回收积压的排队卡', async () => {
+  const { dir, store } = await freshStore()
+  try {
+    await store.mutateSettings((ledger) => {
+      ledger.settings = { maxParallel: 1 }
+      return true
+    })
+    // 上次留下的积压：排队中、还没有会话
+    await seed(store, { title: '上次留下的积压', status: 'queued' })
+    const launcher = recordingLauncher('sess-resume')
+    let available // 冷启动时 dsh 还没挂上 sessionController
+    const { handler, dispose } = fakeRouteEnv({ store, workspaces: { list: () => [] }, now: () => 900, launcher: () => available })
+
+    const early = fakeResponse()
+    await handler(jsonRequest('GET', `${ROUTE_PREFIX}/state`), early)
+    assert.equal(early.statusCode, 200)
+    assert.equal(store.snapshot().tasks.find((t) => t.status === 'queued').sessionId, undefined,
+      '服务还没挂上时不该有会话')
+
+    // 服务挂上之后，用户打开面板（GET /state）就该把积压接上
+    available = launcher
+    const later = fakeResponse()
+    await handler(jsonRequest('GET', `${ROUTE_PREFIX}/state`), later)
+    assert.equal(later.statusCode, 200)
+    assert.equal(await waitFor(() => store.snapshot().tasks.some((t) => t.sessionId === 'sess-resume')), true,
+      'GET /state 应驱动队列把积压接上')
+    assert.equal(launcher.calls.create.length, 1)
+    dispose()
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('launch 路由：ifVersion 过期时不建会话，报 version_conflict', async () => {
   const { dir, store } = await freshStore()
   try {

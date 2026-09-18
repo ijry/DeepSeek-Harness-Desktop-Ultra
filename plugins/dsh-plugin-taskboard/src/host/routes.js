@@ -212,6 +212,10 @@ export function registerTaskboardRoutes(ctx, options) {
       if (req.method === 'GET') {
         if (pathname === `${ROUTE_PREFIX}/state`) {
           await store.load()
+          // 打开面板/刷新页面是「有人在看」的信号，顺手回收一次积压：如果上次留下
+          // 一张「排队中」的卡而后端刚起来，这里能立刻把它接上（调度器没有 launcher
+          // 或无卡可发时会立刻返回，不产生额外开销）。
+          void pump()
           // `language` is how the browser half learns the shell's UI language:
           // it runs in the DSH page and cannot read DSH_DESKTOP_LANG itself.
           ok(res, { ...store.snapshot(), language: hostLang() })
@@ -627,8 +631,19 @@ export function registerTaskboardRoutes(ctx, options) {
   ]
   // Resume a persisted queue: a restart (or a plugin reload) may leave cards
   // waiting for a slot that nothing would otherwise hand out.
-  void pump()
+  //
+  // 但这一次补跑**通常注定失败**：dsh 的 `sessionController` 是**在本插件之后**
+  // 才挂上服务图的，此刻 `launcherFor()` 只会拿到 undefined（日志里那句
+  // 「发起会话不可用」就是从这里来的）。而队列只在「账本提交」时被驱动，冷启动
+  // 后用户什么都不做就不会有提交 —— 于是上次留下的「排队中」的卡会一直卡着。
+  // 所以按固定节奏补试几次，等到服务挂上就把积压接上；次数有上限，不会一直转。
+  const RESUME_DELAYS_MS = [500, 1500, 3000, 6000, 10000, 15000]
+  const resumeTimers = RESUME_DELAYS_MS.map((ms) => setTimeout(() => { void pump() }, ms))
+  if (typeof resumeTimers[0]?.unref === 'function') {
+    for (const timer of resumeTimers) timer.unref()
+  }
   return () => {
+    for (const timer of resumeTimers) clearTimeout(timer)
     disposePump()
     unsubscribePump()
     stopSharedInject?.()
