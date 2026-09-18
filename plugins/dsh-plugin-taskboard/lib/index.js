@@ -51,13 +51,22 @@ export function apply(ctx) {
   void store.load()
   const now = () => Date.now()
 
-  // 发起会话依赖 dsh apiProxy（sessions.create / sessions.prompt）。嵌套注入：
-  // 没有 apiProxy 的组合里 launcherBox.current 保持 undefined，launch 路由会
-  // 明确报 unavailable，而不是让插件整体起不来（与 mobile-bridge 一致）。
-  const launcherBox = { current: undefined }
-  ctx.inject(['apiProxy'], (apiCtx) => {
-    launcherBox.current = createLauncher(apiCtx.apiProxy)
-  })
+  // 发起会话依赖 dsh sessionController（session.create / session.prompt）。
+  // dsh 0.1.5 起 web 组合以 sessionController 取代了旧的 apiProxy 服务，所以按
+  // 调用时惰性解析：既不与插件加载顺序耦合，缺失时也让 launch 路由明确报
+  // unavailable，而不是让整个插件起不来。
+  const launchProbe = () =>
+    ['sessionController', 'apiProxy', 'agents', 'sessions', 'agentDefaultModel']
+      .map((name) => `${name}=${ctx.get(name) === undefined ? 'N' : 'Y'}`)
+      .join(' ')
+
+  const launcherFor = () => {
+    const launcher = createLauncher(ctx.get('sessionController'))
+    if (launcher === undefined) {
+      console.warn(`[dsh-plugin-taskboard] 发起会话不可用：组合缺少 sessionController（${launchProbe()}）`)
+    }
+    return launcher
+  }
 
   // Agent workflow protocol (columns, claim/version discipline, done-gate),
   // in the language the desktop shell runs in (DSH_DESKTOP_LANG).
@@ -87,7 +96,7 @@ export function apply(ctx) {
         store,
         workspaces: workspaceFace(wsCtx.workspaceRegistry),
         now,
-        launcher: () => launcherBox.current,
+        launcher: launcherFor,
       })
       // cordis inject semantics: the callback's return value is the disposer.
       return () => disposeRoutes?.()

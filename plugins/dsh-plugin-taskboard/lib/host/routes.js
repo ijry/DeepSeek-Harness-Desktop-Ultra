@@ -111,7 +111,14 @@ function envelopeOfError(error) {
   if (error instanceof ToolError) {
     return { code: error.code, message: error.message, status: statusOf(error.code) }
   }
-  const message = error?.message ?? String(error)
+  const base = error?.message ?? String(error)
+  // dsh 上游的 RemoteError 常把真正的原因放在 details.reason 里（例如
+  // session/agent-busy 的 message 恒为 "prompt rejected"，内层错误只在 reason）。
+  // 丢掉它会让这类故障变成一句无法追查的套话，所以这里补进 message。
+  const reason = error?.details?.reason
+  const message = typeof reason === 'string' && reason !== '' && !base.includes(reason)
+    ? `${base}（${reason}）`
+    : base
   if (/^(title|description|prompt|workspaceId|body) must/.test(message)) {
     return { code: 'invalid_input', message, status: 400 }
   }
@@ -123,7 +130,7 @@ function envelopeOfError(error) {
  * Register the board routes (JSON prefix + exact SSE stream) on a webServer
  * context. Returns the disposer.
  * @param options - { store, workspaces, now, launcher }
- *   `launcher` (from ctx.apiProxy) is either the `{ createSession, prompt }`
+ *   `launcher` (from ctx.sessionController) is either the `{ createSession, prompt }`
  *   surface or a getter returning it; absent when the composition has none.
  */
 export function registerTaskboardRoutes(ctx, options) {
@@ -348,15 +355,15 @@ export function registerTaskboardRoutes(ctx, options) {
           }
 
           // launch: turn a todo/queued task into a real DSH session — the
-          // dsh apiProxy creates the session and queues the task's prompt as
-          // the first message; a comment on the task records the session id.
-          // Without the apiProxy service (or before it injects) this fails
+          // dsh sessionController creates the session and queues the task's
+          // prompt as the first message; a comment on the task records the
+          // session id. Without the sessionController service this fails
           // loudly with `unavailable` instead of pretending to work.
           if (action === 'launch') {
             const launcher = typeof options.launcher === 'function' ? options.launcher() : options.launcher
             if (launcher === undefined || launcher === null) {
               throw new ToolError(ERR.unavailable,
-                'launch needs the dsh apiProxy service, which this composition does not provide')
+                'launch needs the dsh sessionController service, which this composition does not provide')
             }
             const preflight = store.get(id)
             if (!LAUNCHABLE_STATUSES.includes(preflight.status)) {

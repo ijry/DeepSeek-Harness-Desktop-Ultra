@@ -52,10 +52,11 @@ agent 都不可主动移入），任务从认领到交验由 agent 与人在现�
 - **验收 / 退回 / 编辑 / 移动 / 删除**：`review` 卡片提供「通过验收」与「退回
   待办」（退回可选附意见，单次提交不会留下孤儿评论）；其他卡片可编辑字段、
   移到任意状态（终态只能重开回 `todo`），非活动/非 review 的卡片可删除。
-- **发起会话**：待办/排队的任务详情里提供「发起会话」——通过 dsh `apiProxy`
-  （`sessions.create` + `sessions.prompt`）开一场真实会话，把任务 prompt 作为首条
-  消息排进去，并引导新会话按看板协议先认领再动手；任务上自动留一条备注记录
-  会话 id。没有 apiProxy 的 dsh 组合里该操作明确报 `unavailable`，看板其余功能不受影响。
+- **发起会话**：待办/排队的任务详情里提供「发起会话」——通过 dsh
+  `sessionController` 服务（`session.create` + `session.prompt`）开一场真实会话，
+  把任务 prompt 作为首条消息排进去，并引导新会话按看板协议先认领再动手；任务上
+  自动留一条备注记录会话 id。没有 sessionController 的 dsh 组合里该操作明确报
+  `unavailable`，看板其余功能不受影响。
 - **项目筛选与计数**：顶部按 workspace（项目）过滤，侧栏按钮带 todo / attention /
   review 滚动计数，多代 UI 选择器兜底挂载。
 - **Agent 侧工作协议**：host 启动时把一段”先查板、先读后动、认领/版本纪律、

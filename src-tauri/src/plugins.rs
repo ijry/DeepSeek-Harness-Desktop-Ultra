@@ -71,7 +71,20 @@ const MAX_FAILURES: u32 = 2;
 ///     launcherBox.current = createLauncher(apiProxy)。（3）summarizeTask 对未认领任务
 ///     返回 claimedBy: undefined，导致 taskboard_list 工具输出非 lossless JSON 而校验失败；
 ///     改为空串。
-const BUNDLE_REVISION: u32 = 13;
+/// 14：任务看板发起会话改为对接当前 dsh 的 sessionController 服务。dsh 0.1.5-rc.2
+///     起 web 组合用 `@deepseek-ai/dsh-api-session-controller` 取代了旧的
+///     `@deepseek-ai/dsh-host-apiproxy`（apiProxy），后者的嵌入从未命中 →
+///     launch 一直报 `unavailable: launch needs the dsh apiProxy service`。
+///     改为惰性 `ctx.get('sessionController')`，create(request) 直调、
+///     prompt(request, signal) 补一个未中止的 AbortSignal（其首行即
+///     signal.throwIfAborted()）。
+/// 15：任务看板 prompt 补 `requestId`。`SessionPromptRequest.requestId` 是必填的
+///     会话请求 id（上游拿它做 source.rpcId、去重与附件绑定），此前没传 →
+///     上游内层抛错并被包成 `session/agent-busy: prompt rejected`，launch 报
+///     500 internal；现由 launcher 用 randomUUID() 补上（调用方自带则不覆盖）。
+///     同时路由错误信封补上 RemoteError 的 details.reason，避免这类故障只剩
+///     一句套话无法追查。
+const BUNDLE_REVISION: u32 = 15;
 
 /// 一个内置插件。
 ///

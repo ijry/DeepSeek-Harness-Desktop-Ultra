@@ -1,49 +1,48 @@
 /**
  * 发起会话：把一个看板任务变成一场真实的 DSH 会话。
  *
- * dsh 的 apiProxy 提供 sessions.create / sessions.prompt（mobile-bridge 验证过
- * 的调用形状）。这里只开放这两个调用——没有通用 invoke，桥面窄到不能再窄，
- * apiProxy 环栏保护的其他方法一概不可达。
+ * dsh 0.1.5 起，web 组合用 `sessionController` 服务（Remote namespace `session`）
+ * 取代了旧的 `apiProxy`：`create(request)` 返回 `{ sessionId, agentPreset? }`，
+ * `prompt(request)` 把首条消息排进新会话。这里只开放这两个调用——没有通用
+ * invoke，桥面窄到不能再窄。
  *
- * apiProxy 是可选服务：没有它的 dsh 组合里，launch 路由会明确报 unavailable，
- * 而不是让整个插件起不来（与 mobile-bridge 的嵌套注入策略一致）。
+ * `sessionController` 是可选服务：没有它的组合里，launch 路由会明确报
+ * unavailable，而不是让整个插件起不来。
  *
  * @module dsh-plugin-taskboard/host/launcher
  */
 import { randomUUID } from 'node:crypto'
 import { hostLang } from '../shared/lang.js'
 
-/** Mint one RPC correlation id. dsh requires it on every request envelope. */
-function rpcId() {
-  return randomUUID()
-}
-
-/** Unwrap an RpcResponse; a business failure becomes an Error with dshCode. */
-function unwrap(response) {
-  const result = response?.result
-  if (result?.ok === true) return result.value
-  const error = result?.error ?? { code: 'internal', message: 'dsh 未返回结果' }
-  const failure = new Error(String(error.message ?? error.code ?? 'internal'))
-  failure.dshCode = String(error.code ?? 'internal')
-  throw failure
-}
-
 /**
- * Bind the launch surface to one `ctx.apiProxy`.
- * @param {object} apiProxy - the dsh apiProxy service (may be undefined).
- * @returns {object|undefined} `{ createSession, prompt }`, or undefined when
- *   the composition has no apiProxy.
+ * Bind the launch surface to one `ctx.sessionController`.
+ * @param {object} sessionController - the dsh session-controller service (may be undefined).
+ * @returns {object|undefined} `{ createSession, prompt }`, or undefined when the
+ *   composition has no sessionController.
  */
-export function createLauncher(apiProxy) {
-  if (apiProxy === undefined || apiProxy === null) return undefined
+export function createLauncher(sessionController) {
+  if (sessionController === undefined || sessionController === null) return undefined
   return {
     /** `session.create` — a real session plus its idle agent. */
     async createSession(payload) {
-      return unwrap(await apiProxy.sessions.create({ rpcId: rpcId(), payload }))
+      return sessionController.create(payload)
     },
-    /** `session.prompt` — queue the first message into the new session. */
+    /**
+     * `session.prompt` — queue the first message into the new session.
+     *
+     * 两处不可省：
+     * - `requestId`：`SessionPromptRequest.requestId` 是必填的会话请求 id，
+     *   上游拿它做 `source.rpcId`、去重与附件绑定。缺了它内层会在建消息/绑定时
+     *   抛错，被上游包成 `session/agent-busy: prompt rejected`（真正原因藏在
+     *   `details.reason` 里）。
+     * - `signal`：`SessionController.prompt(request, signal)` 首行即
+     *   `signal.throwIfAborted()`，以宿主身份直接调用必须自带未中止的 AbortSignal。
+     */
     async prompt(payload) {
-      return unwrap(await apiProxy.sessions.prompt({ rpcId: rpcId(), payload }))
+      return sessionController.prompt(
+        { requestId: randomUUID(), ...payload },
+        new AbortController().signal,
+      )
     },
   }
 }

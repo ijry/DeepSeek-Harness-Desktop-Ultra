@@ -121,3 +121,19 @@ test('新建任务记录：规范化、默认状态与摘要', () => {
   assert.equal(summary.column, 'todo')
   assert.equal(summary.commentCount, 0)
 })
+
+test('summarizeTask：输出必须是 lossless JSON（任何键都不得为 undefined）', () => {
+  // 回归：summarizeTask 曾对未认领任务输出 claimedBy: undefined，
+  // JSON.stringify 会把这个键整个丢掉，于是 dsh 的工具输出校验以
+  // "value is not lossless JSON" 拒收 —— taskboard_list 直接报错。
+  const task = createTaskRecord({ title: '未认领的待办', actor: { kind: 'user' }, now: 7 })
+  const summary = summarizeTask(task)
+  for (const [key, value] of Object.entries(summary)) {
+    assert.notEqual(value, undefined, `summarizeTask().${key} 不应为 undefined`)
+  }
+  // 逐键往返：stringify → parse 后键集合不变，才是真正 lossless。
+  const round = JSON.parse(JSON.stringify(summary))
+  assert.deepEqual(Object.keys(round).sort(), Object.keys(summary).sort())
+  assert.equal(summary.claimedBy, '')
+  assert.equal(summary.workspaceId, '')
+})

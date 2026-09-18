@@ -58,10 +58,43 @@ test('sessionIdOf：容忍上游返回形状的变化', () => {
   assert.equal(sessionIdOf(undefined), undefined)
 })
 
-test('createLauncher：没有 apiProxy 返回 undefined，有则只暴露两个调用', () => {
+test('createLauncher：没有 sessionController 返回 undefined，有则只暴露两个调用', () => {
   assert.equal(createLauncher(undefined), undefined)
-  const launcher = createLauncher({ sessions: {} })
+  const launcher = createLauncher({ create() {}, prompt() {} })
   assert.deepEqual(Object.keys(launcher).sort(), ['createSession', 'prompt'])
+})
+
+test('createLauncher：prompt 透传 request、补 requestId 与未中止的 AbortSignal', async () => {
+  const calls = []
+  const launcher = createLauncher({
+    create: (req) => ({ sessionId: 's' }),
+    prompt: (req, signal) => {
+      calls.push({ req, signal })
+      return { accepted: true }
+    },
+  })
+  await launcher.prompt({ sessionId: 's', mode: 'queue', content: [] })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].req.sessionId, 's')
+  assert.equal(calls[0].req.mode, 'queue')
+  // SessionPromptRequest.requestId 是必填项，缺了会被上游拒收
+  assert.equal(typeof calls[0].req.requestId, 'string')
+  assert.ok(calls[0].req.requestId.length > 0)
+  assert.equal(typeof calls[0].signal?.throwIfAborted, 'function')
+  assert.equal(calls[0].signal.aborted, false)
+})
+
+test('createLauncher：调用方自带 requestId 时不覆盖（重试幂等）', async () => {
+  const calls = []
+  const launcher = createLauncher({
+    create: () => ({}),
+    prompt: (req) => {
+      calls.push(req)
+      return { accepted: true }
+    },
+  })
+  await launcher.prompt({ requestId: 'given-id', sessionId: 's', mode: 'queue', content: [] })
+  assert.equal(calls[0].requestId, 'given-id')
 })
 
 // --------------------------------------------------------------- launch 路由
@@ -165,7 +198,7 @@ test('launch 路由：创建会话、排队首条消息、任务留备注', asyn
   }
 })
 
-test('launch 路由：没有 launcher（apiProxy 缺失）报 unavailable，503', async () => {
+test('launch 路由：没有 launcher（sessionController 缺失）报 unavailable，503', async () => {
   const { dir, store } = await freshStore()
   try {
     const task = createTaskRecord({ title: '待办', actor: { kind: 'user' }, now: 1 })
