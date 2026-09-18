@@ -191,7 +191,7 @@ async function waitFor(predicate, timeoutMs = 2000) {
   }
 }
 
-test('launch 路由：入队 → 调度器建会话 → 排队首条消息并留备注', async () => {
+test('launch 路由：只入队不等会话；调度器随后异步建会话、排队首条消息并留备注', async () => {
   const { dir, store } = await freshStore()
   try {
     const task = createTaskRecord({
@@ -205,36 +205,67 @@ test('launch 路由：入队 → 调度器建会话 → 排队首条消息并留
       ledger.tasks.push(task)
       return [task]
     })
-    const launcher = recordingLauncher('sess-123')
+    // 用一个「手动放行」的 launcher 确定性地证明**响应不等会话**：建会话还挂在
+    // 那里没完成，201 就已经带着「已入队」回来了。
+    let releaseCreate
+    const gate = new Promise((resolve) => { releaseCreate = resolve })
+    const calls = { create: [], prompt: [] }
+    const launcher = {
+      async createSession(payload) {
+        calls.create.push(payload)
+        await gate
+        return { sessionId: 'sess-123' }
+      },
+      async prompt(payload) {
+        calls.prompt.push(payload)
+        return { ok: true }
+      },
+    }
     const { handler, dispose } = fakeRouteEnv({ store, workspaces: { list: () => [] }, now: () => 200, launcher: () => launcher })
     const res = fakeResponse()
     await handler(jsonRequest('POST', `${ROUTE_PREFIX}/tasks/${task.id}/launch`, { ifVersion: task.version }), res)
 
     assert.equal(res.statusCode, 201)
     const value = JSON.parse(res.body).value
+    // 启动 = 只入队：响应里恒为没有会话（会话由调度器异步发起）。
     assert.deepEqual(value, {
       taskId: task.id,
-      sessionId: 'sess-123',
+      sessionId: '',
       status: 'queued',
-      queued: false,
-      active: 1,
+      queued: true,
+      active: 0,
       maxParallel: DEFAULT_MAX_PARALLEL,
     })
-    // 会话创建带上了任务绑定的项目
-    assert.deepEqual(launcher.calls.create, [{ workspaceId: 'ws-1' }])
-    // 首条消息指向新会话，内容按看板协议引导
-    assert.equal(launcher.calls.prompt.length, 1)
-    assert.equal(launcher.calls.prompt[0].sessionId, 'sess-123')
-    assert.equal(launcher.calls.prompt[0].mode, 'queue')
-    assert.match(launcher.calls.prompt[0].content[0].text, /「修登录超时」/)
-    // 卡片推进到 queued（管线内的排队态）、带上会话 id、留可追溯备注。
-    // 版本推进两次：一次入队，一次调度器把会话 id/备注写上去。
+    // 会话此刻还没建出来，响应照样已经返回了 —— 这正是「启动」应有的手感。
+    assert.deepEqual(calls.prompt, [], '会话没建好就不该发首条消息')
+    // 建会话挂在门上，所以这一刻的卡片状态是确定的：已入队、没有会话、留下
+    // 一条「已启动」备注（入队与备注在同一次提交里，不会有中间态）。
+    const queued = store.get(task.id)
+    assert.equal(queued.status, 'queued')
+    assert.equal(queued.sessionId, undefined)
+    assert.equal(queued.version, task.version + 1)
+    assert.equal(typeof queued.queuedAt, 'number')
+    assert.equal(queued.comments.length, 1)
+    assert.match(queued.comments[0].body, /已启动/)
+
+    // 放行建会话：调度器接手，排队首条消息，把会话 id 与备注写到卡上
+    releaseCreate()
+    assert.equal(await waitFor(() => store.get(task.id).sessionId === 'sess-123'), true,
+      '调度器应异步为已入队的卡发起会话')
+    assert.deepEqual(calls.create, [{ workspaceId: 'ws-1' }])
+    assert.equal(calls.prompt.length, 1)
+    assert.equal(calls.prompt[0].sessionId, 'sess-123')
+    assert.equal(calls.prompt[0].mode, 'queue')
+    assert.match(calls.prompt[0].content[0].text, /「修登录超时」/)
     const after = store.get(task.id)
-    assert.equal(after.status, 'queued')
-    assert.equal(after.sessionId, 'sess-123')
+    assert.equal(after.status, 'queued', '开了会话也还在等 agent 认领')
+    // 两次提交：一次入队（含「已启动」备注），一次调度器把会话 id 写上去
     assert.equal(after.version, task.version + 2)
-    assert.equal(after.comments.length, 1)
-    assert.match(after.comments[0].body, /sess-123/)
+    assert.equal(after.comments.length, 2)
+    assert.match(after.comments[0].body, /已启动/)
+    assert.match(after.comments[1].body, /sess-123/)
+    // 有会话就不再是「排队中」的等待态：排队时钟被清掉
+    assert.equal(after.queuedAt, undefined)
     dispose()
   } finally {
     await rm(dir, { recursive: true, force: true })
@@ -272,7 +303,8 @@ test('launch 路由：额度已满时只入队不建会话，卡片停在「排�
     assert.equal(after.status, 'queued')
     assert.equal(after.sessionId, undefined)
     assert.equal(after.comments.length, 1)
-    assert.match(after.comments[0].body, /排队中/)
+    // 备注要说清「接下来是等空位」——用户点完启动最想知道的就是这个
+    assert.match(after.comments[0].body, /等待空位/)
     dispose()
   } finally {
     await rm(dir, { recursive: true, force: true })

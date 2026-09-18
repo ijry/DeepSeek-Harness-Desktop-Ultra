@@ -104,7 +104,17 @@ const MAX_FAILURES: u32 = 2;
 ///       （新 unqueue 动作，仅限还没有会话的卡）才回到待办。
 ///     - 新增 POST /settings 改并行上限；launch 响应改为
 ///       { taskId, sessionId, status, queued, active, maxParallel }。
-const BUNDLE_REVISION: u32 = 17;
+/// 18：任务看板把「发起会话」正名为「启动任务」，并把「入队」与「开会话」彻底拆开。
+///     此前点一下按钮会在同一次请求里等调度器把会话建好才返回（响应带 sessionId）。
+///     现在：
+///     - 详情页按钮与待办卡片右下角的新按钮都叫「启动任务」/「启动」，语义只有一个：
+///       `todo → queued` 入队；路由记完账本立刻回 201，`sessionId` 恒为 `''`，
+///       绝不 `await pump()`。会话一律由提交订阅者驱动的调度器异步发起。
+///     - 好处是接口立刻返回、调用方不被开会话的耗时（或失败）拖住，且队列状态成为
+///       账本事实：重开界面、重启外壳后调度器仍能自己接着排。
+///     - 卡片按钮是嵌在可点击卡片里的 `<span role=button>`，需 stopPropagation，
+///       否则会连带打开详情弹层。
+const BUNDLE_REVISION: u32 = 18;
 
 /// 一个内置插件。
 ///

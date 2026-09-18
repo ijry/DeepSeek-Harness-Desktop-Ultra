@@ -87,6 +87,7 @@
         + (parts.waiting > 0 ? ' · 排队 ' + parts.waiting : ''),
       'board.maxParallelApplied': (n) => '并行上限已设为 ' + n,
       'board.untitled': '（无标题）',
+      'card.start': '启动',
       'entry.stats': (c) => '待办 ' + c.todo + ' · 需关注 ' + c.attention + ' · 待验收 ' + c.review,
       'modal.close': '关闭',
       'toast.syncFailed': (detail) => '同步失败：' + detail,
@@ -120,7 +121,7 @@
       'detail.kvCreated': '创建',
       'detail.noNotes': '暂无备注',
       'detail.edit': '编辑',
-      'detail.launch': '发起会话',
+      'detail.launch': '启动任务',
       'detail.cancelQueue': '取消排队',
       'detail.kvSession': '会话',
       'detail.accept': '✓ 通过验收',
@@ -134,8 +135,9 @@
       'toast.taskDeleted': '任务已删除',
       'toast.noteEmpty': '先写点备注内容',
       'toast.noteSent': '备注已发送',
-      'toast.launched': (sid) => '已发起 DSH 会话，任务转为「排队中」等认领' + (sid === '' ? '' : '（' + sid + '）'),
-      'toast.queued': (parts) => '已加入执行队列，排队中（并行 ' + parts.active + '/' + parts.max + '）',
+      'toast.queued': (parts) => parts.waiting
+        ? '已启动任务，正在排队等待空位（并行 ' + parts.active + '/' + parts.max + '）'
+        : '已启动任务，正在发起 DSH 会话（并行 ' + parts.active + '/' + parts.max + '）',
       'toast.unqueued': '已取消排队，任务回到「待办」',
       'confirm.sendBack': '退回待办？确认后任务回到“待办”列并解除认领。',
       'confirm.cancelQueue': '取消排队？任务回到「待办」，不会发起会话。',
@@ -147,7 +149,7 @@
       'action.createTask': '创建任务',
       'action.rejectTask': '退回任务',
       'action.cancelQueue': '取消排队',
-      'action.launchTask': '发起会话',
+      'action.launchTask': '启动任务',
       'action.setMaxParallel': '设置并行上限',
       'action.deleteTask': '删除任务',
       'action.sendNote': '发送备注',
@@ -193,6 +195,7 @@
         + (parts.waiting > 0 ? ' · Queued ' + parts.waiting : ''),
       'board.maxParallelApplied': (n) => 'Max parallel set to ' + n,
       'board.untitled': '(untitled)',
+      'card.start': 'Start',
       'entry.stats': (c) => 'To do ' + c.todo + ' · Attention ' + c.attention + ' · Review ' + c.review,
       'modal.close': 'Close',
       'toast.syncFailed': (detail) => 'Sync failed: ' + detail,
@@ -226,7 +229,7 @@
       'detail.kvCreated': 'Created',
       'detail.noNotes': 'No notes yet',
       'detail.edit': 'Edit',
-      'detail.launch': 'Launch session',
+      'detail.launch': 'Start task',
       'detail.cancelQueue': 'Leave the queue',
       'detail.kvSession': 'Session',
       'detail.accept': '✓ Accept',
@@ -240,8 +243,9 @@
       'toast.taskDeleted': 'Task deleted',
       'toast.noteEmpty': 'Write a note first',
       'toast.noteSent': 'Note sent',
-      'toast.launched': (sid) => 'DSH session started; the task is now Queued' + (sid === '' ? '' : ' (' + sid + ')'),
-      'toast.queued': (parts) => 'Queued for a session slot (' + parts.active + '/' + parts.max + ' in flight)',
+      'toast.queued': (parts) => parts.waiting
+        ? 'Task started; waiting for a free slot (' + parts.active + '/' + parts.max + ' in flight)'
+        : 'Task started; launching a DSH session (' + parts.active + '/' + parts.max + ' in flight)',
       'toast.unqueued': 'Left the queue; the task is back in To do',
       'confirm.sendBack': 'Send back to todo? The task returns to the To do column and the claim is released.',
       'confirm.cancelQueue': 'Leave the queue? The task goes back to To do and no session is started.',
@@ -253,7 +257,7 @@
       'action.createTask': 'Create task',
       'action.rejectTask': 'Send task back',
       'action.cancelQueue': 'Leave the queue',
-      'action.launchTask': 'Launch session',
+      'action.launchTask': 'Start task',
       'action.setMaxParallel': 'Set max parallel',
       'action.deleteTask': 'Delete task',
       'action.sendNote': 'Send note',
@@ -593,6 +597,16 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
 .dsh-cgtb-queue-stats { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .dsh-cgtb-chip[data-kind="note"] { color: var(--cgtb-text-3, gray); }
 .dsh-cgtb-card-time { margin-left: auto; color: var(--cgtb-text-3, gray); white-space: nowrap; }
+/* 待办卡右下角的快捷「启动」：卡片是 button，这里只能是 span 扮按钮。 */
+.dsh-cgtb-card-start {
+  display: inline-flex; align-items: center; gap: 2px; cursor: pointer; user-select: none;
+  border-radius: 6px; padding: 1px 7px; font-size: 10.5px; line-height: 1.7; font-weight: 500;
+  color: var(--cgtb-focus, #5b8cff); border: 1px solid color-mix(in srgb, var(--cgtb-focus, #5b8cff) 45%, transparent);
+  background: color-mix(in srgb, var(--cgtb-focus, #5b8cff) 12%, transparent);
+}
+.dsh-cgtb-card-start:hover { background: color-mix(in srgb, var(--cgtb-focus, #5b8cff) 24%, transparent); }
+.dsh-cgtb-card-start:focus-visible { outline: 2px solid var(--cgtb-focus, #5b8cff); outline-offset: 1px; }
+.dsh-cgtb-card-start[data-busy="yes"] { opacity: .5; pointer-events: none; }
 .dsh-cgtb-empty { padding: 16px 6px; text-align: center; color: var(--cgtb-text-3, gray); font-size: 12px; }
 
 /* Modal + toast overlays. */
@@ -1213,6 +1227,28 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       meta.append(el('span', { class: 'dsh-cgtb-chip', 'data-kind': 'note' }, '💬 ' + task.commentCount))
     }
     meta.append(el('span', { class: 'dsh-cgtb-card-time' }, fmtTime(task.updatedAt)))
+    // 待办卡的右下角给一个快捷「启动」：与详情页同一个动作，只入队，会话由队列
+    // 调度器异步发起。卡片本身是 <button>，所以这里用 span 扮演按钮（不能嵌套
+    // button），并且必须 stopPropagation —— 否则点启动会同时打开详情页。
+    if (task.status === 'todo') {
+      const start = el('span', {
+        class: 'dsh-cgtb-card-start',
+        role: 'button',
+        tabindex: '0',
+        title: t('detail.launch'),
+        'data-busy': cardLaunching ? 'yes' : 'no',
+      }, '▶ ' + t('card.start'))
+      const fire = (event) => {
+        event.stopPropagation()
+        event.preventDefault()
+        void startTaskFromCard(task)
+      }
+      start.addEventListener('click', fire)
+      start.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') fire(event)
+      })
+      meta.append(start)
+    }
     return el('button', {
       class: 'dsh-cgtb-card', type: 'button', 'data-status': task.status,
       onClick: () => openDetail(task.id),
@@ -1361,6 +1397,41 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       return t('result.invalid', { label, detail: raw.replace(/^Error:\s*invalid_input:\s*/i, '') })
     }
     return t('result.failed', { label, detail: raw })
+  }
+
+  /**
+   * 「启动任务」响应 → 提示文案参数。启动只负责入队，所以响应里恒为没有会话；
+   * 真正有意义的是「这一刻还有没有空位」——它决定卡片接下来是马上去开会话，
+   * 还是排在队列里等空位。宿主返回的是点击那一刻的并行统计。
+   */
+  function launchToastParts(result) {
+    const bag = result !== null && typeof result === 'object' ? result : {}
+    const active = Number.isFinite(Number(bag.active)) ? Number(bag.active) : 0
+    const max = Number.isFinite(Number(bag.maxParallel)) ? Number(bag.maxParallel) : model.maxParallel
+    return { active, max, waiting: active >= max }
+  }
+
+  /**
+   * 列表卡片上的「启动」：与详情页同一个动作 —— 只把卡片送进执行队列，
+   * 会话由队列调度器在有空位时异步发起（卡片上的会话角标会自己出现）。
+   * 列表里没有详情页那套 busy/record 状态，所以另用一个开关挡住连点。
+   */
+  let cardLaunching = false
+  async function startTaskFromCard(task) {
+    if (cardLaunching || task === null || typeof task !== 'object') return
+    cardLaunching = true
+    emit()
+    try {
+      const result = await api.launch(task.id, { ifVersion: task.version })
+      toast(t('toast.queued', launchToastParts(result)), 'success')
+      await refresh()
+    } catch (error) {
+      toast(friendlyWriteError(t('action.launchTask'), error))
+      if (isConflictError(error)) await refresh()
+    } finally {
+      cardLaunching = false
+      emit()
+    }
   }
 
   function workspaceOptions(selectedId) {
@@ -1666,7 +1737,11 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       })
     }
 
-    /** 发起会话：卡片入队；有空位就马上开会话，没空位就排队等（宿主自动调度）。 */
+    /**
+     * 启动任务：把卡片送进执行队列。这里**只入队**，不在请求里建会话 ——
+     * 会话由队列调度器在有空位时异步发起（卡片上的会话角标会自己出现），
+     * 没空位就先排队，空位一出现自动补上。
+     */
     async function launchTask() {
       if (record === null || busy) return
       busy = true
@@ -1674,19 +1749,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       sendBtn.disabled = true
       try {
         const result = await api.launch(id, { ifVersion: record.version })
-        const raw = result !== null && typeof result === 'object' ? String(result.sessionId ?? '') : ''
-        if (raw === '') {
-          // 没有会话 id = 没排到额度，卡片停在「排队中」，空位一出现会自动发起。
-          const active = result !== null && typeof result === 'object' ? Number(result.active) : NaN
-          const max = result !== null && typeof result === 'object' ? Number(result.maxParallel) : NaN
-          toast(t('toast.queued', {
-            active: Number.isFinite(active) ? active : 0,
-            max: Number.isFinite(max) ? max : model.maxParallel,
-          }), 'success')
-        } else {
-          const sid = raw.length > 12 ? raw.slice(0, 12) + '…' : raw
-          toast(t('toast.launched', sid), 'success')
-        }
+        toast(t('toast.queued', launchToastParts(result)), 'success')
         await syncFull({ silent: true })
       } catch (error) {
         toast(friendlyWriteError(t('action.launchTask'), error))

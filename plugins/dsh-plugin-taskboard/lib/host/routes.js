@@ -448,13 +448,19 @@ export function registerTaskboardRoutes(ctx, options) {
             return
           }
 
-          // launch: 把一张待办卡送进执行队列。卡片 todo -> queued，由队列调度器
-          // 决定是否立刻开会话：有空位就 createSession + prompt（会话认领后
-          // queued -> preparing），没空位就停在「排队中」，等空位出现时自动补上。
-          // 没有 sessionController 的组合明确报 unavailable，而不是假装排队成功。
+          // launch（启动任务）：把一张待办卡送进执行队列。卡片 todo -> queued，之后
+          // 由队列调度器**异步**决定什么时候真的开会话：有空位就立刻 createSession +
+          // prompt，没空位就停在「排队中」，等空位出现时自动补上。会话认领后
+          // queued -> preparing。
           //
-          // 顺序是「先入队、再调度」：会话是外部副作用，队列是账本事实。反过来在
-          // 两次写之间崩掉，就会留下一场没有任何卡片引用的会话。
+          // 这里**不建会话、也不等会话**：路由只负责入队，发起会话是调度器的职责。
+          // 之前是「入队后立刻 await 一次调度」，那样会把一次外部副作用（建会话、
+          // 排队首条消息）绑在当前请求上，用户点「启动」得等会话建好才拿到响应；
+          // 而且卡片必然有一瞬间是「有会话但还没被 agent 认领」，与「排队中」的
+          // 语义混在一起、看不出是在等额度还是在等认领。
+          //
+          // 没有 sessionController 的组合仍然明确报 unavailable，而不是假装启动成功
+          // 让卡片永远排在那里：那种组合下这张卡本来就永远跑不起来。
           //
           // 路由不自己认领任务：认领绑定调用方会话且有 workspace 边界
           // （协议规则 3/7），只有被发起的那个会话能满足。
@@ -472,6 +478,10 @@ export function registerTaskboardRoutes(ctx, options) {
               throw new ToolError(ERR.invalidTransition,
                 `only a todo task can launch a session; task ${id} is ${preflight.status}`)
             }
+            // 入队与「已启动」备注写在同一次提交里：不会留下「卡已入队但没备注」的
+            // 中间态，调度器也没机会插进两次写之间。额度统计取提交前的快照 ——
+            // 那是用户点击那一刻的并行情况，也是备注里要说明的数字。
+            const before = store.snapshot()
             await store.mutate('task-launched', (ledger) => {
               const task = liveTaskAt(ledger, id)
               // Tolerate a board change in the tiny window between preflight and
@@ -482,46 +492,27 @@ export function registerTaskboardRoutes(ctx, options) {
               delete task.sessionId
               delete task.claimedBy
               delete task.claimedAt
+              task.comments = task.comments ?? []
+              task.comments.push({
+                id: newCommentId(),
+                body: queuedComment(activeSlots(before), maxParallelOf(before)),
+                createdAt: now(),
+                actor,
+              })
               task.version += 1
               task.updatedAt = now()
               task.updatedBy = actor
               return [task]
             })
-            const outcome = await pump()
-            const started = store.get(id) ?? preflight
-            // 备注按结果写：开上会话时调度器已经在卡上记了一笔，这里只补「还在排队」
-            // 那条，免得同一件事在时间线上出现两次。
-            if (!hasSession(started)) {
-              const failure = outcome.failures.find((item) => item.id === id)
-              if (failure !== undefined) {
-                throw new ToolError(ERR.unavailable, `the DSH session could not start: ${failure.message}`)
-              }
-              const before = store.snapshot()
-              await store.mutate('task-queued', (ledger) => {
-                const task = liveTaskAt(ledger, id)
-                if (!isWaitingInQueue(task)) return []
-                task.comments = task.comments ?? []
-                task.comments.push({
-                  id: newCommentId(),
-                  body: queuedComment(activeSlots(before), maxParallelOf(before)),
-                  createdAt: now(),
-                  actor,
-                })
-                task.version += 1
-                task.updatedAt = now()
-                task.updatedBy = actor
-                return [task]
-              })
-            }
-            const after = store.get(id) ?? started
-            const ledger = store.snapshot()
+            // 只回「已入队」这一件事。会话由这次提交的订阅者驱动调度器异步发起，
+            // 卡片上的会话角标会通过事件流自己出现 —— 所以响应里恒为没有会话。
             ok(res, {
               taskId: id,
-              sessionId: hasSession(after) ? after.sessionId : '',
-              status: after.status,
-              queued: !hasSession(after),
-              active: activeSlots(ledger),
-              maxParallel: maxParallelOf(ledger),
+              sessionId: '',
+              status: 'queued',
+              queued: true,
+              active: activeSlots(before),
+              maxParallel: maxParallelOf(before),
             }, 201)
             return
           }

@@ -103,18 +103,26 @@ export function launchedComment(sessionId, lang = hostLang()) {
 }
 
 /**
- * The comment body recording that a task joined the execution queue but got no
- * slot yet — 「排队中」. Carries the current occupancy so the card itself says
- * why it is waiting.
- * @param {number} active - slots currently in use.
+ * The comment body recording that a task was started and joined the execution
+ * queue — 「启动任务」. Written at enqueue time, **before** the dispatcher has
+ * decided anything, so it must not claim a session exists. It does say which of
+ * the two things happens next, because that is exactly what the user wants to
+ * know after clicking 启动: 有空位 = 马上开会话 / 没空位 = 排队等空位。
+ * @param {number} active - slots in use at the moment of the click.
  * @param {number} max - settings.maxParallel.
  * @param {string} lang - 'zh' | 'en' (host language).
  * @returns {string}
  */
 export function queuedComment(active, max, lang = hostLang()) {
-  return lang === 'en'
-    ? `Queued for a session slot (${active}/${max} in flight).`
-    : `已加入执行队列，排队中（当前并行 ${active}/${max}）。`
+  const waiting = active >= max
+  if (lang === 'en') {
+    return waiting
+      ? `Started; waiting for a free session slot (${active}/${max} in flight).`
+      : `Started; launching a DSH session shortly (${active}/${max} in flight).`
+  }
+  return waiting
+    ? `已启动，正在排队等待空位（当前并行 ${active}/${max}）。`
+    : `已启动，正在发起 DSH 会话（当前并行 ${active}/${max}）。`
 }
 
 /**
