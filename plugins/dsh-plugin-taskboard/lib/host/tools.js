@@ -430,6 +430,15 @@ export function registerTaskboardTools(ctx, deps) {
           live.version += 1
           live.updatedAt = now()
           live.updatedBy = { kind: 'agent', sessionId }
+          if (args.status === 'queued') {
+            // 移动到队列 = 这个会话自己接管这张卡（失败的卡重投、自己排给自己）：
+            // 记下会话 id，队列调度器就不会再为它另起一个会话来抢同一张卡。
+            live.queuedAt = now()
+            live.sessionId = sessionId
+          } else {
+            delete live.queuedAt
+            if (args.status === 'todo') delete live.sessionId
+          }
           if (HOLD_STATUSES.includes(args.status)) {
             if (live.claimedBy !== sessionId) {
               live.claimedBy = sessionId

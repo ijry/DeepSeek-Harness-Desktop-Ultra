@@ -12,6 +12,7 @@ import {
   LEDGER_SCHEMA_VERSION,
   emptyLedger,
   isPlausibleTaskRecord,
+  normalizeSettings,
   summarizeTask,
 } from '../shared/protocol.js'
 
@@ -92,6 +93,8 @@ export class TaskStore {
     this.ledger = {
       schemaVersion: LEDGER_SCHEMA_VERSION,
       revision: typeof parsed.revision === 'number' ? parsed.revision : 0,
+      // A ledger written before settings existed simply gets the defaults.
+      settings: normalizeSettings(parsed.settings),
       tasks,
     }
   }
@@ -121,17 +124,43 @@ export class TaskStore {
    * @param mutator - (ledger) => TaskRecord[] | undefined
    */
   async mutate(kind, mutator) {
+    return this.#run(kind, (draft) => {
+      const changed = mutator(draft)
+      if (changed === undefined || changed.length === 0) return null
+      return { summaries: changed.map((task) => summarizeTask(task)) }
+    })
+  }
+
+  /**
+   * Commit a board-level (non-task) change — today the settings. The mutator
+   * returns `true` to commit and `false`/`undefined` to abort; subscribers get
+   * an EMPTY task list, which is their signal to refetch state rather than
+   * patch a card.
+   * @param mutator - (ledger) => boolean
+   */
+  async mutateSettings(mutator) {
+    return this.#run('settings-updated', (draft) => {
+      if (mutator(draft) !== true) return null
+      return { summaries: [] }
+    })
+  }
+
+  /**
+   * The shared write path: clone, let `commit` decide, persist atomically,
+   * bump the revision and broadcast. `commit` returns null to abort.
+   */
+  async #run(kind, commit) {
     const run = async () => {
       await this.load()
       const draft = structuredClone(this.ledger)
-      const changed = mutator(draft)
-      if (changed === undefined || changed.length === 0) {
+      const outcome = commit(draft)
+      if (outcome === null) {
         return { committed: false, ledger: this.snapshot(), changed: [] }
       }
       draft.revision += 1
       draft.schemaVersion = LEDGER_SCHEMA_VERSION
+      draft.settings = normalizeSettings(draft.settings)
       this.ledger = draft
-      const summaries = changed.map((task) => summarizeTask(task))
       try {
         await persistAtomic(this.file, JSON.stringify(this.ledger, null, 2))
       } catch (error) {
@@ -140,12 +169,12 @@ export class TaskStore {
       const frozen = this.snapshot()
       for (const fn of [...this.subscribers]) {
         try {
-          fn(new LedgerChange(draft.revision, kind, summaries, frozen))
+          fn(new LedgerChange(draft.revision, kind, outcome.summaries, frozen))
         } catch (error) {
           console.warn('[dsh-plugin-taskboard] subscriber threw:', error?.message ?? error)
         }
       }
-      return { committed: true, ledger: frozen, changed: summaries }
+      return { committed: true, ledger: frozen, changed: outcome.summaries }
     }
     const result = this.queue.then(run, run)
     this.queue = result.then(() => undefined, () => undefined)

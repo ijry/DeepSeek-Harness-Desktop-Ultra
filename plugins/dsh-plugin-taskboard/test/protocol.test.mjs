@@ -10,16 +10,25 @@ import {
   AGENT_TRANSITIONS,
   ALL_STATUSES,
   BOARD_COLUMN_IDS,
+  DEFAULT_MAX_PARALLEL,
+  MAX_PARALLEL_LIMIT,
   STATUSES_BY_COLUMN,
   agentCanMove,
   canUserAccept,
   canUserReject,
   columnForStatus,
   createTaskRecord,
+  emptyLedger,
   groupTasksByColumn,
+  hasSession,
   isClaim,
   isValidStatus,
+  isWaitingInQueue,
+  normalizeMaxParallel,
+  normalizeSettings,
   normalizeTitle,
+  occupiesSlot,
+  queueOrder,
   summarizeTask,
   userCanMove,
 } from '../src/shared/protocol.js'
@@ -27,7 +36,9 @@ import {
 test('每个状态映射到 codeg-plus 四列看板', () => {
   const mapping = {
     todo: 'todo',
-    queued: 'todo',
+    // 发起会话把卡从积压推进执行管线，排队中（等额度）也算「进行中」：
+    // 只有「取消排队」才会把它送回「待办」。
+    queued: 'inProgress',
     preparing: 'inProgress',
     running: 'inProgress',
     awaiting_input: 'attention',
@@ -58,7 +69,8 @@ test('分列按最近更新排序，canceled 默认隐藏', () => {
     { id: 'e', title: 'E', ...base, status: 'review', updatedAt: now + 7 },
   ]
   const grouped = groupTasksByColumn(tasks, false)
-  assert.deepEqual(grouped.todo.map((t) => t.id), ['b', 'a'])
+  assert.deepEqual(grouped.todo.map((t) => t.id), ['a'], '待办列只剩还没排队的卡')
+  assert.deepEqual(grouped.inProgress.map((t) => t.id), ['b'], 'queued 排在「进行中」列')
   assert.deepEqual(grouped.attention.map((t) => t.id), ['e'])
   assert.deepEqual(grouped.done.map((t) => t.id), ['d'], 'canceled 默认隐藏')
   const withCanceled = groupTasksByColumn(tasks, true)
@@ -136,4 +148,63 @@ test('summarizeTask：输出必须是 lossless JSON（任何键都不得为 unde
   assert.deepEqual(Object.keys(round).sort(), Object.keys(summary).sort())
   assert.equal(summary.claimedBy, '')
   assert.equal(summary.workspaceId, '')
+  assert.equal(summary.sessionId, '', '没有会话时 sessionId 也是空串而不是 undefined')
+})
+
+// --------------------------------------------------------------- 执行队列
+
+test('额度占用：只有「没有会话的 queued」不占额度（否则队列永远等不到空位）', () => {
+  const base = { id: 't', title: 'T', version: 1, createdAt: 0, updatedAt: 0 }
+  // 会话在干活：占额度
+  for (const status of ['preparing', 'running', 'awaiting_input', 'merging']) {
+    assert.equal(occupiesSlot({ ...base, status }), true, `${status} 占额度`)
+    assert.equal(isWaitingInQueue({ ...base, status }), false, `${status} 不是排队等待`)
+  }
+  // 已发起、会话已建好、等 agent 认领：仍占额度（否则会超发会话）
+  assert.equal(occupiesSlot({ ...base, status: 'queued', sessionId: 's1' }), true)
+  assert.equal(isWaitingInQueue({ ...base, status: 'queued', sessionId: 's1' }), false)
+  // 已发起、还没会话：真正的「排队中」，不占额度
+  assert.equal(occupiesSlot({ ...base, status: 'queued' }), false)
+  assert.equal(occupiesSlot({ ...base, status: 'queued', sessionId: '' }), false)
+  assert.equal(isWaitingInQueue({ ...base, status: 'queued' }), true)
+  assert.equal(hasSession({ ...base, status: 'queued' }), false)
+  // 交验 / 失败 / 终态都让出额度（人还能接下一张）
+  for (const status of ['review', 'failed', 'done', 'canceled', 'todo']) {
+    assert.equal(occupiesSlot({ ...base, status, sessionId: 's1' }), false, `${status} 让出额度`)
+  }
+})
+
+test('队列顺序：先来先服务，queuedAt 缺失时退回 updatedAt', () => {
+  const rows = [
+    { id: 'c', queuedAt: 300, updatedAt: 999 },
+    { id: 'a', queuedAt: 100, updatedAt: 999 },
+    { id: 'b', queuedAt: 200, updatedAt: 1 },
+  ]
+  assert.deepEqual([...rows].sort(queueOrder).map((t) => t.id), ['a', 'b', 'c'])
+  const fallback = [
+    { id: 'z', updatedAt: 50 },
+    { id: 'y', updatedAt: 10 },
+  ]
+  assert.deepEqual([...fallback].sort(queueOrder).map((t) => t.id), ['y', 'z'])
+  assert.equal(queueOrder({ id: 'a', queuedAt: 1 }, { id: 'b', queuedAt: 1 }) < 0, true, '同时入队按 id 稳定排序')
+})
+
+test('并行上限：只接受 1..MAX 的整数，缺省给默认值', () => {
+  assert.equal(normalizeMaxParallel(undefined), DEFAULT_MAX_PARALLEL)
+  assert.equal(normalizeMaxParallel(null), DEFAULT_MAX_PARALLEL)
+  assert.equal(normalizeMaxParallel(''), DEFAULT_MAX_PARALLEL)
+  assert.equal(normalizeMaxParallel(1), 1)
+  assert.equal(normalizeMaxParallel(MAX_PARALLEL_LIMIT), MAX_PARALLEL_LIMIT)
+  for (const bad of [0, -1, 1.5, MAX_PARALLEL_LIMIT + 1, '3', NaN, true, {}]) {
+    assert.throws(() => normalizeMaxParallel(bad), /maxParallel must be an integer/, `${String(bad)} 应被拒`)
+  }
+})
+
+test('settings 容错：坏值退回默认，好值原样保留', () => {
+  assert.deepEqual(normalizeSettings(undefined), { maxParallel: DEFAULT_MAX_PARALLEL })
+  assert.deepEqual(normalizeSettings({ maxParallel: 7 }), { maxParallel: 7 })
+  assert.deepEqual(normalizeSettings({ maxParallel: 'seven' }), { maxParallel: DEFAULT_MAX_PARALLEL })
+  assert.deepEqual(normalizeSettings(null), { maxParallel: DEFAULT_MAX_PARALLEL })
+  // 新账本自带 settings，旧账本（没有这个键）由 load 补上默认值
+  assert.deepEqual(emptyLedger().settings, { maxParallel: DEFAULT_MAX_PARALLEL })
 })

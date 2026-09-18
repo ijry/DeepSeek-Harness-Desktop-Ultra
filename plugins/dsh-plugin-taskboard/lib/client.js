@@ -131,7 +131,7 @@ function openPanelChannel(ctx, options) {
       column: { todo: '待办', inProgress: '进行中', attention: '需关注', done: '已完成' },
       status: {
         todo: '待办',
-        queued: '排队',
+        queued: '排队中',
         preparing: '准备中',
         running: '执行中',
         awaiting_input: '等待输入',
@@ -156,6 +156,10 @@ function openPanelChannel(ctx, options) {
       'board.allProjects': '全部项目',
       'board.noProject': '无项目',
       'board.noTasks': '暂无任务',
+      'board.maxParallel': '并行上限',
+      'board.queueStats': (parts) => '并行 ' + parts.active + '/' + parts.max
+        + (parts.waiting > 0 ? ' · 排队 ' + parts.waiting : ''),
+      'board.maxParallelApplied': (n) => '并行上限已设为 ' + n,
       'board.untitled': '（无标题）',
       'entry.stats': (c) => '待办 ' + c.todo + ' · 需关注 ' + c.attention + ' · 待验收 ' + c.review,
       'modal.close': '关闭',
@@ -191,6 +195,8 @@ function openPanelChannel(ctx, options) {
       'detail.noNotes': '暂无备注',
       'detail.edit': '编辑',
       'detail.launch': '发起会话',
+      'detail.cancelQueue': '取消排队',
+      'detail.kvSession': '会话',
       'detail.accept': '✓ 通过验收',
       'detail.sendBack': '退回待办',
       'detail.reopen': '重新打开',
@@ -202,8 +208,11 @@ function openPanelChannel(ctx, options) {
       'toast.taskDeleted': '任务已删除',
       'toast.noteEmpty': '先写点备注内容',
       'toast.noteSent': '备注已发送',
-      'toast.launched': (sid) => '已发起 DSH 会话，任务转为「排队」等认领' + (sid === '' ? '' : '（' + sid + '）'),
+      'toast.launched': (sid) => '已发起 DSH 会话，任务转为「排队中」等认领' + (sid === '' ? '' : '（' + sid + '）'),
+      'toast.queued': (parts) => '已加入执行队列，排队中（并行 ' + parts.active + '/' + parts.max + '）',
+      'toast.unqueued': '已取消排队，任务回到「待办」',
       'confirm.sendBack': '退回待办？确认后任务回到“待办”列并解除认领。',
+      'confirm.cancelQueue': '取消排队？任务回到「待办」，不会发起会话。',
       'confirm.delete': '确定删除该任务吗？删除后不可恢复。',
       'action.accept': '验收',
       'action.reopenTask': '重新打开任务',
@@ -211,6 +220,9 @@ function openPanelChannel(ctx, options) {
       'action.updateTask': '更新任务',
       'action.createTask': '创建任务',
       'action.rejectTask': '退回任务',
+      'action.cancelQueue': '取消排队',
+      'action.launchTask': '发起会话',
+      'action.setMaxParallel': '设置并行上限',
       'action.deleteTask': '删除任务',
       'action.sendNote': '发送备注',
       'result.ok': (label) => label + '成功',
@@ -250,6 +262,10 @@ function openPanelChannel(ctx, options) {
       'board.allProjects': 'All projects',
       'board.noProject': 'No project',
       'board.noTasks': 'No tasks',
+      'board.maxParallel': 'Max parallel',
+      'board.queueStats': (parts) => 'In flight ' + parts.active + '/' + parts.max
+        + (parts.waiting > 0 ? ' · Queued ' + parts.waiting : ''),
+      'board.maxParallelApplied': (n) => 'Max parallel set to ' + n,
       'board.untitled': '(untitled)',
       'entry.stats': (c) => 'To do ' + c.todo + ' · Attention ' + c.attention + ' · Review ' + c.review,
       'modal.close': 'Close',
@@ -285,6 +301,8 @@ function openPanelChannel(ctx, options) {
       'detail.noNotes': 'No notes yet',
       'detail.edit': 'Edit',
       'detail.launch': 'Launch session',
+      'detail.cancelQueue': 'Leave the queue',
+      'detail.kvSession': 'Session',
       'detail.accept': '✓ Accept',
       'detail.sendBack': 'Send back to todo',
       'detail.reopen': 'Reopen',
@@ -297,7 +315,10 @@ function openPanelChannel(ctx, options) {
       'toast.noteEmpty': 'Write a note first',
       'toast.noteSent': 'Note sent',
       'toast.launched': (sid) => 'DSH session started; the task is now Queued' + (sid === '' ? '' : ' (' + sid + ')'),
+      'toast.queued': (parts) => 'Queued for a session slot (' + parts.active + '/' + parts.max + ' in flight)',
+      'toast.unqueued': 'Left the queue; the task is back in To do',
       'confirm.sendBack': 'Send back to todo? The task returns to the To do column and the claim is released.',
+      'confirm.cancelQueue': 'Leave the queue? The task goes back to To do and no session is started.',
       'confirm.delete': 'Delete this task? This cannot be undone.',
       'action.accept': 'Accept',
       'action.reopenTask': 'Reopen task',
@@ -305,6 +326,9 @@ function openPanelChannel(ctx, options) {
       'action.updateTask': 'Update task',
       'action.createTask': 'Create task',
       'action.rejectTask': 'Send task back',
+      'action.cancelQueue': 'Leave the queue',
+      'action.launchTask': 'Launch session',
+      'action.setMaxParallel': 'Set max parallel',
       'action.deleteTask': 'Delete task',
       'action.sendNote': 'Send note',
       'result.ok': (label) => label + ': done',
@@ -358,11 +382,14 @@ function openPanelChannel(ctx, options) {
   /** The four board columns in order; labels come from the string table. */
   const COLUMNS = ['todo', 'inProgress', 'attention', 'done']
 
+  // `queued` belongs to 进行中, not 待办: hitting 发起会话 takes a card out of the
+  // backlog and into the execution pipeline, where it either runs or waits for a
+  // free parallelism slot. Only 取消排队 puts it back in 待办.
   function columnOf(status) {
     switch (status) {
       case 'todo':
-      case 'queued':
         return 'todo'
+      case 'queued':
       case 'preparing':
       case 'running':
         return 'inProgress'
@@ -480,6 +507,8 @@ function openPanelChannel(ctx, options) {
     comment(id, body) { return api.post(ROUTE_PREFIX + '/tasks/' + encodeURIComponent(id) + '/comment', { body }) },
     remove(id, payload) { return api.post(ROUTE_PREFIX + '/tasks/' + encodeURIComponent(id) + '/delete', payload) },
     launch(id, payload) { return api.post(ROUTE_PREFIX + '/tasks/' + encodeURIComponent(id) + '/launch', payload) },
+    unqueue(id, payload) { return api.post(ROUTE_PREFIX + '/tasks/' + encodeURIComponent(id) + '/unqueue', payload) },
+    settings(payload) { return api.post(ROUTE_PREFIX + '/settings', payload) },
   }
 
   // ---------------------------------------------------------------- styles
@@ -628,6 +657,14 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
 .dsh-cgtb-chip[data-kind="status"] { color: var(--cgtb-st-todo, #5b8cff); background: color-mix(in srgb, var(--cgtb-st-todo, #5b8cff) 14%, transparent); }
 .dsh-cgtb-chip[data-kind="ws"] { color: var(--cgtb-text-2, gray); background: var(--cgtb-hover, rgba(128,128,128,.1)); }
 .dsh-cgtb-chip[data-kind="claim"] { color: var(--cgtb-st-preparing, #e0a13c); }
+.dsh-cgtb-chip[data-kind="session"] { color: var(--cgtb-st-merging, #2bb3a3); }
+.dsh-cgtb-num {
+  width: 56px; box-sizing: border-box; padding: 4px 6px; border-radius: 8px;
+  border: 1px solid var(--cgtb-border, rgba(128,128,128,.3)); background: var(--cgtb-input, transparent);
+  color: var(--cgtb-text, inherit); font: inherit; font-size: 12.5px;
+}
+.dsh-cgtb-num:focus { outline: none; border-color: var(--cgtb-focus, #5b8cff); }
+.dsh-cgtb-queue-stats { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .dsh-cgtb-chip[data-kind="note"] { color: var(--cgtb-text-3, gray); }
 .dsh-cgtb-card-time { margin-left: auto; color: var(--cgtb-text-3, gray); white-space: nowrap; }
 .dsh-cgtb-empty { padding: 16px 6px; text-align: center; color: var(--cgtb-text-3, gray); font-size: 12px; }
@@ -716,10 +753,28 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
   const OTHER_OPEN_ATTRS = ['data-dsh-taskboard-active', 'data-dsh-atb-active', 'data-dsh-ssh-active']
   const HOLD_STATUSES = ['preparing', 'running', 'awaiting_input', 'merging']
   const COLUMN_MEMBERS = {
-    todo: ['todo', 'queued'],
-    inProgress: ['preparing', 'running'],
+    todo: ['todo'],
+    inProgress: ['queued', 'preparing', 'running'],
     attention: ['awaiting_input', 'review', 'merging', 'failed'],
     done: ['done', 'canceled'],
+  }
+  /** Mirror of the host's DEFAULT_MAX_PARALLEL / MAX_PARALLEL_LIMIT (protocol.js). */
+  const DEFAULT_MAX_PARALLEL = 3
+  const MAX_PARALLEL_LIMIT = 20
+
+  /**
+   * Whether a card occupies one of the maxParallel slots — the browser-side twin
+   * of protocol.js `occupiesSlot`. A `queued` card with no session is the one
+   * waiting in line (「排队中」); it holds nothing.
+   */
+  function occupiesSlot(task) {
+    if (HOLD_STATUSES.includes(task.status)) return true
+    return task.status === 'queued' && typeof task.sessionId === 'string' && task.sessionId !== ''
+  }
+
+  /** A launched card still waiting for a free slot (no session yet). */
+  function waitingInQueue(task) {
+    return task.status === 'queued' && !(typeof task.sessionId === 'string' && task.sessionId !== '')
   }
   const ALL_STATUSES = ['todo', 'queued', 'preparing', 'running', 'awaiting_input', 'review', 'merging', 'failed', 'done', 'canceled']
 
@@ -732,6 +787,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     wsFilter: 'ALL',
     search: '',
     showCanceled: false,
+    maxParallel: DEFAULT_MAX_PARALLEL,
     connected: false,
     lastSync: 0,
   }
@@ -751,6 +807,9 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       version: task.version,
       workspaceId: task.workspaceId ?? '',
       claimedBy: typeof task.claimedBy === 'string' ? task.claimedBy : '',
+      // '' = no session yet, which is what marks a 排队中 card and gates the
+      // 取消排队 button (the host summary always carries the key).
+      sessionId: typeof task.sessionId === 'string' ? task.sessionId : '',
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
       commentCount: Array.isArray(task.comments) ? task.comments.length : 0,
@@ -758,6 +817,11 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
   }
   function applyLedger(ledger) {
     model.revision = typeof ledger.revision === 'number' ? ledger.revision : 0
+    const max = ledger.settings !== null && typeof ledger.settings === 'object'
+      ? ledger.settings.maxParallel : undefined
+    if (typeof max === 'number' && Number.isInteger(max) && max >= 1 && max <= MAX_PARALLEL_LIMIT) {
+      model.maxParallel = max
+    }
     model.tasks.clear()
     for (const task of Array.isArray(ledger.tasks) ? ledger.tasks : []) {
       if (task === null || typeof task !== 'object' || task.id === undefined) continue
@@ -770,6 +834,12 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
   function applyChange(frame) {
     if (frame === null || typeof frame !== 'object') return
     if (typeof frame.revision === 'number') model.revision = frame.revision
+    // A settings frame carries no tasks: it is the host saying "refetch state"
+    // (maxParallel changed), not "patch this card".
+    if (frame.kind === 'settings-updated') {
+      void refresh()
+      return
+    }
     for (const summary of Array.isArray(frame.tasks) ? frame.tasks : []) {
       if (summary === null || typeof summary !== 'object' || summary.id === undefined) continue
       if (frame.kind === 'task-deleted') model.tasks.delete(summary.id)
@@ -1023,6 +1093,8 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
   let searchInput = null
   let wsSelect = null
   let cancelCheck = null
+  let maxInput = null
+  let queueStats = null
   let columnsEl = null
 
   function sidebarRoot() {
@@ -1106,9 +1178,21 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       type: 'checkbox',
       onChange: () => { model.showCanceled = cancelCheck.checked; renderColumns() },
     })
+    // 并行上限：队列一次最多让几张卡占着会话。改大立刻放行排队卡，改小只是让
+    // 下一轮调度提前收手（正在跑的会话不会被掐掉）。
+    maxInput = el('input', {
+      class: 'dsh-cgtb-num', type: 'number', min: '1', max: String(MAX_PARALLEL_LIMIT), step: '1',
+      title: t('board.maxParallel'), 'aria-label': t('board.maxParallel'),
+      value: String(model.maxParallel),
+      onChange: () => { void saveMaxParallel() },
+    })
+    queueStats = el('span', { class: 'dsh-cgtb-muted dsh-cgtb-queue-stats' })
     const controls = el('div', { class: 'dsh-cgtb-controls' },
       searchInput, wsSelect,
-      el('label', { class: 'dsh-cgtb-check' }, cancelCheck, t('board.showCanceled')))
+      el('label', { class: 'dsh-cgtb-check' }, cancelCheck, t('board.showCanceled')),
+      el('span', { class: 'dsh-cgtb-spacer' }),
+      el('label', { class: 'dsh-cgtb-check' }, t('board.maxParallel'), maxInput),
+      queueStats)
     columnsEl = el('div', { class: 'dsh-cgtb-columns' })
     view.append(el('div', { class: 'dsh-cgtb-board' }, toolbar, controls, columnsEl))
   }
@@ -1121,6 +1205,8 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     searchInput = null
     wsSelect = null
     cancelCheck = null
+    maxInput = null
+    queueStats = null
     columnsEl = null
     wsOptionsSignature = null
     buildBoardDom()
@@ -1148,6 +1234,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     renderEntry()
     renderLiveIndicator()
     renderWorkspaces()
+    renderQueue()
     renderColumns()
   }
   function bindModelListener() {
@@ -1187,8 +1274,14 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     if (task.workspaceId !== undefined && task.workspaceId !== '') {
       meta.append(el('span', { class: 'dsh-cgtb-chip', 'data-kind': 'ws' }, wsLabel(task.workspaceId)))
     }
-    if (task.claimedBy !== undefined) {
-      meta.append(el('span', { class: 'dsh-cgtb-chip', 'data-kind': 'claim' }, '⏳ ' + String(task.claimedBy).slice(0, 12)))
+    // 摘要里的 claimedBy/sessionId 恒为字符串（'' = 无），所以按空串判空，
+    // 否则每张卡都会挂一个空认领徽标。
+    if (typeof task.claimedBy === 'string' && task.claimedBy !== '') {
+      meta.append(el('span', { class: 'dsh-cgtb-chip', 'data-kind': 'claim' }, '⏳ ' + task.claimedBy.slice(0, 12)))
+    }
+    // 有会话 = 已经排到额度（等 agent 认领）；没有 = 还在等空位。
+    if (typeof task.sessionId === 'string' && task.sessionId !== '') {
+      meta.append(el('span', { class: 'dsh-cgtb-chip', 'data-kind': 'session' }, '⚡ ' + task.sessionId.slice(0, 8)))
     }
     if (typeof task.commentCount === 'number' && task.commentCount > 0) {
       meta.append(el('span', { class: 'dsh-cgtb-chip', 'data-kind': 'note' }, '💬 ' + task.commentCount))
@@ -1241,6 +1334,44 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
     if (liveEl === null) return
     liveEl.dataset.state = model.connected ? 'up' : 'down'
     liveEl.textContent = model.connected ? t('board.live') : t('board.offline')
+  }
+
+  /** 工具栏右侧的额度读数：「并行 2/3 · 排队 1」，外加并行上限输入框的同步。 */
+  function renderQueue() {
+    let active = 0
+    let waiting = 0
+    for (const task of model.tasks.values()) {
+      if (occupiesSlot(task)) active++
+      else if (waitingInQueue(task)) waiting++
+    }
+    if (maxInput !== null && document.activeElement !== maxInput) {
+      maxInput.value = String(model.maxParallel)
+    }
+    if (queueStats !== null) {
+      queueStats.textContent = t('board.queueStats', { active, max: model.maxParallel, waiting })
+    }
+  }
+
+  /** 写回并行上限；失败（越界/宿主拒绝）时把输入框拉回服务端的真实值。 */
+  async function saveMaxParallel() {
+    if (maxInput === null) return
+    const raw = Number(maxInput.value)
+    if (!Number.isInteger(raw) || raw < 1 || raw > MAX_PARALLEL_LIMIT) {
+      toast(t('result.invalid', { label: t('action.setMaxParallel'), detail: '1..' + MAX_PARALLEL_LIMIT }))
+      maxInput.value = String(model.maxParallel)
+      return
+    }
+    try {
+      const result = await api.settings({ maxParallel: raw })
+      const applied = result !== null && typeof result === 'object' && result.settings !== undefined
+        ? Number(result.settings.maxParallel)
+        : raw
+      if (Number.isInteger(applied)) model.maxParallel = applied
+      toast(t('board.maxParallelApplied', model.maxParallel), 'success')
+    } catch (error) {
+      toast(friendlyWriteError(t('action.setMaxParallel'), error))
+    }
+    renderQueue()
   }
 
   async function refreshAll() {
@@ -1451,6 +1582,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       addRow(t('detail.kvTask'), String(task.id).slice(0, 8))
       if (typeof task.workspaceId === 'string' && task.workspaceId !== '') addRow(t('detail.kvProject'), wsLabel(task.workspaceId))
       if (typeof task.claimedBy === 'string' && task.claimedBy !== '') addRow(t('detail.kvClaim'), task.claimedBy)
+      if (typeof task.sessionId === 'string' && task.sessionId !== '') addRow(t('detail.kvSession'), task.sessionId)
       addRow(t('detail.kvUpdated'), fmtTime(task.updatedAt))
       addRow(t('detail.kvCreated'), fmtTime(task.createdAt))
       infoEl.append(dl)
@@ -1504,6 +1636,13 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
         const launchBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'primary', type: 'button' }, t('detail.launch'))
         launchBtn.addEventListener('click', () => { void launchTask() })
         frame.foot.append(launchBtn)
+      }
+      // 取消排队只对「已入队、还没会话」的卡开放：会话一旦建好，这里没有终止它的
+      // 接口，放行只会留下一场没人管的会话（宿主同样会拒）。
+      if (current === 'queued' && !(typeof record.sessionId === 'string' && record.sessionId !== '')) {
+        const cancelQueueBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'danger', type: 'button' }, t('detail.cancelQueue'))
+        cancelQueueBtn.addEventListener('click', () => { void cancelQueue() })
+        frame.foot.append(cancelQueueBtn)
       }
       if (current === 'review') {
         const acceptBtn = el('button', { class: 'dsh-cgtb-btn', 'data-kind': 'ok', type: 'button' }, t('detail.accept'))
@@ -1601,7 +1740,7 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       })
     }
 
-    /** 发起会话：让 dsh 为这个任务开一场真实会话并把执行 prompt 排进去。 */
+    /** 发起会话：卡片入队；有空位就马上开会话，没空位就排队等（宿主自动调度）。 */
     async function launchTask() {
       if (record === null || busy) return
       busy = true
@@ -1610,11 +1749,46 @@ html[data-dsh-cgtb-open] .dsh-cgtb-view { display: flex; flex-direction: column;
       try {
         const result = await api.launch(id, { ifVersion: record.version })
         const raw = result !== null && typeof result === 'object' ? String(result.sessionId ?? '') : ''
-        const sid = raw.length > 12 ? raw.slice(0, 12) + '…' : raw
-        toast(t('toast.launched', sid), 'success')
+        if (raw === '') {
+          // 没有会话 id = 没排到额度，卡片停在「排队中」，空位一出现会自动发起。
+          const active = result !== null && typeof result === 'object' ? Number(result.active) : NaN
+          const max = result !== null && typeof result === 'object' ? Number(result.maxParallel) : NaN
+          toast(t('toast.queued', {
+            active: Number.isFinite(active) ? active : 0,
+            max: Number.isFinite(max) ? max : model.maxParallel,
+          }), 'success')
+        } else {
+          const sid = raw.length > 12 ? raw.slice(0, 12) + '…' : raw
+          toast(t('toast.launched', sid), 'success')
+        }
         await syncFull({ silent: true })
       } catch (error) {
         toast(friendlyWriteError(t('action.launchTask'), error))
+      } finally {
+        busy = false
+        sendBtn.disabled = false
+        if (!closedRef.current) renderAll()
+      }
+    }
+
+    /** 取消排队：把还没排到额度的卡送回「待办」。 */
+    async function cancelQueue() {
+      if (record === null || busy) return
+      if (!askConfirm(t('confirm.cancelQueue'))) return
+      busy = true
+      setButtonsEnabled(false)
+      sendBtn.disabled = true
+      try {
+        const result = await api.unqueue(id, { ifVersion: record.version })
+        if (result !== null && typeof result === 'object' &&
+            result.id === id && typeof result.status === 'string') {
+          record = result
+          applyTaskFull(result)
+        }
+        toast(t('toast.unqueued'), 'success')
+      } catch (error) {
+        toast(friendlyWriteError(t('action.cancelQueue'), error))
+        if (isConflictError(error)) await syncFull({ silent: true })
       } finally {
         busy = false
         sendBtn.disabled = false

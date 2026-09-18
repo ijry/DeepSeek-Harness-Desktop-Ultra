@@ -14,10 +14,12 @@
 export const CODEG_TASKBOARD_PROTOCOL = [
   '本机已安装 dsh-plugin-taskboard 插件（任务看板，语义参考 codeg-plus 的任务看板）：',
   '任务挂在 workspace（项目）上，用 taskboard_* 工具读写，人在 Web GUI 看板上实时看到同样数据。',
-  '看板四列（与 codeg-plus 一致）：待办 todo（todo/queued）、进行中 inProgress（preparing/running）、',
+  '看板四列（与 codeg-plus 一致）：待办 todo（todo）、进行中 inProgress（queued/preparing/running）、',
   '需关注 attention（awaiting_input/review/merging/failed）、已完成 done（done/canceled，canceled 默认隐藏）。',
-  '状态含义：todo=待办；queued=排队；preparing=认领后准备中；running=执行中；',
+  '状态含义：todo=还没排队的待办；queued=已发起会话、在队列里（排队中，或会话已分配、等认领）；preparing=认领后准备中；running=执行中；',
   'awaiting_input=正在等你输入/决策；review=实现完成，待你验收；failed=失败可重试；done=你已验收完成。',
+  '并发上限：看板有 settings.maxParallel（默认 3），同一时刻最多这么多张卡能占用会话；发起时没空位就停在「排队中」，',
+  '空位一出现（其他卡交验/验收/失败/取消排队）队列会自动为它发起会话。',
   '工具：taskboard_list（查板，可按 workspaceId/status/column 过滤）、taskboard_get（读卡与评论）、',
   'taskboard_create（建卡）、taskboard_update（改卡）、taskboard_move（移卡/认领）、taskboard_comment（评论/报告）。',
   '工作纪律：',
@@ -30,6 +32,8 @@ export const CODEG_TASKBOARD_PROTOCOL = [
   '   再把 running → review，等待用户验收；review 后用户可能打回（附意见）或直接完成。',
   '6. 完成与取消是用户的动作：你永远不能把任务移到 done 或 canceled；review 之后只能等用户验收。',
   '7. 边界：认领带 workspaceId 的任务时，任务属于该 workspace；只有工作目录解析到同一 workspace 的会话才能认领。',
+  '8. 排队中的卡归队列管：queued 的卡可能还没有会话、在等空位，抢先认领会顶掉队列排期；只有你自己就是它等待/绑定的会话，',
+  '   或你把失败的卡重投队列（failed → queued）时，才把 queued → preparing。',
   '用户提到「任务看板/看板/认领任务」时即指本插件，请据此协作。',
 ].join('\n')
 
@@ -43,10 +47,12 @@ export const CODEG_TASKBOARD_SECTION_NAME = 'plugin:dsh-plugin-taskboard'
 export const CODEG_TASKBOARD_PROTOCOL_EN = [
   'The dsh-plugin-taskboard plugin is installed on this machine (a task board whose semantics follow codeg-plus’s task board):',
   'Tasks hang off a workspace (project), you read and write them with the taskboard_* tools, and the human watches the same data live on the Web GUI board.',
-  'Four board columns (identical to codeg-plus): todo (todo/queued), inProgress (preparing/running),',
+  'Four board columns (identical to codeg-plus): todo (todo), inProgress (queued/preparing/running),',
   'attention (awaiting_input/review/merging/failed), done (done/canceled, canceled hidden by default).',
-  'Status meanings: todo=to do; queued=queued; preparing=claimed and getting ready; running=executing;',
+  'Status meanings: todo=not queued yet; queued=launched and in the queue (waiting for a slot, or holding a session awaiting a claim); preparing=claimed and getting ready; running=executing;',
   'awaiting_input=waiting for your input/decision; review=implemented, waiting for your acceptance; failed=failed, retryable; done=you have accepted it.',
+  'Parallelism: the board has settings.maxParallel (default 3) — at most that many tasks may hold a session at once; a launch with no free slot stops at “queued”',
+  'and the queue starts its session automatically as soon as a slot frees (another card handed off, accepted, failed, or left the queue).',
   'Tools: taskboard_list (read the board, filterable by workspaceId/status/column), taskboard_get (read a card and its comments),',
   'taskboard_create (new card), taskboard_update (edit a card), taskboard_move (move/claim a card), taskboard_comment (comment/report).',
   'Working discipline:',
@@ -59,6 +65,8 @@ export const CODEG_TASKBOARD_PROTOCOL_EN = [
   '   then move running → review and wait for the user’s acceptance; after review the user may send it back (with notes) or complete it directly.',
   '6. Completing and canceling are the user’s actions: you may never move a task to done or canceled; after review all you can do is wait for the user to accept.',
   '7. Boundary: a task carrying a workspaceId belongs to that workspace; only a session whose working directory resolves to the same workspace may claim it.',
+  '8. Queued cards belong to the queue: a queued card may still be waiting for a slot with no session, so stealing the claim robs the queue of its schedule;',
+  '   move queued → preparing only when you ARE the session it waited for or holds, or when you are re-queueing a card you failed (failed → queued).',
   'When the user mentions “the task board / the board / claiming a task” they mean this plugin — collaborate accordingly.',
 ].join('\n')
 

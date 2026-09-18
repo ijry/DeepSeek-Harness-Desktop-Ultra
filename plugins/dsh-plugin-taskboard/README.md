@@ -19,10 +19,13 @@
 
 | 看板列 | 状态 | 说明 |
 | --- | --- | --- |
-| 待办 `todo` | `todo`、`queued` | 待办、排队 |
-| 进行中 `inProgress` | `preparing`、`running` | 认领后准备、执行中 |
+| 待办 `todo` | `todo` | 还没排队的待办 |
+| 进行中 `inProgress` | `queued`、`preparing`、`running` | 排队中（等并行额度）、认领后准备、执行中 |
 | 需关注 `attention` | `awaiting_input`、`review`、`merging`、`failed` | 等你决策、待验收、合并中、失败 |
 | 已完成 `done` | `done`、`canceled` | 已验收、已取消（`canceled` 默认隐藏） |
+
+`queued` 属于**进行中**而不是待办：一次「发起会话」就把卡片从积压推进执行管线，
+它要么立刻跑起来、要么等一个并行额度；只有「取消排队」才把它送回「待办」。
 
 核心规则：
 
@@ -30,12 +33,14 @@
   重做）只在 GUI 上开放；agent 永远不能把任务移进 `done` / `canceled`。
 - **认领纪律**：agent 把 `todo` / `queued` 移到 `preparing` 即认领，任务绑定到
   该会话；已被其他会话持有的任务不能接管，跨项目（workspace）不能认领。
+  排队中的卡归队列管，抢先认领会顶掉队列排期（详见下文）。
 - **版本守卫**：所有“先读后写”的改动都要带 `ifVersion`，冲突即拒绝，避免并发
   覆盖；评论是轻量无版本操作，走串行写队列。
 - **每列按最近更新排序**（`updatedAt` 降序），与 codeg-plus 的看板一致。
 
-与 codeg-plus 的边界：本插件不做任务的执行/调度，`merging` 是保留状态（人和
-agent 都不可主动移入），任务从认领到交验由 agent 与人在现有会话里协作完成。
+与 codeg-plus 的边界：本插件只负责「何时为哪张卡发起会话」（并行队列），不接管任务
+内部的执行编排；`merging` 是保留状态（人和 agent 都不可主动移入），任务从认领到交验
+由 agent 与人在会话里协作完成。
 
 ## 功能
 
@@ -52,14 +57,19 @@ agent 都不可主动移入），任务从认领到交验由 agent 与人在现�
 - **验收 / 退回 / 编辑 / 移动 / 删除**：`review` 卡片提供「通过验收」与「退回
   待办」（退回可选附意见，单次提交不会留下孤儿评论）；其他卡片可编辑字段、
   移到任意状态（终态只能重开回 `todo`），非活动/非 review 的卡片可删除。
-- **发起会话**：**待办（todo）** 卡片的详情里提供「发起会话」——通过 dsh
-  `sessionController` 服务（`session.create` + `session.prompt`）开一场真实会话，
-  把任务 prompt 作为首条消息排进去，并引导新会话按看板协议先认领再动手。发起成功
-  后卡片会从 `todo` 推进到 `queued`（排队，仍在「待办」列内，等 agent 认领后转
-  「进行中」），并在任务上留一条备注记录会话 id。
-  已经发过会话的卡片（`queued` 及以后）不再显示该按钮，避免同一张卡排上两个会话；
-  要重新发起，先把卡片移回「待办」（`queued → todo` 是允许的）。没有
-  sessionController 的 dsh 组合里该操作明确报 `unavailable`，看板其余功能不受影响。
+- **发起会话 + 并行队列**：**待办（todo）** 卡片的详情里提供「发起会话」——卡片先
+  入队（`todo → queued`，出现在「进行中」列），由队列调度器通过 dsh
+  `sessionController` 服务（`session.create` + `session.prompt`）为它开一场真实会话，
+  把任务 prompt 作为首条消息排进去，并引导新会话按看板协议先认领再动手。
+  有空位就立刻发起；**没空位就停在「排队中」**（卡片上留一条「当前并行 N/M」的备注），
+  等任何一张卡让出额度（交验、验收、失败、取消排队）后自动补位。
+  已经排到额度的卡片不再显示该按钮，避免同一张卡排上两个会话；要退回去就点
+  「取消排队」（`queued → todo`，只对还没有会话的卡开放——dsh 没有终止会话的接口，
+  放行一张已经有会话的卡只会留下一场没人管的会话）。没有 sessionController 的 dsh
+  组合里该操作明确报 `unavailable`，看板其余功能不受影响。
+- **并行上限可调**：工具栏右侧的「并行上限」直接改 `settings.maxParallel`
+  （默认 3，取值 1–20，随账本持久化）。旁边实时显示「并行 2/3 · 排队 1」。
+  调大立刻把排队卡放出去，调小只是让下一轮调度提前收手（正在跑的会话不会被掐掉）。
 - **项目筛选与计数**：顶部按 workspace（项目）过滤，侧栏按钮带 todo / attention /
   review 滚动计数，多代 UI 选择器兜底挂载。
 - **Agent 侧工作协议**：host 启动时把一段”先查板、先读后动、认领/版本纪律、
@@ -75,12 +85,30 @@ plugins/dsh-plugin-taskboard
 ├── cordis.patch.yml      # 打进 web profile 的插件行
 ├── src
 │   ├── index.js          # host 加载入口：协议段 + 工具 + 路由
-│   ├── host/             # store（账本）/ tools（六工具）/ routes（JSON+SSE）/ socket（WS 推送）/ sdk / protocol-text
-│   ├── shared/protocol.js # 纯领域核心：列映射、迁移表、守卫（host 与测试共用）
+│   ├── host/             # store（账本）/ queue（并行队列调度）/ tools（六工具）/ routes（JSON+SSE）/ socket（WS 推送）/ sdk / protocol-text
+│   ├── shared/protocol.js # 纯领域核心：列映射、迁移表、额度与守卫（host 与测试共用）
 │   └── client/index.js   # 浏览器看板（vanilla DOM，构建时被包成 loader 模块）
 ├── scripts/              # wrap-client / build / check
-└── test/                 # node:test 领域 + host 行测试
+└── test/                 # node:test 领域 + host 行测试（含队列调度）
 ```
+
+### 队列是怎么跑的
+
+账本（`ledger.json`）里除了 `tasks` 还有 `settings`：
+
+```jsonc
+{ "revision": 12, "settings": { "maxParallel": 3 }, "tasks": [ /* … */ ] }
+```
+
+一张卡占一个「额度」当且仅当 `preparing`/`running`/`awaiting_input`/`merging`（会话在
+干活），或者它是**已经有会话**的 `queued`（会话已建好、等 agent 认领）。只有「还没有
+会话的 `queued`」不占额度——它就是排队等空位的那张，把它也算进去队列就永远等不到空位。
+
+调度只有一个入口 `pump()`（`src/host/queue.js`）：串行、可重入、FIFO，每次账本提交后
+由订阅者触发，插件加载时也会跑一次（重启后接着排）。流程固定为「先入队、再调度」：
+`todo → queued` 是账本事实，会话是外部副作用，反过来在两次写之间崩掉会留下一场没有
+任何卡片引用的会话。某张卡开会话失败时只记一次失败并结束本轮（绝不自旋重试），失败
+原因会通过 launch 接口回给用户。
 
 ## 开发与验证
 
@@ -89,7 +117,7 @@ plugins/dsh-plugin-taskboard
 ```bash
 npm run check    # 语法检查 src/ → 重新构建 lib/ → 再查 lib/（含生成的 client 包）
 npm run build    # 复制 host/shared 到 lib/ 并生成 lib/client.js
-npm test         # npm run build && node --test（9 个领域 + host 测试）
+npm test         # npm run build && node --test（领域 + host + 队列调度 + i18n 测试）
 ```
 
 构建产物 `lib/client.js` 是 `src/client/index.js` 的模块加载器包装：

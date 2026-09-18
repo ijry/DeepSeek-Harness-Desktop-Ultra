@@ -93,7 +93,18 @@ const MAX_FAILURES: u32 = 2;
 ///     - `LAUNCHABLE_STATUSES` 由 ['todo','queued'] 收紧为 ['todo']，客户端
 ///       按钮同步只在 todo 显示 —— 否则同一张卡会被排上两个会话抢认领；
 ///       重新发起需先把卡移回 todo。
-const BUNDLE_REVISION: u32 = 16;
+/// 17：任务看板加并行任务队列。发起会话改为「先入队、再调度」：
+///     - 新增 `settings.maxParallel`（默认 3，1..20，随账本持久化，GUI 工具栏可改），
+///       一张卡占一个额度当且仅当会话在干活（preparing/running/awaiting_input/
+///       merging）或它是**已经有会话**的 queued；没有会话的 queued 才是真正的
+///       「排队中」，不占额度。
+///     - 新增调度器（src/host/queue.js）：任何账本提交后由订阅者驱动，串行可重入、
+///       FIFO，有空位就从最久排队的卡开始开会话；插件加载时也会补跑一次。
+///     - `queued` 归「进行中」列（此前在「待办」列）：发起即出积压，只有「取消排队」
+///       （新 unqueue 动作，仅限还没有会话的卡）才回到待办。
+///     - 新增 POST /settings 改并行上限；launch 响应改为
+///       { taskId, sessionId, status, queued, active, maxParallel }。
+const BUNDLE_REVISION: u32 = 17;
 
 /// 一个内置插件。
 ///

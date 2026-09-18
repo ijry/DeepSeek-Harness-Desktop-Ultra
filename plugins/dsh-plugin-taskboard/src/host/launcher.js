@@ -89,6 +89,35 @@ export function buildLaunchMessage(task, lang = hostLang()) {
 }
 
 /**
+ * The comment body recording that a DSH session now works on a task. Written by
+ * whoever actually created the session (the queue dispatcher for launched
+ * cards), so the card's history shows when the wait ended.
+ * @param {string} sessionId
+ * @param {string} lang - 'zh' | 'en' (host language).
+ * @returns {string}
+ */
+export function launchedComment(sessionId, lang = hostLang()) {
+  return lang === 'en'
+    ? `Launched DSH session ${sessionId} for this task.`
+    : `已发起 DSH 会话执行此任务（session ${sessionId}）。`
+}
+
+/**
+ * The comment body recording that a task joined the execution queue but got no
+ * slot yet — 「排队中」. Carries the current occupancy so the card itself says
+ * why it is waiting.
+ * @param {number} active - slots currently in use.
+ * @param {number} max - settings.maxParallel.
+ * @param {string} lang - 'zh' | 'en' (host language).
+ * @returns {string}
+ */
+export function queuedComment(active, max, lang = hostLang()) {
+  return lang === 'en'
+    ? `Queued for a session slot (${active}/${max} in flight).`
+    : `已加入执行队列，排队中（当前并行 ${active}/${max}）。`
+}
+
+/**
  * Pull the session id out of a sessions.create result. The exact envelope
  * shape is upstream's to change, so every plausible field is tolerated before
  * giving up.

@@ -8,6 +8,12 @@
  * All domain validation runs through the shared protocol pure functions; this
  * layer only maps transport to the { ok } envelope.
  *
+ * Two routes are queue-shaped rather than card-shaped:
+ * - `launch` moves a todo card into the execution pipeline (`todo → queued`) and
+ *   then lets the dispatcher (host/queue.js) decide whether a session may start
+ *   now or the card has to wait for a free `settings.maxParallel` slot;
+ * - `unqueue` takes a card that is still waiting back out to todo.
+ *
  * @module dsh-plugin-taskboard/host/routes
  */
 import { hostLang } from '../shared/lang.js'
@@ -15,15 +21,21 @@ import {
   HOLD_STATUSES,
   canUserReject,
   createTaskRecord,
+  hasSession,
+  isWaitingInQueue,
   isValidStatus,
   newCommentId,
+  normalizeMaxParallel,
   normalizeOptionalText,
+  normalizeSettings,
   normalizeTitle,
   normalizeWorkspaceId,
+  occupiesSlot,
   userCanMove,
 } from '../shared/protocol.js'
 import { ERR, ToolError, liveTaskAt, versionGuard } from './tools.js'
-import { LAUNCHABLE_STATUSES, buildLaunchMessage, sessionIdOf } from './launcher.js'
+import { LAUNCHABLE_STATUSES, queuedComment } from './launcher.js'
+import { createQueuePump } from './queue.js'
 import { createEventSocket } from './socket.js'
 
 /** Route prefix on the shared DSH webserver (same origin as the GUI). */
@@ -106,6 +118,16 @@ function numberField(body, key) {
   return value
 }
 
+/** How many execution slots the board currently uses. */
+function activeSlots(ledger) {
+  return ledger.tasks.filter(occupiesSlot).length
+}
+
+/** The configured parallelism (settings are normalized, so this never throws). */
+function maxParallelOf(ledger) {
+  return normalizeSettings(ledger.settings).maxParallel
+}
+
 /** Map an execution error onto the { ok:false } envelope. */
 function envelopeOfError(error) {
   if (error instanceof ToolError) {
@@ -144,6 +166,23 @@ export function registerTaskboardRoutes(ctx, options) {
     return () => { shared?.dispose(); shared = undefined }
   })
   const { store, workspaces, now } = options
+  const { pump, dispose: disposePump } = createQueuePump({
+    store,
+    // Same lazy resolution as the launch route: the composition may mount the
+    // sessionController after this plugin.
+    resolveLauncher: () => {
+      const launcher = typeof options.launcher === 'function' ? options.launcher() : options.launcher
+      return launcher === undefined ? null : launcher
+    },
+    now,
+  })
+  /**
+   * The queue advances on its own: every committed change (an agent handing off
+   * to review, the user accepting, the parallelism setting changing) can free a
+   * slot, and the pump starts the longest-waiting task in it. The pump returns
+   * early when no launcher exists, so this costs nothing without one.
+   */
+  const unsubscribePump = store.subscribe(() => { void pump() })
   const subscribers = new Set()
   let heartbeat
 
@@ -226,6 +265,31 @@ export function registerTaskboardRoutes(ctx, options) {
           return
         }
 
+        // ----------------------------------------------------------- settings
+        // Board-level knobs (today only maxParallel). No ifVersion: this is not
+        // a per-card document, last write wins.
+        if (pathname === `${ROUTE_PREFIX}/settings`) {
+          const raw = body.maxParallel
+          if (raw === undefined) throw new ToolError(ERR.invalidInput, 'maxParallel is required')
+          let maxParallel
+          try {
+            maxParallel = normalizeMaxParallel(raw)
+          } catch (error) {
+            throw new ToolError(ERR.invalidInput, error.message)
+          }
+          await store.mutateSettings((ledger) => {
+            if (normalizeSettings(ledger.settings).maxParallel === maxParallel) return false
+            ledger.settings = { ...normalizeSettings(ledger.settings), maxParallel }
+            return true
+          })
+          ok(res, { settings: { ...normalizeSettings(store.snapshot().settings) } })
+          // Raising the cap must let the queue drain immediately; lowering it just
+          // makes the next pass stop earlier. (The store subscriber also pumps —
+          // this makes the effect synchronous for the caller.)
+          void pump()
+          return
+        }
+
         // ---------------------------------------------------------- per-task actions
         const actionMatch = TASK_ACTION_RE.exec(pathname)
         if (actionMatch !== null) {
@@ -272,6 +336,7 @@ export function registerTaskboardRoutes(ctx, options) {
             if (!isValidStatus(rawStatus) || rawStatus === 'merging') {
               throw new ToolError(ERR.invalidInput, 'status must be a valid task status')
             }
+            const before = store.snapshot()
             await store.mutate('task-moved', (ledger) => {
               const task = liveTaskAt(ledger, id)
               versionGuard(task, ifVersion)
@@ -284,6 +349,27 @@ export function registerTaskboardRoutes(ctx, options) {
               task.version += 1
               task.updatedAt = now()
               task.updatedBy = actor
+              if (rawStatus === 'queued') {
+                // Entering the queue starts this card's FIFO clock. A move the
+                // USER makes carries no session, so the card waits for a slot
+                // (a move an AGENT makes stamps its own session — see tools.js).
+                // Moving a card to 排队中 IS a launch here: the dispatcher will
+                // start a session for it, so say so on the card instead of
+                // letting a silent move look like a no-op.
+                task.queuedAt = now()
+                task.comments = task.comments ?? []
+                task.comments.push({
+                  id: newCommentId(),
+                  body: queuedComment(activeSlots(before), maxParallelOf(before)),
+                  createdAt: now(),
+                  actor,
+                })
+              } else {
+                delete task.queuedAt
+                // Back to the backlog means out of the execution pipeline: a
+                // todo card must never look like it holds a session/slot.
+                if (rawStatus === 'todo') delete task.sessionId
+              }
               if (!HOLD_STATUSES.includes(rawStatus)) {
                 delete task.claimedBy
                 delete task.claimedAt
@@ -312,6 +398,10 @@ export function registerTaskboardRoutes(ctx, options) {
               task.updatedBy = actor
               delete task.claimedBy
               delete task.claimedAt
+              // Sent back = out of the pipeline: the card must look launchable
+              // again (发起会话 clears/stamps its own session anyway).
+              delete task.sessionId
+              delete task.queuedAt
               if (commentBody.length > 0) {
                 task.comments = task.comments ?? []
                 task.comments.push({
@@ -354,17 +444,16 @@ export function registerTaskboardRoutes(ctx, options) {
             return
           }
 
-          // launch: turn a todo task into a real DSH session AND move it on the
-          // board. The dsh sessionController creates the session and queues the
-          // task's prompt as the first message; the card then goes todo -> queued
-          // (the lifecycle step immediately before the agent claims
-          // queued -> preparing — see AGENT_TRANSITIONS) and gains a comment
-          // recording the session id. Without the sessionController service this
-          // fails loudly with `unavailable` instead of pretending to work.
+          // launch: 把一张待办卡送进执行队列。卡片 todo -> queued，由队列调度器
+          // 决定是否立刻开会话：有空位就 createSession + prompt（会话认领后
+          // queued -> preparing），没空位就停在「排队中」，等空位出现时自动补上。
+          // 没有 sessionController 的组合明确报 unavailable，而不是假装排队成功。
           //
-          // The route must NOT claim the task itself: claiming binds the card to
-          // the calling session and is workspace-gated (protocol rule 3/7), which
-          // only the launched session can satisfy.
+          // 顺序是「先入队、再调度」：会话是外部副作用，队列是账本事实。反过来在
+          // 两次写之间崩掉，就会留下一场没有任何卡片引用的会话。
+          //
+          // 路由不自己认领任务：认领绑定调用方会话且有 workspace 边界
+          // （协议规则 3/7），只有被发起的那个会话能满足。
           if (action === 'launch') {
             const launcher = typeof options.launcher === 'function' ? options.launcher() : options.launcher
             if (launcher === undefined || launcher === null) {
@@ -373,52 +462,99 @@ export function registerTaskboardRoutes(ctx, options) {
             }
             const ifVersion = numberField(body, 'ifVersion')
             const preflight = store.get(id)
-            // Guard BEFORE creating the session: a stale board must not spawn one.
+            // Guard BEFORE anything happens: a stale board must not queue a session.
             versionGuard(preflight, ifVersion)
             if (!LAUNCHABLE_STATUSES.includes(preflight.status)) {
               throw new ToolError(ERR.invalidTransition,
                 `only a todo task can launch a session; task ${id} is ${preflight.status}`)
             }
-            const sessionPayload = {}
-            if (typeof preflight.workspaceId === 'string' && preflight.workspaceId !== '') {
-              sessionPayload.workspaceId = preflight.workspaceId
-            }
-            const created = await launcher.createSession(sessionPayload)
-            const sessionId = sessionIdOf(created)
-            if (sessionId === undefined) {
-              throw new ToolError(ERR.internal, 'dsh did not return a session id for the launched task')
-            }
-            await launcher.prompt({
-              sessionId,
-              mode: 'queue',
-              content: [{ type: 'text', text: buildLaunchMessage(preflight) }],
-            })
             await store.mutate('task-launched', (ledger) => {
               const task = liveTaskAt(ledger, id)
-              // todo -> queued: the card now shows a session is queued for it.
-              // (`queued` sits in the 待办 column; the agent's claim is what moves
-              // it to 进行中.) Tolerate a board change in the tiny window between
-              // preflight and here: only an untouched task gets the move.
-              if (task.status === 'todo') {
-                task.status = 'queued'
-                delete task.claimedBy
-                delete task.claimedAt
-              }
-              task.comments = task.comments ?? []
-              task.comments.push({
-                id: newCommentId(),
-                body: hostLang() === 'en'
-                  ? `Launched DSH session ${sessionId} for this task.`
-                  : `已发起 DSH 会话执行此任务（session ${sessionId}）。`,
-                createdAt: now(),
-                actor,
-              })
+              // Tolerate a board change in the tiny window between preflight and
+              // here: only an untouched task enters the queue.
+              if (task.status !== 'todo') return []
+              task.status = 'queued'
+              task.queuedAt = now()
+              delete task.sessionId
+              delete task.claimedBy
+              delete task.claimedAt
               task.version += 1
               task.updatedAt = now()
               task.updatedBy = actor
               return [task]
             })
-            ok(res, { sessionId, taskId: id }, 201)
+            const outcome = await pump()
+            const started = store.get(id) ?? preflight
+            // 备注按结果写：开上会话时调度器已经在卡上记了一笔，这里只补「还在排队」
+            // 那条，免得同一件事在时间线上出现两次。
+            if (!hasSession(started)) {
+              const failure = outcome.failures.find((item) => item.id === id)
+              if (failure !== undefined) {
+                throw new ToolError(ERR.unavailable, `the DSH session could not start: ${failure.message}`)
+              }
+              const before = store.snapshot()
+              await store.mutate('task-queued', (ledger) => {
+                const task = liveTaskAt(ledger, id)
+                if (!isWaitingInQueue(task)) return []
+                task.comments = task.comments ?? []
+                task.comments.push({
+                  id: newCommentId(),
+                  body: queuedComment(activeSlots(before), maxParallelOf(before)),
+                  createdAt: now(),
+                  actor,
+                })
+                task.version += 1
+                task.updatedAt = now()
+                task.updatedBy = actor
+                return [task]
+              })
+            }
+            const after = store.get(id) ?? started
+            const ledger = store.snapshot()
+            ok(res, {
+              taskId: id,
+              sessionId: hasSession(after) ? after.sessionId : '',
+              status: after.status,
+              queued: !hasSession(after),
+              active: activeSlots(ledger),
+              maxParallel: maxParallelOf(ledger),
+            }, 201)
+            return
+          }
+
+          // unqueue: 取消排队，卡片回「待办」。只对「已入队但还没有会话」的卡开放
+          // ——dsh 没有终止会话的接口，放行一张已经有会话的卡只会留下一场没人管
+          // 的会话在跑。
+          if (action === 'unqueue') {
+            const ifVersion = numberField(body, 'ifVersion')
+            await store.mutate('task-unqueued', (ledger) => {
+              const task = liveTaskAt(ledger, id)
+              versionGuard(task, ifVersion)
+              if (!isWaitingInQueue(task)) {
+                throw new ToolError(ERR.invalidTransition, hasSession(task)
+                  ? `task ${id} already has a DSH session; only a queued task still waiting for a slot can leave the queue`
+                  : `only a queued task can leave the queue; task ${id} is ${task.status}`)
+              }
+              task.status = 'todo'
+              delete task.queuedAt
+              delete task.sessionId
+              delete task.claimedBy
+              delete task.claimedAt
+              task.version += 1
+              task.updatedAt = now()
+              task.updatedBy = actor
+              task.comments = task.comments ?? []
+              task.comments.push({
+                id: newCommentId(),
+                body: hostLang() === 'en'
+                  ? 'Left the execution queue; back to To do.'
+                  : '已取消排队，任务回到「待办」。',
+                createdAt: now(),
+                actor,
+              })
+              return [task]
+            })
+            ok(res, { ...store.get(id) })
             return
           }
 
@@ -489,7 +625,12 @@ export function registerTaskboardRoutes(ctx, options) {
     ctx.webServer.register({ kind: 'prefix', path: ROUTE_PREFIX, handler }),
     ctx.webServer.register({ kind: 'exact', path: SSE_PATH, handler: sse }),
   ]
+  // Resume a persisted queue: a restart (or a plugin reload) may leave cards
+  // waiting for a slot that nothing would otherwise hand out.
+  void pump()
   return () => {
+    disposePump()
+    unsubscribePump()
     stopSharedInject?.()
     shared?.dispose()
     unsubscribeBroadcast()

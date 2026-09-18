@@ -5,10 +5,15 @@
  * 任务看板 semantics (see codeg-plus src/components/tasks/board-columns.ts and
  * task-acceptance.ts):
  *
- *   todo       ← todo, queued
- *   inProgress ← preparing, running
+ *   todo       ← todo
+ *   inProgress ← queued, preparing, running
  *   attention  ← awaiting_input, review, merging, failed
  *   done       ← done, canceled        (canceled hidden unless showCanceled)
+ *
+ * `queued` sits in the 进行中 column, not 待办: hitting 发起会话 moves a card out
+ * of the backlog and into the execution pipeline, where it either runs or waits
+ * for a free parallelism slot (settings.maxParallel). The only way back to 待办
+ * is 取消排队 (queued -> todo).
  *
  * Board columns read freshest-first (updatedAt desc) exactly like codeg-plus;
  * moving a task to `done` is a HUMAN-only acceptance action — agents may never
@@ -26,8 +31,8 @@ export const BOARD_COLUMN_IDS = ['todo', 'inProgress', 'attention', 'done']
 
 /** The exact statuses behind each column (codeg-plus STATUSES_BY_COLUMN). */
 export const STATUSES_BY_COLUMN = {
-  todo: ['todo', 'queued'],
-  inProgress: ['preparing', 'running'],
+  todo: ['todo'],
+  inProgress: ['queued', 'preparing', 'running'],
   attention: ['awaiting_input', 'review', 'merging', 'failed'],
   done: ['done', 'canceled'],
 }
@@ -46,8 +51,8 @@ export const ALL_STATUSES = [
 export function columnForStatus(status) {
   switch (status) {
     case 'todo':
-    case 'queued':
       return 'todo'
+    case 'queued':
     case 'preparing':
     case 'running':
       return 'inProgress'
@@ -108,6 +113,48 @@ function byFreshest(a, b) {
  * the user, mirroring dsh-taskboard's claim discipline).
  */
 export const HOLD_STATUSES = ['preparing', 'running', 'awaiting_input', 'merging']
+
+// ---------------------------------------------------------------------------
+// Execution queue (parallelism slots)
+// ---------------------------------------------------------------------------
+
+/** Whether a card already has a DSH session behind it. */
+export function hasSession(task) {
+  return typeof task.sessionId === 'string' && task.sessionId.length > 0
+}
+
+/**
+ * Whether a card occupies one of the board's `settings.maxParallel` execution
+ * slots.
+ *
+ * Two ways to hold one: the session is at work (HOLD_STATUSES), or the card was
+ * launched and its session already exists while the agent has not claimed it
+ * yet (`queued` + sessionId). A `queued` card WITHOUT a session is the only one
+ * that holds nothing — it is the one waiting in line, and counting it would
+ * stall the queue forever (nothing would ever be free to start it).
+ */
+export function occupiesSlot(task) {
+  if (HOLD_STATUSES.includes(task.status)) return true
+  return task.status === 'queued' && hasSession(task)
+}
+
+/**
+ * Whether a card was launched but is still waiting for a free slot — the
+ * 「排队中」 state, and the only state 取消排队 may act on (a card whose session
+ * exists cannot be un-queued: dsh has no terminate-session call here, so
+ * dropping it would leave an orphan session nobody tracks).
+ */
+export function isWaitingInQueue(task) {
+  return task.status === 'queued' && !hasSession(task)
+}
+
+/** FIFO comparator for the queue: longest-waiting first, id as the tiebreak. */
+export function queueOrder(a, b) {
+  const at = typeof a.queuedAt === 'number' ? a.queuedAt : (a.updatedAt ?? 0)
+  const bt = typeof b.queuedAt === 'number' ? b.queuedAt : (b.updatedAt ?? 0)
+  if (at !== bt) return at - bt
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+}
 
 /**
  * Moves an agent session may perform with taskboard_move. Everything else is
@@ -173,9 +220,48 @@ export function isClaimedBy(task) {
 /** Ledger file schema version (bump on breaking record changes). */
 export const LEDGER_SCHEMA_VERSION = 1
 
+// ---------------------------------------------------------------------------
+// Board settings
+// ---------------------------------------------------------------------------
+
+/**
+ * How many tasks may hold a session at once, until the user says otherwise. A
+ * desktop comfortably runs a handful of agent sessions; three keeps the board
+ * responsive without serializing it.
+ */
+export const DEFAULT_MAX_PARALLEL = 3
+
+/** Hard ceiling for the setting — a stray keystroke must not queue 500 sessions. */
+export const MAX_PARALLEL_LIMIT = 20
+
+/** Validator for a user-supplied maxParallel (throws on junk; callers map it). */
+export function normalizeMaxParallel(raw) {
+  const value = raw === undefined || raw === null || raw === '' ? DEFAULT_MAX_PARALLEL : raw
+  if (typeof value !== 'number' || !Number.isInteger(value) ||
+      value < 1 || value > MAX_PARALLEL_LIMIT) {
+    throw new Error(`maxParallel must be an integer between 1 and ${MAX_PARALLEL_LIMIT}`)
+  }
+  return value
+}
+
+/** Tolerant settings normalizer for data read from disk (never throws). */
+export function normalizeSettings(raw) {
+  const source = raw !== null && typeof raw === 'object' ? raw : {}
+  try {
+    return { maxParallel: normalizeMaxParallel(source.maxParallel) }
+  } catch {
+    return { maxParallel: DEFAULT_MAX_PARALLEL }
+  }
+}
+
 /** A brand-new empty ledger. */
 export function emptyLedger() {
-  return { schemaVersion: LEDGER_SCHEMA_VERSION, revision: 0, tasks: [] }
+  return {
+    schemaVersion: LEDGER_SCHEMA_VERSION,
+    revision: 0,
+    settings: { maxParallel: DEFAULT_MAX_PARALLEL },
+    tasks: [],
+  }
 }
 
 const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz'
@@ -273,6 +359,10 @@ export function summarizeTask(task) {
     version: task.version,
     workspaceId: task.workspaceId ?? '',
     claimedBy: typeof task.claimedBy === 'string' ? task.claimedBy : '',
+    // '' means "no session yet" — the client tells 排队中 (waiting for a slot)
+    // from a launched card that already has a session, and decides whether
+    // 取消排队 is offered. Never undefined: summaries must stay lossless JSON.
+    sessionId: typeof task.sessionId === 'string' ? task.sessionId : '',
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     commentCount: Array.isArray(task.comments) ? task.comments.length : 0,
