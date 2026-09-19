@@ -1,0 +1,96 @@
+{
+  "name": "dsh-plugin-ai-switch",
+  "description": "AI account switch and local route proxy for the DeepSeek Harness web GUI — a port of ai-switch: per-platform account pools, an OpenAI/Anthropic/Gemini-compatible local proxy with protocol bridging, and safe native config writes for Codex, Claude Code, Gemini CLI, Grok, OpenCode, OpenClaw and Hermes. 复刻 ai-switch 界面的 dsh 插件，后端用 Node 重写。",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.1.1-rc.2": "compatible",
+        "0.1.2-alpha.2": "compatible"
+      }
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "webview",
+    "cordis.patch.yml",
+    "LICENSE",
+    "LICENSE-ai-switch",
+    "README.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "author": "ijry (DSH Desktop Ultra contributors)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/issues"
+  },
+  "homepage": "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra/tree/main/plugins/dsh-plugin-ai-switch#readme",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "ai-switch",
+    "codex",
+    "claude-code",
+    "gemini-cli",
+    "route-proxy",
+    "account-switcher"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:webview": "vite build --config webview/vite.config.ts",
+    "check": "node scripts/check.mjs",
+    "typecheck": "tsc --noEmit -p webview/tsconfig.json",
+    "test": "npm run build -- --skip-webview && node --test",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "5.51.1",
+    "@types/node": "22.19.1",
+    "@types/qrcode": "1.5.6",
+    "@types/react": "18.3.27",
+    "@types/react-dom": "18.3.7",
+    "@types/three": "0.185.1",
+    "@vitejs/plugin-react": "4.7.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "clsx": "2.1.1",
+    "jszip": "3.10.1",
+    "lucide-react": "0.468.0",
+    "motion": "12.43.0",
+    "ocrad.js": "0.0.1",
+    "qrcode": "1.5.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "three": "0.185.1",
+    "typescript": "5.9.3",
+    "unocss": "66.7.5",
+    "vite": "5.4.20"
+  }
+}
