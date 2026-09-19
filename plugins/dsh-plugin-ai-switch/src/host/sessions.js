@@ -139,9 +139,6 @@ export function providerSpecs() {
   ]
 }
 
-/** The catalog as it stood at import, for callers that only want to display it. */
-export const PROVIDER_SPECS = providerSpecs()
-
 /**
  * Yield a file's lines without holding the file in memory.
  *

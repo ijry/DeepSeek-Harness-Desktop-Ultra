@@ -55,15 +55,13 @@ export class JsonStore {
    * Read-modify-write, serialized against every other update of this file.
    *
    * The mutator may return a value, which becomes the result; the (possibly mutated)
-   * document is written unless the mutator returns the symbol `SKIP_WRITE`.
+   * document is always flushed.
    */
   async update(mutate) {
     const run = this.queue.then(async () => {
       const document = await this.read()
       const result = await mutate(document)
-      if (result !== SKIP_WRITE) {
-        await this.flush()
-      }
+      await this.flush()
       return result
     })
     // Keep the chain alive after a failed update, otherwise one rejection poisons every
@@ -85,9 +83,6 @@ export class JsonStore {
     this.value = undefined
   }
 }
-
-/** Return this from an `update` mutator to skip the write. */
-export const SKIP_WRITE = Symbol('skip-write')
 
 /** Every file this plugin owns, in one place. */
 export function createStores(home = pluginHomePath()) {

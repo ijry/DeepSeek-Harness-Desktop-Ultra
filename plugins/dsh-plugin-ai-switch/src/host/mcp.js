@@ -59,21 +59,6 @@ export const MCP_APPS = [
   'grok',
 ]
 
-/** `McpAppType::display_name`, for the column headers. */
-const APP_DISPLAY_NAMES = {
-  claude_code: 'Claude Code',
-  codex: 'Codex CLI',
-  gemini: 'Gemini CLI',
-  open_claw: 'OpenClaw',
-  open_code: 'OpenCode',
-  hermes: 'Hermes Agent',
-  cline: 'Cline',
-  cursor: 'Cursor',
-  kimi_code: 'Kimi Code',
-  code_buddy: 'CodeBuddy',
-  grok: 'Grok',
-}
-
 /** The two fixed marketplace providers. */
 const OFFICIAL = 'official_registry'
 const SMITHERY = 'smithery'
@@ -1278,16 +1263,6 @@ function openCodeCanonicalToOld(canonical) {
 function adapters() {
   const paths = clientPaths()
   return MCP_APPS.map((app) => ({ app, paths: paths[app], adapter: ADAPTERS[app] }))
-}
-
-/** The eleven clients with their display names and config paths, for the panel's columns. */
-export function listApps() {
-  const paths = clientPaths()
-  return MCP_APPS.map((app) => ({
-    app_type: app,
-    display_name: APP_DISPLAY_NAMES[app],
-    config_path: paths[app].path,
-  }))
 }
 
 // ---------------------------------------------------------------------------

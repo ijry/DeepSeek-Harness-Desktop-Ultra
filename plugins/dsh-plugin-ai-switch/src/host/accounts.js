@@ -1023,8 +1023,7 @@ export class AccountService {
 
 /** Model mappings: `[{from, to, label, supports_1m?, context_window?, reasoning_levels?}]`. */
 export function validateModelMappings(json) {
-  const parsed = json === undefined || json === null || String(json).trim().length === 0 ? [] : parseJsonMaybe(String(json))
-  const list = Array.isArray(parsed) ? parsed : parseJsonMaybe(String(json), null)
+  const list = json === undefined || json === null || String(json).trim().length === 0 ? [] : parseJsonMaybe(String(json), null)
   if (!Array.isArray(list)) {
     throw validation('validation.json', 'Model mappings must be a JSON array', 'model_mappings_json')
   }

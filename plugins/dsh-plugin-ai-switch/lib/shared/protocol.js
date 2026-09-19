@@ -65,15 +65,6 @@ export function optionalText(value, max = 65536) {
   return text.length > max ? text.slice(0, max) : text
 }
 
-/** One of a fixed set, or a named validation error. */
-export function requireOneOf(value, allowed, code, field) {
-  const text = typeof value === 'string' ? value.trim() : ''
-  if (!allowed.includes(text)) {
-    throw validation(code, `${field} must be one of: ${allowed.join(', ')}`, text || field)
-  }
-  return text
-}
-
 /** An integer clamped to [min, max]; non-numbers fall back to `fallback`. */
 export function boundedInt(value, min, max, fallback) {
   const number = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10)
@@ -112,24 +103,6 @@ export function requireIdList(value, field, max = 2000) {
     throw validation('validation.required', `${field} must contain at least one id`, field)
   }
   return out
-}
-
-/** Parse a JSON object out of a string field; `fallback` when blank. */
-export function parseJsonObject(value, field, fallback = {}) {
-  const text = typeof value === 'string' ? value.trim() : ''
-  if (text.length === 0) {
-    return fallback
-  }
-  let parsed
-  try {
-    parsed = JSON.parse(text)
-  } catch (error) {
-    throw validation('validation.json', `${field} is not valid JSON`, String(error?.message ?? error))
-  }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw validation('validation.json', `${field} must be a JSON object`, field)
-  }
-  return parsed
 }
 
 /** RFC 3339 in UTC with seconds — the timestamp format every stored row uses. */
