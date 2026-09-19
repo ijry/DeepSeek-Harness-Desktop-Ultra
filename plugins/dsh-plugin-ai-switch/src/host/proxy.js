@@ -31,6 +31,7 @@ import {
   translateResponse,
 } from './bridge/index.js'
 import { buildCatalog, modelsListBody, splitPreciseId, upstreamModelFor } from './models.js'
+import { tryParsePlatform } from './platforms.js'
 
 /** The port the reference prefers; we walk upward from here if it is taken. */
 export const DEFAULT_PORT = 19527
@@ -229,11 +230,21 @@ export class RouteProxy {
       return
     }
 
+    // The presented key decides the platform, never the header. This is a credential
+    // broker: a request it serves spends the user's stored upstream key, so authentication
+    // cannot rest on `x-ai-switch-platform`, which any local caller can forge. The header is
+    // only a hint the reference front end sends beside the key; it may agree with the key's
+    // platform but never stand in for it. (Each platform has its own key, so the key alone
+    // is unambiguous.)
     const presented = RouteProxy.presentedKey(request.headers) || String(url.searchParams.get('key') ?? '').trim()
-    const override = String(request.headers['x-ai-switch-platform'] ?? '').trim()
-    const platform = override.length > 0 ? override : await this.keys.platformForKey(presented)
+    const platform = await this.keys.platformForKey(presented)
     if (platform === null || platform === undefined || platform.length === 0) {
       this.#fail(response, 401, 'proxy.unauthorized', 'Unknown or missing AI Switch proxy key')
+      return
+    }
+    const override = String(request.headers['x-ai-switch-platform'] ?? '').trim()
+    if (override.length > 0 && tryParsePlatform(override) !== platform) {
+      this.#fail(response, 403, 'proxy.platform_mismatch', 'The platform hint does not match the presented key')
       return
     }
 
